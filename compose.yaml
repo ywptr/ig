@@ -1,0 +1,64 @@
+services:
+
+  ig:
+    build: .
+    container_name: ig
+    restart: unless-stopped
+
+    ports:  
+      - "127.0.0.1:8889:8000"
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./app:/app/app
+      - ./output:/app/output
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+
+    depends_on:
+      - ig-db
+
+
+  ig-db:
+    image: mariadb:11
+    container_name: ig-db
+    restart: unless-stopped
+
+    environment:
+      MARIADB_DATABASE: ig
+      MARIADB_USER: ig
+      MARIADB_PASSWORD: ${IG_DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${IG_DB_ROOT_PASSWORD}
+
+    volumes:
+      - ./db-data:/var/lib/mysql
+
+  ig-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ig-web
+    restart: unless-stopped
+
+    ports:
+      - "8888:80"
+
+    depends_on:
+      - ig
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: ig-phpmyadmin
+    restart: unless-stopped
+
+    ports:
+      - "8890:80"
+
+    environment:
+      PMA_HOST: ig-db
+      PMA_PORT: 3306
+
+    depends_on:
+      - ig-db
