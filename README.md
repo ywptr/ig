@@ -1,6 +1,6 @@
 # IG — AI Image Generator
 
-**Version 1.0.0**
+**Version 1.0.1**
 
 A small, self-hosted AI image generation control plane.
 
