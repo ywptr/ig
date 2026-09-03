@@ -1,6 +1,6 @@
 # IG — AI Image Generator
 
-**Version 1.0.1**
+**Version 1.0.2**
 
 A small, self-hosted AI image generation control plane.
 
@@ -152,6 +152,17 @@ Do not expose the current V1 deployment directly to the public Internet.
 
 A future version will introduce configurable deployment modes and authentication as part of the multi-user/multi-tenant architecture.
 
+Procedure (assuming Git and Docker are already installed and running):
+
+git clone https://github.com/ywptr/ig.git
+cd ig
+create .env (as per configuration section below)
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose exec ig alembic upgrade head
+docker compose exec ig alembic current
+
 ---
 
 ## Configuration
@@ -165,6 +176,7 @@ OPENAI_API_KEY=<your-openai-api-key>
 
 IG_DB_PASSWORD=<database-password>
 IG_DB_ROOT_PASSWORD=<database-root-password>
+DATABASE_URL=mysql+pymysql://ig:<database-password>@ig-db:3306/ig
 ```
 
 Do not commit `.env` or API credentials to the repository.
