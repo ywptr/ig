@@ -4,6 +4,8 @@
 
 A small, self-hosted AI image generation control plane.
 
+Want to use your OpenAI API credits for generating images? Deploy this app and go.
+
 IG provides a web interface and API for submitting image-generation requests, tracking their execution, storing generation metadata, and serving generated images. V1 currently uses OpenAI as its image-generation provider.
 
 The project is intentionally designed as a foundation for a more general **AI control-plane framework**, rather than as a provider-specific image-generation application.
@@ -154,6 +156,7 @@ A future version will introduce configurable deployment modes and authentication
 
 Procedure (assuming Git and Docker are already installed and running):
 
+```text
 git clone https://github.com/ywptr/ig.git
 cd ig
 create .env (as per configuration section below)
@@ -162,6 +165,7 @@ docker compose up -d
 docker compose ps
 docker compose exec ig alembic upgrade head
 docker compose exec ig alembic current
+```
 
 ---
 
@@ -173,7 +177,6 @@ At minimum:
 
 ```text
 OPENAI_API_KEY=<your-openai-api-key>
-
 IG_DB_PASSWORD=<database-password>
 IG_DB_ROOT_PASSWORD=<database-root-password>
 DATABASE_URL=mysql+pymysql://ig:<database-password>@ig-db:3306/ig
