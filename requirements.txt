@@ -21,4 +21,5 @@ uvicorn==0.52.4
 SQLAlchemy
 PyMySQL
 alembic
-
+redis==8.1.0
+rq==2.12.0

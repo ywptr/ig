@@ -1,4 +1,40 @@
 services:
+  ig-redis:
+    image: redis:8-alpine
+    container_name: ig-redis
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+
+    volumes:
+      - ./redis-data:/data
+
+
+  ig-worker:
+    build: .
+    container_name: ig-worker
+    restart: unless-stopped
+
+    command:
+      - rq
+      - worker
+      - --url
+      - redis://ig-redis:6379/0
+      - ig
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./app:/app/app
+      - ./output:/app/output
+
+    depends_on:
+      - ig-db
+      - ig-redis
 
   ig:
     build: .
@@ -19,6 +55,7 @@ services:
 
     depends_on:
       - ig-db
+      - ig-redis
 
 
   ig-db:
