@@ -1,7 +1,7 @@
-import time
-import uuid
+import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from app.images.service import submit_image_generation
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from app.services.openai_images import OpenAIImageService
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 image_service = OpenAIImageService()
 
@@ -33,87 +34,13 @@ def image_to_dict(image: ImageRequest):
         "generation_time_ms": image.generation_time_ms,
     }
 
-
-def process_image_generation(request_id: str, prompt: str):
-    started = time.perf_counter()
-
-    db = SessionLocal()
-
-    try:
-        statement = select(ImageRequest).where(
-            ImageRequest.request_id == request_id
-        )
-
-        image_record = db.scalar(statement)
-
-        if image_record is None:
-            return
-
-        try:
-            result = image_service.generate(prompt)
-
-            generation_time_ms = int(
-                (time.perf_counter() - started) * 1000
-            )
-
-            image_record.status = "completed"
-            image_record.filename = result["filename"]
-            image_record.mime_type = "image/png"
-            image_record.size_bytes = result["size_bytes"]
-            image_record.generation_time_ms = generation_time_ms
-
-            db.commit()
-
-        except Exception:
-            generation_time_ms = int(
-                (time.perf_counter() - started) * 1000
-            )
-
-            image_record.status = "failed"
-            image_record.generation_time_ms = generation_time_ms
-
-            db.commit()
-
-            print(
-                f"Image generation failed: {request_id}",
-                flush=True,
-            )
-
-    finally:
-        db.close()
-
-
 @router.post("/images/generations", status_code=202)
-def generate_image(
-    request: ImageRequestPayload,
-    background_tasks: BackgroundTasks,
-):
-    request_id = str(uuid.uuid4())
+def generate_image(request: ImageRequestPayload):
+    image_record = submit_image_generation(
+        request.prompt
+    )
 
-    db = SessionLocal()
-
-    try:
-        image_record = ImageRequest(
-            request_id=request_id,
-            prompt=request.prompt,
-            model="gpt-image-2",
-            status="generating",
-        )
-
-        db.add(image_record)
-        db.commit()
-        db.refresh(image_record)
-
-        background_tasks.add_task(
-            process_image_generation,
-            request_id,
-            request.prompt,
-        )
-
-        return image_to_dict(image_record)
-
-    finally:
-        db.close()
+    return image_to_dict(image_record)
 
 
 @router.get("/images")

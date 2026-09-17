@@ -3,6 +3,7 @@ import { useEffect, useState, } from "react";
 import PromptBox from "./components/PromptBox";
 import ImageGrid from "./components/ImageGrid";
 import type { Image } from "./components/ImageCard";
+import { Jobs } from "./components/Jobs";
 
 import {
     getImages,
@@ -20,6 +21,8 @@ function App() {
 
     const [error, setError] =
         useState<string | null>(null);
+
+    const [view, setView] = useState<"images" | "jobs">("images");
 
     function hasGeneratingImages(images: Image[]) {
         return images.some(
@@ -118,77 +121,103 @@ function App() {
                         </span>
                     </div>
 
+                    <nav className="app-nav">
+                        <button
+                            onClick={() => setView("images")}
+                            className={view === "images" ? "active" : ""}
+                        >
+                            Images
+                        </button>
+
+                        <button
+                            onClick={() => setView("jobs")}
+                            className={view === "jobs" ? "active" : ""}
+                        >
+                            Jobs
+                        </button>
+                    </nav>
+
                 </div>
 
             </header>
+            {view === "images" ? (
+                <main className="main">
 
-             <main className="main">
+                    <section className="hero">
 
-                <section className="hero">
+                        <div className="hero-heading">
 
-                    <div className="hero-heading">
+                            <h1>
+                                Create an image
+                            </h1>
 
-                        <h1>
-                            Create an image
-                        </h1>
+                            <p>
+                                Describe what you want to generate.
+                            </p>
 
-                        <p>
-                            Describe what you want to generate.
-                        </p>
-
-                    </div>
-
-
-                    <PromptBox
-                        prompt={prompt}
-                        onPromptChange={setPrompt}
-                        onGenerate={handleGenerate}
-                        generating={generating}
-                    />
-
-
-                    {generating && (
-                        <div className="generation-status">
-                            Generating image…
-                            This may take a little while.
                         </div>
-                    )}
 
 
-                    {error && (
-                        <div className="error">
-                            {error}
+                        <PromptBox
+                            prompt={prompt}
+                            onPromptChange={setPrompt}
+                            onGenerate={handleGenerate}
+                            generating={generating}
+                        />
+
+
+                        {generating && (
+                            <div className="generation-status">
+                                Generating image…
+                                This may take a little while.
+                            </div>
+                        )}
+
+
+                        {error && (
+                            <div className="error">
+                                {error}
+                            </div>
+                        )}
+
+                    </section>
+
+
+                    <section className="history-section">
+
+                        <div className="section-heading">
+
+                            <h2>
+                                History
+                            </h2>
+
+                            <span className="image-count">
+                                {images.length}
+                                {" "}
+                                {images.length === 1
+                                    ? "image"
+                                    : "images"}
+                            </span>
+
                         </div>
-                    )}
-
-                </section>
 
 
-                <section className="history-section">
+                        <ImageGrid
+                            images={images}
+                        />
 
-                    <div className="section-heading">
+                    </section>
+                </main>
+            ) : (
+                <main className="main">
 
-                        <h2>
-                            History
-                        </h2>
+                    <section className="history-section">
+                        <Jobs />
+                    </section>
 
-                        <span className="image-count">
-                            {images.length}
-                            {" "}
-                            {images.length === 1
-                                ? "image"
-                                : "images"}
-                        </span>
+                </main>
+            )}
 
-                    </div>
-
-
-                    <ImageGrid
-                        images={images}
-                    />
-
-                </section>
-            </main>
         </div>
     );
 }
