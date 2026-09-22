@@ -1,10 +1,11 @@
 # Contains models used by Alembic
-# Current list: ImageRequest, Job
+# Current list: ImageRequest, Job, User, UserSession
 
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey
 
 from app.db.database import Base
 
@@ -22,6 +23,13 @@ class ImageRequest(Base):
         String(36),
         unique=True,
         index=True,
+    )
+
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.user_id"),
+        index=True,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -75,6 +83,13 @@ class Job(Base):
         index=True,
     )
 
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.user_id"),
+        index=True,
+        nullable=True,
+    )
+
     capability: Mapped[str] = mapped_column(
         String(100),
         index=True,
@@ -105,6 +120,89 @@ class Job(Base):
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+# User represents an authenticated IG user.
+# Authentication providers are external; IG owns the user identity.
+class User(Base):
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+    )
+
+    password_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    google_sub: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+
+    email: Mapped[str] = mapped_column(
+        String(320),
+        index=True,
+    )
+
+    name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    picture_url: Mapped[str | None] = mapped_column(
+        String(2048),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+# UserSession represents a session for an authenticated user.
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.user_id"),
+        index=True,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        index=True,
+    )
+
+    revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
     )

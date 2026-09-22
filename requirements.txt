@@ -23,3 +23,6 @@ PyMySQL
 alembic
 redis==8.1.0
 rq==2.12.0
+google-auth
+pwdlib[argon2]
+email-validator

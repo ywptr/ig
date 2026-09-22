@@ -1,14 +1,14 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from app.db.database import SessionLocal
 from sqlalchemy import select
-from app.db.models import Job
+from app.db.models import Job, User
 from app.jobs.handlers import is_supported
 from app.jobs.service import create_job, get_job
-
+from app.auth.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -42,7 +42,10 @@ def job_to_dict(job):
 
 
 @router.post("/jobs", status_code=202)
-def submit_job(request: JobRequestPayload):
+def submit_job(
+    request: JobRequestPayload,
+    current_user: User = Depends(get_current_user),
+):
     if not is_supported(request.capability):
         raise HTTPException(
             status_code=400,
@@ -55,14 +58,21 @@ def submit_job(request: JobRequestPayload):
     job = create_job(
         capability=request.capability,
         input_data=request.input,
+        user_id=current_user.user_id,
     )
 
     return job_to_dict(job)
 
 
 @router.get("/jobs/{job_id}")
-def read_job(job_id: str):
-    job = get_job(job_id)
+def read_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    job = get_job(
+        job_id,
+        user_id=current_user.user_id,
+    )
 
     if job is None:
         raise HTTPException(
@@ -73,12 +83,18 @@ def read_job(job_id: str):
     return job_to_dict(job)
 
 @router.get("/jobs")
-def list_jobs():
+def list_jobs(
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
 
     try:
         statement = (
             select(Job)
+            .where(
+                Job.user_id
+                == current_user.user_id
+            )
             .order_by(Job.created_at.desc())
             .limit(100)
         )
