@@ -6,6 +6,9 @@ from fastapi import FastAPI
 from app.api.auth import router as auth_router
 from app.api.images import router as image_router
 from app.api.jobs import router as job_router
+from app.api.artifacts import (
+    router as artifact_router,
+)
 
 app = FastAPI(
     title="IG",
@@ -26,6 +29,11 @@ app.include_router(
 app.include_router(
     auth_router,
     prefix="/v2"
+)
+
+app.include_router(
+    artifact_router,
+    prefix="/v2",
 )
 
 @app.get("/health")
