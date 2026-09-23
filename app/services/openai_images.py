@@ -36,23 +36,11 @@ class OpenAIImageService:
             image_data.b64_json
         )
 
-        timestamp = datetime.now(timezone.utc).strftime(
-            "%Y%m%d-%H%M%S"
-        )
-
-        filename = f"{uuid.uuid4()}.png"
-        filepath = OUTPUT_DIR / filename
-
-        OUTPUT_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        filepath.write_bytes(image_bytes)
-
         return {
-            "status": "completed",
             "model": "gpt-image-2",
-            "filename": filename,
-            "size_bytes": len(image_bytes),
+            "mime_type": "image/png",
+            "data": image_bytes,
+            "size_bytes": len(
+                image_bytes
+            ),
         }

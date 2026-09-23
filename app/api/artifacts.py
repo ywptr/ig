@@ -1,8 +1,5 @@
-from pathlib import Path
-from urllib.parse import urlparse
-
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
 from app.artifacts.service import (
     get_artifact,
@@ -11,6 +8,9 @@ from app.artifacts.service import (
 from app.auth.dependencies import get_current_user
 from app.db.models import Artifact, User
 
+from app.artifacts.storage.provider import (
+    artifact_store,
+)
 
 router = APIRouter(
     prefix="/artifacts",
@@ -94,30 +94,40 @@ def read_artifact_content(
             detail="Artifact not found",
         )
 
-    uri = urlparse(artifact.storage_uri)
+    try:
+        if not artifact_store.exists(
+            artifact.storage_uri
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Artifact content is missing"
+                ),
+            )
 
-    if uri.scheme != "file":
+        content = (
+            artifact_store.iter_bytes(
+                artifact.storage_uri
+            )
+        )
+
+    except ValueError as exc:
         raise HTTPException(
             status_code=501,
-            detail=(
-                "Artifact storage provider "
-                "is not supported yet"
-            ),
+            detail=str(exc),
         )
 
-    filepath = Path(uri.path)
-
-    if not filepath.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="Artifact content is missing",
-        )
-
-    return FileResponse(
-        path=filepath,
+    return StreamingResponse(
+        content,
         media_type=(
             artifact.mime_type
             or "application/octet-stream"
         ),
-        filename=artifact.filename,
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="'
+                f'{artifact.filename or artifact.artifact_id}'
+                f'"'
+            )
+        },
     )

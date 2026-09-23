@@ -4,6 +4,11 @@ from app.artifacts.service import create_artifact
 from app.db.database import SessionLocal
 from app.db.models import ImageRequest
 from app.services.openai_images import OpenAIImageService
+from app.artifacts.storage.provider import (
+    artifact_store,
+)
+
+import uuid
 
 image_provider = OpenAIImageService()
 
@@ -33,9 +38,15 @@ def execute_image_generation(input_data: dict) -> None:
         try:
             result = image_provider.generate(prompt)
 
+            filename = (
+                f"{uuid.uuid4()}.png"
+            )
+
             storage_uri = (
-                f"file:///app/output/"
-                f"{result['filename']}"
+                artifact_store.put_bytes(
+                    filename=filename,
+                    data=result["data"],
+                )
             )
 
             artifact = create_artifact(
@@ -43,8 +54,8 @@ def execute_image_generation(input_data: dict) -> None:
                 user_id=image_record.user_id,
                 media_type="image",
                 storage_uri=storage_uri,
-                mime_type="image/png",
-                filename=result["filename"],
+                mime_type=result["mime_type"],
+                filename=filename,
                 size_bytes=result["size_bytes"],
                 metadata={
                     "provider": "openai",
@@ -54,13 +65,18 @@ def execute_image_generation(input_data: dict) -> None:
 
             image_record.status = "completed"
 
-            # Legacy artifact fields
-            image_record.filename = result["filename"]
-            image_record.mime_type = "image/png"
-            image_record.size_bytes = result["size_bytes"]
+            # Legacy compatibility fields
+            image_record.filename = filename
+            image_record.mime_type = (
+                result["mime_type"]
+            )
+            image_record.size_bytes = (
+                result["size_bytes"]
+            )
 
-            # New artifact relationship
-            image_record.artifact_id = artifact.artifact_id
+            image_record.artifact_id = (
+                artifact.artifact_id
+            )
 
             db.commit()
 
