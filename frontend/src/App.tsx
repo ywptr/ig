@@ -10,6 +10,14 @@ import {
     generateImage,
 } from "./api/images";
 
+import { AuthScreen } from "./components/AuthScreen";
+
+import {
+    getCurrentUser,
+    logout,
+    type User,
+} from "./api/auth";
+
 function App() {
     const [prompt, setPrompt] = useState("");
 
@@ -23,6 +31,12 @@ function App() {
         useState<string | null>(null);
 
     const [view, setView] = useState<"images" | "jobs">("images");
+
+    const [user, setUser] =
+        useState<User | null>(null);
+
+    const [authLoading, setAuthLoading] =
+        useState(true);
 
     function hasGeneratingImages(images: Image[]) {
         return images.some(
@@ -87,11 +101,15 @@ function App() {
 
 
     useEffect(() => {
+        if (!user) {
+            return;
+        }
+
         loadHistory();
-    }, []);
+    }, [user]);
 
     useEffect(() => {
-        if (!hasGeneratingImages(images)) {
+        if (!user || !hasGeneratingImages(images)) {
             return;
         }
 
@@ -102,7 +120,57 @@ function App() {
         return () => {
             window.clearInterval(interval);
         };
-    }, [images]);
+    }, [images, user]);
+
+    useEffect(() => {
+        async function checkAuthentication() {
+            try {
+                const currentUser =
+                    await getCurrentUser();
+
+                setUser(currentUser);
+
+            } catch (error) {
+                console.error(
+                    "Authentication check failed:",
+                    error
+                );
+
+                setUser(null);
+
+            } finally {
+                setAuthLoading(false);
+            }
+        }
+
+        checkAuthentication();
+    }, []);
+
+    async function handleLogout() {
+        try {
+            await logout();
+        } finally {
+            setUser(null);
+            setImages([]);
+            setView("images");
+        }
+    }
+
+    if (authLoading) {
+        return (
+            <div className="auth-loading">
+                Loading IG…
+            </div>
+        );
+    }
+
+    if (!user) {
+        return (
+            <AuthScreen
+                onAuthenticated={setUser}
+            />
+        );
+    }
 
     return (
         <div className="app">
@@ -136,7 +204,28 @@ function App() {
                             Jobs
                         </button>
                     </nav>
+                    <div className="user-menu">
 
+                        <div className="user-info">
+                            <strong>
+                                {user.name || user.email}
+                            </strong>
+
+                            {user.name && (
+                                <span>
+                                    {user.email}
+                                </span>
+                            )}
+                        </div>
+
+                        <button
+                            className="logout-button"
+                            onClick={handleLogout}
+                        >
+                            Sign out
+                        </button>
+
+                    </div>
                 </div>
 
             </header>

@@ -11,7 +11,10 @@ from app.services.openai_images import OpenAIImageService
 image_provider = OpenAIImageService()
 
 
-def submit_image_generation(prompt: str) -> ImageRequest:
+def submit_image_generation(
+    prompt: str,
+    user_id: str,
+    ) -> ImageRequest:
     request_id = str(uuid.uuid4())
 
     db = SessionLocal()
@@ -19,6 +22,7 @@ def submit_image_generation(prompt: str) -> ImageRequest:
     try:
         image_record = ImageRequest(
             request_id=request_id,
+            user_id=user_id,
             prompt=prompt,
             model="gpt-image-2",
             status="generating",
@@ -35,6 +39,7 @@ def submit_image_generation(prompt: str) -> ImageRequest:
                     "request_id": request_id,
                     "prompt": prompt,
                 },
+                user_id=user_id,
             )
 
         except Exception:

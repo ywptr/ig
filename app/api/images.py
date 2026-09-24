@@ -1,15 +1,15 @@
 import logging
 
 from app.images.service import submit_image_generation
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.db.database import SessionLocal
-from app.db.models import ImageRequest
+from app.db.models import ImageRequest, User
 from app.services.openai_images import OpenAIImageService
-
+from app.auth.dependencies import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -35,21 +35,28 @@ def image_to_dict(image: ImageRequest):
     }
 
 @router.post("/images/generations", status_code=202)
-def generate_image(request: ImageRequestPayload):
+def generate_image(
+    request: ImageRequestPayload,
+    current_user: User = Depends(get_current_user),
+):
     image_record = submit_image_generation(
-        request.prompt
+        prompt=request.prompt,
+        user_id=current_user.user_id
     )
 
     return image_to_dict(image_record)
 
 
 @router.get("/images")
-def list_images():
+def list_images(
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
 
     try:
         statement = (
             select(ImageRequest)
+            .where(ImageRequest.user_id == current_user.user_id)
             .order_by(ImageRequest.created_at.desc())
         )
 
@@ -65,12 +72,16 @@ def list_images():
 
 
 @router.get("/images/{request_id}")
-def get_image(request_id: str):
+def get_image(
+    request_id: str,
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
 
     try:
         statement = select(ImageRequest).where(
-            ImageRequest.request_id == request_id
+            ImageRequest.request_id == request_id,
+            ImageRequest.user_id == current_user.user_id
         )
 
         image = db.scalar(statement)
@@ -88,12 +99,16 @@ def get_image(request_id: str):
 
 
 @router.get("/images/{request_id}/content")
-def get_image_content(request_id: str):
+def get_image_content(
+    request_id: str,
+    current_user: User = Depends(get_current_user),
+):
     db = SessionLocal()
 
     try:
         statement = select(ImageRequest).where(
-            ImageRequest.request_id == request_id
+            ImageRequest.request_id == request_id,
+            ImageRequest.user_id == current_user.user_id
         )
 
         image = db.scalar(statement)
