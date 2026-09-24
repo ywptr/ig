@@ -1,6 +1,6 @@
 # IG — AI Image Generator
 
-**Version 1.0.2**
+**Version 2.0.0-alpha.2**
 
 A small, self-hosted AI image generation control plane.
 
@@ -28,6 +28,12 @@ IG currently provides:
 * Separate operational and diagnostic access paths
 
 V1 is intentionally simple and currently supports a single image-generation provider.
+
+V2 introduces:
+* Simple authentication
+* Multi-user capability
+* Jobs and Executions logs
+* Abstracted code architecture
 
 ---
 
@@ -69,6 +75,10 @@ V1 is intentionally simple and currently supports a single image-generation prov
 * FastAPI
 * SQLAlchemy
 * Alembic
+
+**Queue Management**
+
+* Redis
 
 **Database**
 
@@ -295,7 +305,7 @@ future Zabbix host
 future infrastructure event
 ```
 
-### Control-plane domain
+### Control-plane domain (V2)
 
 ```text
 Provider
@@ -319,8 +329,6 @@ This distinction is intended to make the eventual extraction of the control-plan
 
 ---
 
-## Roadmap
-
 ### V2 — Control Plane Foundation
 
 Extract and formalize reusable control-plane primitives.
@@ -342,9 +350,21 @@ Planned areas include:
 * Authentication
 * Provider credential management
 
-Authentication is expected to become part of the multi-tenant/multi-user architecture rather than a separate standalone feature.
+Authentication is expected to become part of the multi-user architecture rather than a separate standalone feature.
 
-### V3 — Creative Application Framework
+## Roadmap:
+
+### V3 — Cloud-Ready Implementation
+
+We are moving away from local machine development to free our machine resources.
+
+Planned areas include:
+
+* Vercel-specific implementation in relevant areas
+* Google OIDC as default authentication
+* Ability to enable/disable self account registrations
+
+### V4 — Creative Application Framework
 
 Build the higher-level creative domain on top of the control plane:
 
