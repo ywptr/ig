@@ -7,12 +7,13 @@ from app.services.openai_images import OpenAIImageService
 from app.artifacts.storage.provider import (
     artifact_store,
 )
+from app.jobs.result import HandlerResult
 
 import uuid
 
 image_provider = OpenAIImageService()
 
-def execute_image_generation(input_data: dict) -> None:
+def execute_image_generation(input_data: dict) -> HandlerResult:
     request_id = input_data["request_id"]
     prompt = input_data["prompt"]
 
@@ -79,6 +80,15 @@ def execute_image_generation(input_data: dict) -> None:
             )
 
             db.commit()
+
+            return HandlerResult(
+                provider="openai",
+                model=result["model"],
+                metadata={
+                    "artifact_id": artifact.artifact_id,
+                    "request_id": request_id,
+                },
+            )
 
         except Exception:
             db.rollback()

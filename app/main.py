@@ -9,6 +9,9 @@ from app.api.jobs import router as job_router
 from app.api.artifacts import (
     router as artifact_router,
 )
+from app.api.executions import (
+    router as execution_router,
+)
 
 app = FastAPI(
     title="IG",
@@ -33,6 +36,11 @@ app.include_router(
 
 app.include_router(
     artifact_router,
+    prefix="/v2",
+)
+
+app.include_router(
+    execution_router,
     prefix="/v2",
 )
 

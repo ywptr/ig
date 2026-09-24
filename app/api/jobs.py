@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.db.database import SessionLocal
 from sqlalchemy import select
-from app.db.models import Job, User
+from app.db.models import Job, User, Execution
 from app.jobs.handlers import is_supported
 from app.jobs.service import create_job, get_job
 from app.auth.dependencies import get_current_user
@@ -112,6 +112,77 @@ def list_jobs(
                 "completed_at": job.completed_at,
             }
             for job in jobs
+        ]
+
+    finally:
+        db.close()
+
+@router.get("/jobs/{job_id}/executions")
+def list_job_executions(
+    job_id: str,
+    current_user: User = Depends(
+        get_current_user
+    ),
+):
+    db = SessionLocal()
+
+    try:
+        job = db.scalar(
+            select(Job).where(
+                Job.job_id == job_id,
+                Job.user_id
+                == current_user.user_id,
+            )
+        )
+
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Job not found",
+            )
+
+        statement = (
+            select(Execution)
+            .where(
+                Execution.job_id == job_id,
+                Execution.user_id
+                == current_user.user_id,
+            )
+            .order_by(
+                Execution.attempt.asc()
+            )
+        )
+
+        executions = db.scalars(
+            statement
+        ).all()
+
+        return [
+            {
+                "execution_id":
+                    execution.execution_id,
+                "status":
+                    execution.status,
+                "attempt":
+                    execution.attempt,
+                "provider":
+                    execution.provider,
+                "model":
+                    execution.model,
+                "metadata":
+                    execution.metadata_json,
+                "started_at":
+                    execution.started_at.isoformat()
+                    if execution.started_at
+                    else None,
+                "completed_at":
+                    execution.completed_at.isoformat()
+                    if execution.completed_at
+                    else None,
+                "error_message":
+                    execution.error_message,
+            }
+            for execution in executions
         ]
 
     finally:

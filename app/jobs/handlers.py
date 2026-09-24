@@ -1,11 +1,16 @@
 from app.images.tasks import execute_image_generation
+from app.jobs.result import HandlerResult
 
-def noop(input_data: dict) -> None:
+def noop(input_data: dict) -> HandlerResult:
     print(
         f"system.noop executed: {input_data}",
         flush=True,
     )
-
+    return HandlerResult(
+        metadata={
+            "handler":"system.noop",
+        }
+    )
 
 HANDLERS = {
     "system.noop": noop,
