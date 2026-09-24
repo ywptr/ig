@@ -4,6 +4,7 @@ import PromptBox from "./components/PromptBox";
 import ImageGrid from "./components/ImageGrid";
 import type { Image } from "./components/ImageCard";
 import { Jobs } from "./components/Jobs";
+import { Executions } from "./components/Executions";
 
 import {
     getImages,
@@ -30,7 +31,12 @@ function App() {
     const [error, setError] =
         useState<string | null>(null);
 
-    const [view, setView] = useState<"images" | "jobs">("images");
+    const [view, setView] =
+        useState<
+            "images" |
+            "jobs" |
+            "executions"
+        >("images");
 
     const [user, setUser] =
         useState<User | null>(null);
@@ -203,6 +209,19 @@ function App() {
                         >
                             Jobs
                         </button>
+
+                        <button
+                            onClick={() =>
+                                setView("executions")
+                            }
+                            className={
+                                view === "executions"
+                                    ? "active"
+                                    : ""
+                            }
+                        >
+                            Executions
+                        </button>
                     </nav>
                     <div className="user-menu">
 
@@ -297,11 +316,18 @@ function App() {
 
                     </section>
                 </main>
+
+            ) : view === "jobs" ? (
+                <main className="main">
+                    <section className="history-section">
+                        <Jobs />
+                    </section>
+                </main>
             ) : (
                 <main className="main">
 
                     <section className="history-section">
-                        <Jobs />
+                        <Executions />
                     </section>
 
                 </main>
