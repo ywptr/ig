@@ -354,15 +354,20 @@ Authentication is expected to become part of the multi-user architecture rather 
 
 ## Roadmap:
 
-### V3 — Cloud-Ready Implementation
+V3 — Cloud-Ready Implementation
 
-We are moving away from local machine development to free our machine resources.
+V3 moves IG away from dependence on a local development machine and toward a cloud-hosted deployment model.
 
 Planned areas include:
 
-* Vercel-specific implementation in relevant areas
-* Google OIDC as default authentication
-* Ability to enable/disable self account registrations
+Vercel-specific implementation where appropriate
+Google OIDC as the default authentication method
+Configurable self-service account registration
+Administrative user role and account provisioning
+
+For public deployments, self-service registration will be disabled by default. New user accounts must be explicitly provisioned by an administrator unless registration is intentionally enabled by configuration.
+
+An administrator will be able to create or authorize accounts for other users without enabling public registration.
 
 ### V4 — Creative Application Framework
 
