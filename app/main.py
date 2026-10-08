@@ -3,7 +3,10 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+
+from app.tenancy.context import TenantContext
+from app.tenancy.dependencies import get_tenant_context
 
 from app.api.auth import router as auth_router
 from app.api.images import router as image_router
@@ -49,6 +52,19 @@ app.include_router(
     execution_router,
     prefix="/v2",
 )
+
+@app.get("/tenant")
+def tenant_info(
+    context: TenantContext = Depends(
+        get_tenant_context
+    ),
+):
+    return {
+        "tenant_id": context.tenant.tenant_id,
+        "slug": context.tenant.slug,
+        "name": context.tenant.name,
+        "status": context.tenant.status,
+    }
 
 @app.get("/health")
 def health():
