@@ -72,6 +72,8 @@ def list_images(
         statement = (
             select(ImageRequest)
             .where(
+                ImageRequest.tenant_id
+                == context.tenant.tenant_id,
                 ImageRequest.user_id == context.membership.user_id,
             )
             .order_by(ImageRequest.created_at.desc())
@@ -100,6 +102,8 @@ def get_image(
     try:
         statement = select(ImageRequest).where(
             ImageRequest.request_id == request_id,
+            ImageRequest.tenant_id
+            == context.tenant.tenant_id,
             ImageRequest.user_id == context.membership.user_id,
         )
 
@@ -129,6 +133,8 @@ def get_image_content(
     try:
         statement = select(ImageRequest).where(
             ImageRequest.request_id == request_id,
+            ImageRequest.tenant_id
+            == context.tenant.tenant_id,
             ImageRequest.user_id == context.membership.user_id
         )
 

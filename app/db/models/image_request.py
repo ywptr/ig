@@ -22,6 +22,12 @@ class ImageRequest(Base):
         index=True,
     )
 
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.tenant_id"),
+        index=True,
+    )
+
     user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.user_id"),

@@ -23,6 +23,7 @@ def submit_image_generation(
     try:
         image_record = ImageRequest(
             request_id=request_id,
+            tenant_id=tenant_id,
             user_id=user_id,
             prompt=prompt,
             model="gpt-image-2",
