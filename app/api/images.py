@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.db.database import SessionLocal
-from app.db.models import ImageRequest, User
+from app.db.models import ImageRequest
 # 20261001
 # Removed import of OpenAIImageService to avoid runtime import errors in environments where OpenAIImageService is not yet initialized.
 # The service is now initialized at the module level to ensure it is available when the API routes are defined.
@@ -62,14 +62,18 @@ def generate_image(
 
 @router.get("/images")
 def list_images(
-    current_user: User = Depends(get_current_user),
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
+    ),
 ):
     db = SessionLocal()
 
     try:
         statement = (
             select(ImageRequest)
-            .where(ImageRequest.user_id == current_user.user_id)
+            .where(
+                ImageRequest.user_id == context.membership.user_id,
+            )
             .order_by(ImageRequest.created_at.desc())
         )
 
@@ -87,14 +91,16 @@ def list_images(
 @router.get("/images/{request_id}")
 def get_image(
     request_id: str,
-    current_user: User = Depends(get_current_user),
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
+    ),
 ):
     db = SessionLocal()
 
     try:
         statement = select(ImageRequest).where(
             ImageRequest.request_id == request_id,
-            ImageRequest.user_id == current_user.user_id
+            ImageRequest.user_id == context.membership.user_id,
         )
 
         image = db.scalar(statement)
@@ -114,14 +120,16 @@ def get_image(
 @router.get("/images/{request_id}/content")
 def get_image_content(
     request_id: str,
-    current_user: User = Depends(get_current_user),
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
+    ),
 ):
     db = SessionLocal()
 
     try:
         statement = select(ImageRequest).where(
             ImageRequest.request_id == request_id,
-            ImageRequest.user_id == current_user.user_id
+            ImageRequest.user_id == context.membership.user_id
         )
 
         image = db.scalar(statement)
@@ -141,7 +149,7 @@ def get_image_content(
         if image.artifact_id:
             artifact = get_artifact(
                 image.artifact_id,
-                user_id=current_user.user_id,
+                user_id=context.membership.user_id,
             )
 
             if artifact is None:
