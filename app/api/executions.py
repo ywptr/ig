@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
-from app.auth.dependencies import get_current_user
 from app.db.database import SessionLocal
-from app.db.models import Execution, User
 
+from app.db.models import Execution
+from app.tenancy.context import TenantContext
+from app.tenancy.dependencies import (
+    get_authenticated_tenant_context,
+)
 
 router = APIRouter(
     prefix="/executions",
@@ -18,6 +21,7 @@ def execution_to_dict(
     return {
         "execution_id": execution.execution_id,
         "job_id": execution.job_id,
+        "tenant_id": execution.tenant_id,
         "user_id": execution.user_id,
         "status": execution.status,
         "attempt": execution.attempt,
@@ -41,8 +45,8 @@ def execution_to_dict(
 
 @router.get("")
 def list_executions(
-    current_user: User = Depends(
-        get_current_user
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
     ),
 ):
     db = SessionLocal()
@@ -51,8 +55,10 @@ def list_executions(
         statement = (
             select(Execution)
             .where(
+                Execution.tenant_id
+                == context.tenant.tenant_id,
                 Execution.user_id
-                == current_user.user_id
+                == context.membership.user_id,
             )
             .order_by(
                 Execution.created_at.desc()
@@ -76,8 +82,8 @@ def list_executions(
 @router.get("/{execution_id}")
 def get_execution(
     execution_id: str,
-    current_user: User = Depends(
-        get_current_user
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
     ),
 ):
     db = SessionLocal()
@@ -86,8 +92,10 @@ def get_execution(
         statement = select(Execution).where(
             Execution.execution_id
             == execution_id,
+            Execution.tenant_id
+            == context.tenant.tenant_id,
             Execution.user_id
-            == current_user.user_id,
+            == context.membership.user_id,
         )
 
         execution = db.scalar(statement)

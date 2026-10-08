@@ -5,8 +5,11 @@ from app.artifacts.service import (
     get_artifact,
     list_artifacts,
 )
-from app.auth.dependencies import get_current_user
-from app.db.models import Artifact, User
+from app.db.models import Artifact
+from app.tenancy.context import TenantContext
+from app.tenancy.dependencies import (
+    get_authenticated_tenant_context,
+)
 
 from app.artifacts.storage.provider import (
     artifact_store,
@@ -41,12 +44,13 @@ def artifact_to_dict(
 
 @router.get("")
 def read_artifacts(
-    current_user: User = Depends(
-        get_current_user
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
     ),
 ):
     artifacts = list_artifacts(
-        user_id=current_user.user_id
+        user_id=context.membership.user_id,
+        tenant_id=context.tenant.tenant_id,
     )
 
     return [
@@ -58,13 +62,14 @@ def read_artifacts(
 @router.get("/{artifact_id}")
 def read_artifact(
     artifact_id: str,
-    current_user: User = Depends(
-        get_current_user
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
     ),
 ):
     artifact = get_artifact(
         artifact_id,
-        user_id=current_user.user_id,
+        user_id=context.membership.user_id,
+        tenant_id=context.tenant.tenant_id,
     )
 
     if artifact is None:
@@ -79,13 +84,14 @@ def read_artifact(
 @router.get("/{artifact_id}/content")
 def read_artifact_content(
     artifact_id: str,
-    current_user: User = Depends(
-        get_current_user
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
     ),
 ):
     artifact = get_artifact(
         artifact_id,
-        user_id=current_user.user_id,
+        user_id=context.membership.user_id,
+        tenant_id=context.tenant.tenant_id,
     )
 
     if artifact is None:

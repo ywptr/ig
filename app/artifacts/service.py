@@ -10,6 +10,7 @@ from app.db.models import Artifact
 def create_artifact(
     db: Session,
     *,
+    tenant_id: str,
     user_id: str,
     media_type: str,
     storage_uri: str,
@@ -21,6 +22,7 @@ def create_artifact(
 ) -> Artifact:
     artifact = Artifact(
         artifact_id=str(uuid4()),
+        tenant_id=tenant_id,
         user_id=user_id,
         media_type=media_type,
         mime_type=mime_type,
@@ -40,6 +42,7 @@ def create_artifact(
 def get_artifact(
     artifact_id: str,
     *,
+    tenant_id: str,
     user_id: str,
 ) -> Artifact | None:
     db = SessionLocal()
@@ -48,6 +51,7 @@ def get_artifact(
         statement = select(Artifact).where(
             Artifact.artifact_id == artifact_id,
             Artifact.user_id == user_id,
+            Artifact.tenant_id == tenant_id,
         )
 
         return db.scalar(statement)
@@ -59,6 +63,7 @@ def get_artifact(
 def list_artifacts(
     *,
     user_id: str,
+    tenant_id: str,
     limit: int = 100,
 ) -> list[Artifact]:
     db = SessionLocal()
@@ -66,7 +71,10 @@ def list_artifacts(
     try:
         statement = (
             select(Artifact)
-            .where(Artifact.user_id == user_id)
+            .where(
+                Artifact.user_id == user_id,
+                Artifact.tenant_id == tenant_id
+            )
             .order_by(Artifact.created_at.desc())
             .limit(limit)
         )

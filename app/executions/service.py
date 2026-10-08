@@ -11,6 +11,7 @@ def create_execution(
     db: Session,
     *,
     job_id: str,
+    tenant_id: str,
     user_id: str,
     provider: str | None = None,
     model: str | None = None,
@@ -24,6 +25,7 @@ def create_execution(
     execution = Execution(
         execution_id=str(uuid4()),
         job_id=job_id,
+        tenant_id=tenant_id,
         user_id=user_id,
         status="running",
         attempt=attempt + 1,

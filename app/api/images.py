@@ -155,6 +155,7 @@ def get_image_content(
         if image.artifact_id:
             artifact = get_artifact(
                 image.artifact_id,
+                tenant_id=context.tenant.tenant_id,
                 user_id=context.membership.user_id,
             )
 

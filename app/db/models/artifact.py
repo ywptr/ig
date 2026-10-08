@@ -22,6 +22,12 @@ class Artifact(Base):
         primary_key=True,
     )
 
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.tenant_id"),
+        index=True,
+    )
+
     user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.user_id"),

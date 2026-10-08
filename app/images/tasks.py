@@ -62,6 +62,7 @@ def execute_image_generation(input_data: dict) -> HandlerResult:
 
             artifact = create_artifact(
                 db,
+                tenant_id=image_record.tenant_id,
                 user_id=image_record.user_id,
                 media_type="image",
                 storage_uri=storage_uri,

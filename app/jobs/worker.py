@@ -46,6 +46,7 @@ def execute_job(job_id: str) -> None:
         execution = create_execution(
             db,
             job_id=job.job_id,
+            tenant_id=job.tenant_id,
             user_id=job.user_id,
             metadata={
                 "capability": job.capability,
