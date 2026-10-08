@@ -16,7 +16,10 @@ from app.db.models import ImageRequest, User
 # Removed import of OpenAIImageService to avoid runtime import errors in environments where OpenAIImageService is not yet initialized.
 # The service is now initialized at the module level to ensure it is available when the API routes are defined.
 # from app.services.openai_images import OpenAIImageService
-from app.auth.dependencies import get_current_user
+from app.tenancy.context import TenantContext
+from app.tenancy.dependencies import (
+    get_authenticated_tenant_context,
+)
 from app.artifacts.service import get_artifact
 from app.artifacts.storage.provider import artifact_store
 
@@ -46,11 +49,12 @@ def image_to_dict(image: ImageRequest):
 @router.post("/images/generations", status_code=202)
 def generate_image(
     request: ImageRequestPayload,
-    current_user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_authenticated_tenant_context),
 ):
     image_record = submit_image_generation(
         prompt=request.prompt,
-        user_id=current_user.user_id
+        tenant_id=context.tenant.tenant_id,
+        user_id=context.membership.user_id,
     )
 
     return image_to_dict(image_record)

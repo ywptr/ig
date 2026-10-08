@@ -13,6 +13,7 @@ image_provider = OpenAIImageService()
 
 def submit_image_generation(
     prompt: str,
+    tenant_id: str,
     user_id: str,
     ) -> ImageRequest:
     request_id = str(uuid.uuid4())
@@ -39,6 +40,7 @@ def submit_image_generation(
                     "request_id": request_id,
                     "prompt": prompt,
                 },
+                tenant_id=tenant_id,
                 user_id=user_id,
             )
 

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 def create_job(
     capability: str,
     input_data: dict,
+    tenant_id: str,
     user_id: str | None = None,
 ) -> Job:
     db = SessionLocal()
@@ -21,6 +22,7 @@ def create_job(
     try:
         job = Job(
             job_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
             user_id=user_id,
             capability=capability,
             status="queued",
@@ -33,9 +35,10 @@ def create_job(
 
         if job_trace_enabled():
             logger.info(
-                "job.created job_id=%s capability=%s user_id=%s",
+                "job.created job_id=%s capability=%s tenant_id=%s user_id=%s",
                 job.job_id,
                 job.capability,
+                job.tenant_id,
                 job.user_id,
             )
 
@@ -79,6 +82,7 @@ def create_job(
 
 def get_job(
     job_id: str,
+    tenant_id: str | None = None,
     user_id: str | None = None,
 ) -> Job | None:
     db = SessionLocal()
@@ -90,6 +94,9 @@ def get_job(
 
         if user_id is not None:
             statement = statement.where(Job.user_id == user_id)
+
+        if tenant_id is not None:
+            statement = statement.where(Job.tenant_id == tenant_id)
 
         return db.scalar(statement)
 
