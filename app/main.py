@@ -53,7 +53,7 @@ app.include_router(
     prefix="/v2",
 )
 
-@app.get("/tenant")
+@app.get("/v2/tenant")
 def tenant_info(
     context: TenantContext = Depends(
         get_tenant_context
