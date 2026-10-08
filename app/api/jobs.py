@@ -95,7 +95,7 @@ def read_job(
 def list_jobs(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
-    
+    ),
 ):
     db = SessionLocal()
 
