@@ -63,3 +63,19 @@ def get_authenticated_tenant_context(
         tenant=tenant_context.tenant,
         membership=membership,
     )
+
+def get_admin_tenant_context(
+    context: TenantContext = Depends(
+        get_authenticated_tenant_context
+    ),
+) -> TenantContext:
+    if (
+        context.membership is None
+        or context.membership.role != "admin"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Tenant admin access required",
+        )
+
+    return context

@@ -1,5 +1,3 @@
-import os
-
 from pydantic import BaseModel, EmailStr
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
@@ -22,7 +20,9 @@ from app.users.service import (
     get_user_by_email,
     update_last_login,
 )
-
+from app.tenancy.context import TenantContext
+from app.tenancy.dependencies import get_tenant_context
+from app.tenancy.settings import get_tenant_settings
 
 router = APIRouter(
     prefix="/auth",
@@ -53,24 +53,29 @@ def get_db():
     finally:
         db.close()
 
-def self_registration_enabled() -> bool:
-    return (
-        os.getenv(
-            "ALLOW_SELF_REGISTRATION",
-            "false",
-        ).lower()
-        in {"1", "true", "yes", "on"}
-    )
-
 @router.post(
     "/register",
     response_model=UserResponse,
 )
 def register(
     request: RegisterRequest,
+    tenant_context: TenantContext = Depends(
+        get_tenant_context
+    ),
     db: Session = Depends(get_db),
 ):
-    if not self_registration_enabled():
+    settings = get_tenant_settings(
+        db,
+        tenant_context.tenant.tenant_id,
+    )
+
+    if settings is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Tenant settings not configured",
+        )
+
+    if not settings.allow_self_registration:
         raise HTTPException(
             status_code=403,
             detail="Self-registration is disabled",
@@ -101,6 +106,19 @@ def register(
         password=request.password,
         name=request.name,
     )
+
+    # Now that we have created multi-tenancy model, user must belong to the tenant on which they are registering.
+    # We will create a TenantMembership for the user with role "member" and status "active".
+    from app.db.models import TenantMembership
+    membership = TenantMembership(
+        tenant_id=tenant_context.tenant.tenant_id,
+        user_id=user.user_id,
+        role="member",
+        status="active",
+    )
+
+    db.add(membership)
+    db.commit()
 
     return UserResponse(
         user_id=user.user_id,

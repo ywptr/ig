@@ -18,6 +18,10 @@ from app.api.executions import (
     router as execution_router,
 )
 
+from app.api.tenant_settings import (
+    router as tenant_settings_router,
+)
+
 from app.core.logging import configure_logging
 
 configure_logging()
@@ -50,6 +54,11 @@ app.include_router(
 
 app.include_router(
     execution_router,
+    prefix="/v2",
+)
+
+app.include_router(
+    tenant_settings_router,
     prefix="/v2",
 )
 
