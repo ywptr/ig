@@ -12,7 +12,7 @@ from app.auth.dependencies import (
     get_current_user,
     get_db,
 )
-from app.auth.sessions import create_session
+from app.auth.session import create_session
 from app.db.models import (
     TenantInvitation,
     User,
