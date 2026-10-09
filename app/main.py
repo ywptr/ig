@@ -21,6 +21,12 @@ from app.api.executions import (
 from app.api.tenant_settings import (
     router as tenant_settings_router,
 )
+from app.api.tenant_members import (
+    router as tenant_members_router,
+)
+from app.api.tenant_invitations import (
+    router as tenant_invitations_router,
+)
 
 from app.core.logging import configure_logging
 
@@ -59,6 +65,16 @@ app.include_router(
 
 app.include_router(
     tenant_settings_router,
+    prefix="/v2",
+)
+
+app.include_router(
+    tenant_members_router,
+    prefix="/v2",
+)
+
+app.include_router(
+    tenant_invitations_router,
     prefix="/v2",
 )
 
