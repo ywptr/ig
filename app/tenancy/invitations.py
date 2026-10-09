@@ -127,3 +127,76 @@ def revoke_tenant_invitation(
     db.refresh(invitation)
 
     return invitation
+
+def get_invitation_by_token(
+    db: Session,
+    token: str,
+) -> TenantInvitation | None:
+    token_hash = hash_invitation_token(token)
+
+    return db.scalar(
+        select(TenantInvitation).where(
+            TenantInvitation.token_hash
+            == token_hash
+        )
+    )
+
+
+def validate_invitation(
+    invitation: TenantInvitation,
+) -> None:
+    if invitation.status != "pending":
+        raise ValueError(
+            "Invitation is not pending"
+        )
+
+    if invitation.expires_at <= datetime.utcnow():
+        raise ValueError(
+            "Invitation has expired"
+        )
+
+
+def accept_invitation(
+    db: Session,
+    *,
+    invitation: TenantInvitation,
+    user: User,
+) -> TenantMembership:
+    validate_invitation(invitation)
+
+    if user.email.lower() != invitation.email.lower():
+        raise ValueError(
+            "Invitation email does not match user"
+        )
+
+    existing_membership = db.get(
+        TenantMembership,
+        (
+            invitation.tenant_id,
+            user.user_id,
+        ),
+    )
+
+    if existing_membership is not None:
+        raise ValueError(
+            "User is already a member of this tenant"
+        )
+
+    membership = TenantMembership(
+        tenant_id=invitation.tenant_id,
+        user_id=user.user_id,
+        role=invitation.role,
+        status="active",
+    )
+
+    invitation.status = "accepted"
+    invitation.accepted_by_user_id = (
+        user.user_id
+    )
+    invitation.accepted_at = datetime.utcnow()
+
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+
+    return membership

@@ -6,8 +6,14 @@ from fastapi import (
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_db
-from app.db.models import TenantInvitation
+from app.auth.dependencies import (
+    get_current_user,
+    get_db,
+)
+from app.db.models import (
+    TenantInvitation,
+    User,
+)
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import (
     get_admin_tenant_context,
@@ -16,6 +22,8 @@ from app.tenancy.invitations import (
     create_tenant_invitation,
     list_tenant_invitations,
     revoke_tenant_invitation,
+    get_invitation_by_token,
+    accept_invitation,
 )
 
 
@@ -29,6 +37,8 @@ class TenantInvitationCreate(BaseModel):
     email: EmailStr
     role: str = "member"
 
+class TenantInvitationAccept(BaseModel):
+    token: str
 
 def invitation_to_dict(
     invitation: TenantInvitation,
@@ -162,3 +172,41 @@ def revoke_invitation(
     return invitation_to_dict(
         invitation
     )
+
+@router.post("/accept")
+def accept_existing_user_invitation(
+    request: TenantInvitationAccept,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    invitation = get_invitation_by_token(
+        db,
+        request.token,
+    )
+
+    if invitation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invitation not found",
+        )
+
+    try:
+        membership = accept_invitation(
+            db,
+            invitation=invitation,
+            user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "tenant_id": membership.tenant_id,
+        "user_id": membership.user_id,
+        "role": membership.role,
+        "status": membership.status,
+    }
