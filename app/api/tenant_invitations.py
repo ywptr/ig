@@ -2,14 +2,17 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Response,
 )
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
+    SESSION_COOKIE_NAME,
     get_current_user,
     get_db,
 )
+from app.auth.sessions import create_session
 from app.db.models import (
     TenantInvitation,
     User,
@@ -24,8 +27,12 @@ from app.tenancy.invitations import (
     revoke_tenant_invitation,
     get_invitation_by_token,
     accept_invitation,
+    validate_invitation,
 )
-
+from app.users.service import (
+    create_user,
+    get_user_by_email,
+)
 
 router = APIRouter(
     prefix="/tenant/invitations",
@@ -39,6 +46,11 @@ class TenantInvitationCreate(BaseModel):
 
 class TenantInvitationAccept(BaseModel):
     token: str
+
+class TenantInvitationRegister(BaseModel):
+    token: str
+    password: str
+    name: str | None = None
 
 def invitation_to_dict(
     invitation: TenantInvitation,
@@ -209,4 +221,102 @@ def accept_existing_user_invitation(
         "user_id": membership.user_id,
         "role": membership.role,
         "status": membership.status,
+    }
+
+@router.post("/register")
+def register_from_invitation(
+    request: TenantInvitationRegister,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    invitation = get_invitation_by_token(
+        db,
+        request.token,
+    )
+
+    if invitation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invitation not found",
+        )
+
+    # Validate status and expiry before creating
+    # any user account.
+    try:
+        validate_invitation(
+            invitation
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    existing_user = get_user_by_email(
+        db,
+        invitation.email,
+    )
+
+    if existing_user is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "User already exists. "
+                "Log in and accept the invitation."
+            ),
+        )
+
+    if len(request.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Password must be at least "
+                "8 characters"
+            ),
+        )
+
+    user = create_user(
+        db,
+        email=invitation.email,
+        password=request.password,
+        name=request.name,
+    )
+
+    try:
+        membership = accept_invitation(
+            db,
+            invitation=invitation,
+            user=user,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    _, session_token = create_session(
+        db,
+        user_id=user.user_id,
+    )
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=30 * 24 * 60 * 60,
+    )
+
+    return {
+        "user": {
+            "user_id": user.user_id,
+            "email": user.email,
+            "name": user.name,
+        },
+        "membership": {
+            "tenant_id": membership.tenant_id,
+            "role": membership.role,
+            "status": membership.status,
+        },
     }
