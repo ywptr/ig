@@ -14,6 +14,9 @@ from app.auth.session import (
     get_session_by_token,
     revoke_session,
 )
+from app.tenancy.auth_providers import (
+    get_tenant_auth_provider,
+)
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import get_tenant_context
 from app.tenancy.settings import get_tenant_settings
@@ -283,12 +286,25 @@ def google_login(
             status_code=403,
             detail="Google authentication is disabled",
         )
+    
+    google_provider = get_tenant_auth_provider(
+    db,
+    tenant_id=tenant_context.tenant.tenant_id,
+    provider="google",
+)
+
+    if google_provider is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Google authentication is not configured",
+        )
 
     try:
         identity = verify_google_id_token(
-            request.credential
+            request.credential,
+            client_id=google_provider.client_id,
         )
-    except (ValueError, RuntimeError) as exc:
+    except ValueError as exc:
         raise HTTPException(
             status_code=401,
             detail="Invalid Google credential",
@@ -317,14 +333,10 @@ def google_login(
                 )
 
         else:
-            settings = get_tenant_settings(
-                db,
-                tenant_context.tenant.tenant_id,
-            )
+
 
             if (
-                settings is None
-                or not settings.allow_self_registration
+                not settings.allow_self_registration
             ):
                 raise HTTPException(
                     status_code=403,
@@ -361,17 +373,6 @@ def google_login(
                     "with this email. Sign in using "
                     "the existing authentication method."
                 ),
-            )
-
-        settings = get_tenant_settings(
-            db,
-            tenant_context.tenant.tenant_id,
-        )
-
-        if settings is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Tenant settings not configured",
             )
 
         if not settings.allow_self_registration:

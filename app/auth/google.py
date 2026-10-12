@@ -1,4 +1,4 @@
-import os
+
 from dataclasses import dataclass
 
 from google.auth.transport import requests
@@ -15,13 +15,9 @@ class GoogleIdentity:
 
 def verify_google_id_token(
     token: str,
+    *,
+    client_id: str,
 ) -> GoogleIdentity:
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
-
-    if not client_id:
-        raise RuntimeError(
-            "GOOGLE_CLIENT_ID is not configured"
-        )
 
     payload = id_token.verify_oauth2_token(
         token,
