@@ -77,10 +77,18 @@ def register(
         tenant_context.tenant.tenant_id,
     )
 
+
+
     if settings is None:
         raise HTTPException(
             status_code=500,
             detail="Tenant settings not configured",
+        )
+
+    if not settings.allow_password_authentication:
+        raise HTTPException(
+            status_code=403,
+            detail="Password authentication is disabled",
         )
 
     if not settings.allow_self_registration:
@@ -141,8 +149,28 @@ def register(
 def login(
     request: LoginRequest,
     response: Response,
+    tenant_context: TenantContext = Depends(
+        get_tenant_context
+    ),
     db: Session = Depends(get_db),
 ):
+    settings = get_tenant_settings(
+        db,
+        tenant_context.tenant.tenant_id,
+    )
+
+    if settings is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Tenant settings not configured",
+        )
+
+    if not settings.allow_password_authentication:
+        raise HTTPException(
+            status_code=403,
+            detail="Password authentication is disabled",
+        )
+
     email = request.email.lower()
 
     user = get_user_by_email(
@@ -239,6 +267,23 @@ def google_login(
     ),
     db: Session = Depends(get_db),
 ):
+    settings = get_tenant_settings(
+        db,
+        tenant_context.tenant.tenant_id,
+    )
+
+    if settings is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Tenant settings not configured",
+        )
+
+    if not settings.allow_google_authentication:
+        raise HTTPException(
+            status_code=403,
+            detail="Google authentication is disabled",
+        )
+
     try:
         identity = verify_google_id_token(
             request.credential

@@ -18,10 +18,12 @@ def update_tenant_settings(
     settings: TenantSettings,
     *,
     allow_self_registration: bool,
+    allow_password_authentication: bool,
+    allow_google_authentication: bool,
 ) -> TenantSettings:
-    settings.allow_self_registration = (
-        allow_self_registration
-    )
+    settings.allow_self_registration = allow_self_registration
+    settings.allow_password_authentication = allow_password_authentication
+    settings.allow_google_authentication = allow_google_authentication
 
     db.commit()
     db.refresh(settings)

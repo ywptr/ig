@@ -26,10 +26,14 @@ router = APIRouter(
 
 class TenantSettingsResponse(BaseModel):
     allow_self_registration: bool
+    allow_password_authentication: bool
+    allow_google_authentication: bool
 
 
 class TenantSettingsUpdate(BaseModel):
     allow_self_registration: bool
+    allow_password_authentication: bool
+    allow_google_authentication: bool
 
 
 def settings_to_response(
@@ -38,6 +42,12 @@ def settings_to_response(
     return TenantSettingsResponse(
         allow_self_registration=(
             settings.allow_self_registration
+        ),
+        allow_password_authentication=(
+            settings.allow_password_authentication
+        ),
+        allow_google_authentication=(
+            settings.allow_google_authentication
         ),
     )
 
@@ -88,11 +98,28 @@ def patch_tenant_settings(
             detail="Tenant settings not found",
         )
 
+    if (
+        not request.allow_password_authentication
+        and not request.allow_google_authentication
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "At least one authentication method must remain enabled"
+            ),
+        )
+
     settings = update_tenant_settings(
         db,
         settings,
         allow_self_registration=(
             request.allow_self_registration
+        ),
+        allow_password_authentication=(
+            request.allow_password_authentication
+        ),
+        allow_google_authentication=(
+            request.allow_google_authentication
         ),
     )
 

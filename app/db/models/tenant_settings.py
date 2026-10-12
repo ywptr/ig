@@ -18,3 +18,15 @@ class TenantSettings(Base):
         default=False,
         nullable=False,
     )
+
+    allow_password_authentication: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    allow_google_authentication: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )

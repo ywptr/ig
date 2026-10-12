@@ -27,6 +27,9 @@ from app.api.tenant_members import (
 from app.api.tenant_invitations import (
     router as tenant_invitations_router,
 )
+from app.api.tenant_auth_providers import (
+    router as tenant_auth_providers_router,
+)
 
 from app.core.logging import configure_logging
 
@@ -75,6 +78,11 @@ app.include_router(
 
 app.include_router(
     tenant_invitations_router,
+    prefix="/v2",
+)
+
+app.include_router(
+    tenant_auth_providers_router,
     prefix="/v2",
 )
 

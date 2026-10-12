@@ -3,6 +3,7 @@ from app.db.models.execution import Execution
 from app.db.models.image_request import ImageRequest
 from app.db.models.job import Job
 from app.db.models.tenant import Tenant
+from app.db.models.tenant_auth_provider import TenantAuthProvider
 from app.db.models.tenant_domain import TenantDomain
 from app.db.models.tenant_membership import TenantMembership
 from app.db.models.tenant_invitation import TenantInvitation
@@ -16,6 +17,7 @@ __all__ = [
     "ImageRequest",
     "Job",
     "Tenant",
+    "TenantAuthProvider",
     "TenantDomain",
     "TenantMembership",
     "TenantInvitation",
