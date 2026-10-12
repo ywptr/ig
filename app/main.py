@@ -30,6 +30,9 @@ from app.api.tenant_invitations import (
 from app.api.tenant_auth_providers import (
     router as tenant_auth_providers_router,
 )
+from app.api.tenant_auth_config import (
+    router as tenant_auth_config_router,
+)
 
 from app.core.logging import configure_logging
 
@@ -83,6 +86,11 @@ app.include_router(
 
 app.include_router(
     tenant_auth_providers_router,
+    prefix="/v2",
+)
+
+app.include_router(
+    tenant_auth_config_router,
     prefix="/v2",
 )
 
