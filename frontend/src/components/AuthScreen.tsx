@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+    getTenantAuthConfig,
     googleLogin,
     login,
     register,
+    type TenantAuthConfig,
     type User,
 } from "../api/auth";
 
@@ -16,32 +18,82 @@ interface AuthScreenProps {
 export function AuthScreen({
     onAuthenticated,
 }: AuthScreenProps) {
-    const [mode, setMode] =
-        useState<"login" | "register">("login");
+    const [mode, setMode] = useState<"login" | "register">("login");
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [name, setName] = useState("");
 
-    const [submitting, setSubmitting] =
-        useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
-    const [error, setError] =
-        useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
-    const googleButtonRef =
-        useRef<HTMLDivElement | null>(null);
+    const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+    const [authConfig, setAuthConfig] = useState<TenantAuthConfig | null>(null);
+
+    const [loadingConfig, setLoadingConfig] = useState(true);
 
     useEffect(() => {
-        const clientId =
-            import.meta.env.VITE_GOOGLE_CLIENT_ID;
+        let cancelled = false;
+
+        async function loadAuthConfig() {
+            try {
+                setLoadingConfig(true);
+                setError(null);
+
+                const config =
+                    await getTenantAuthConfig();
+
+                if (!cancelled) {
+                    setAuthConfig(config);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setError(
+                        error instanceof Error
+                            ? error.message
+                            : "Unable to load authentication configuration"
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoadingConfig(false);
+                }
+            }
+        }
+
+        void loadAuthConfig();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (
+            authConfig
+            && !authConfig.allow_self_registration
+            && mode === "register"
+        ) {
+            setMode("login");
+        }
+    }, [
+        authConfig,
+        mode,
+    ]);
+
+    useEffect(() => {
+        const clientId = authConfig?.google.client_id;
 
         if (
-            !clientId
+            !authConfig?.google.enabled
+            || typeof clientId !== "string"
             || !googleButtonRef.current
         ) {
             return;
         }
+        const googleClientId: string = clientId;
 
         let intervalId: number | undefined;
 
@@ -84,16 +136,11 @@ export function AuthScreen({
             }
 
             google.accounts.id.initialize({
-                client_id: clientId,
+                client_id: googleClientId,
                 callback: async (response) => {
                     try {
                         setSubmitting(true);
                         setError(null);
-
-                        console.log(
-                            "Google credential received:",
-                            response.credential
-                        );
 
                         const user = await googleLogin({
                             credential:
@@ -145,7 +192,10 @@ export function AuthScreen({
                 window.clearInterval(intervalId);
             }
         };
-    }, [onAuthenticated]);
+    }, [
+        authConfig,
+        onAuthenticated,
+    ]);
 
     async function handleSubmit(
         event: React.FormEvent
@@ -207,6 +257,31 @@ export function AuthScreen({
         setError(null);
     }
 
+    if (loadingConfig) {
+        return (
+            <div className="auth-page">
+                <div className="auth-card">
+                    Loading authentication options…
+                </div>
+            </div>
+        );
+    }
+
+    if (
+        authConfig
+        && !authConfig.password.enabled
+        && !authConfig.google.enabled
+    ) {
+        return (
+            <div className="auth-page">
+                <div className="auth-card">
+                    <div className="error">
+                        No authentication method is available.
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="auth-page">
@@ -224,7 +299,7 @@ export function AuthScreen({
 
 
             <div className="auth-card">
-
+            {authConfig?.password.enabled && (
                 <div className="auth-tabs">
                     <button
                         type="button"
@@ -240,6 +315,7 @@ export function AuthScreen({
                         Sign in
                     </button>
 
+                {authConfig?.allow_self_registration && (
                     <button
                         type="button"
                         className={
@@ -253,15 +329,23 @@ export function AuthScreen({
                     >
                         Create account
                     </button>
+                    )}
                 </div>
+            )}
+            
+            {authConfig?.google.enabled && (
 
                 <div className="google-auth">
                     <div ref={googleButtonRef} />
 
+                    {authConfig.password.enabled && (
                     <div className="auth-divider">
                         <span>or</span>
                     </div>
+                    )
+                    }
                 </div>
+            )}
 
                 <div className="auth-heading">
                     <h1>
@@ -277,7 +361,7 @@ export function AuthScreen({
                     </p>
                 </div>
 
-
+            {authConfig?.password.enabled && (
                 <form
                     className="auth-form"
                     onSubmit={handleSubmit}
@@ -360,7 +444,7 @@ export function AuthScreen({
                     </button>
 
                 </form>
-
+            )}
             </div>
 
         </div>

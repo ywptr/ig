@@ -42,6 +42,31 @@ export async function googleLogin(
     return response.json();
 }
 
+export interface TenantAuthConfig {
+    allow_self_registration: boolean;
+    password: {
+        enabled: boolean;
+    };
+    google: {
+        enabled: boolean;
+        configured: boolean;
+        client_id: string | null;
+    };
+}
+
+export async function getTenantAuthConfig(): Promise<TenantAuthConfig> {
+    const response = await fetch(
+        "/v2/tenant/auth-config"
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            await readError(response)
+        );
+    }
+
+    return response.json();
+}
 
 async function readError(
     response: Response
