@@ -15,6 +15,33 @@ export interface LoginInput {
     password: string;
 }
 
+export interface GoogleLoginInput {
+    credential: string;
+}
+
+export async function googleLogin(
+    input: GoogleLoginInput
+): Promise<User> {
+    const response = await fetch(
+        "/v2/auth/google",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(input),
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            await readError(response)
+        );
+    }
+
+    return response.json();
+}
+
 
 async function readError(
     response: Response

@@ -12,6 +12,7 @@ dependencies = [
     "PyMySQL",
     "alembic",
     "google-auth",
+    "requests",
     "pwdlib[argon2]",
     "email-validator",
     "psycopg[binary]",

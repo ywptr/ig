@@ -14,15 +14,21 @@ from app.auth.session import (
     get_session_by_token,
     revoke_session,
 )
-from app.db.models import User
-from app.users.service import (
-    create_user,
-    get_user_by_email,
-    update_last_login,
-)
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import get_tenant_context
 from app.tenancy.settings import get_tenant_settings
+from app.auth.google import verify_google_id_token
+from app.db.models import (
+    TenantMembership,
+    User,
+)
+from app.users.service import (
+    create_google_user,
+    create_user,
+    get_user_by_email,
+    get_user_by_google_sub,
+    update_last_login,
+)
 
 router = APIRouter(
     prefix="/auth",
@@ -44,6 +50,8 @@ class UserResponse(BaseModel):
     email: str
     name: str | None
 
+class GoogleLoginRequest(BaseModel):
+    credential: str
 
 def get_db():
     db = SessionLocal()
@@ -218,3 +226,156 @@ def logout(
     return {
         "status": "logged_out"
     }
+
+@router.post(
+    "/google",
+    response_model=UserResponse,
+)
+def google_login(
+    request: GoogleLoginRequest,
+    response: Response,
+    tenant_context: TenantContext = Depends(
+        get_tenant_context
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        identity = verify_google_id_token(
+            request.credential
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Google credential",
+        ) from exc
+
+    user = get_user_by_google_sub(
+        db,
+        identity.sub,
+    )
+
+    # Google identity already known.
+    if user is not None:
+        membership = db.get(
+            TenantMembership,
+            (
+                tenant_context.tenant.tenant_id,
+                user.user_id,
+            ),
+        )
+
+        if membership is not None:
+            if membership.status != "active":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Tenant membership is inactive",
+                )
+
+        else:
+            settings = get_tenant_settings(
+                db,
+                tenant_context.tenant.tenant_id,
+            )
+
+            if (
+                settings is None
+                or not settings.allow_self_registration
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "User is not a member "
+                        "of this tenant"
+                    ),
+                )
+
+            membership = TenantMembership(
+                tenant_id=(
+                    tenant_context.tenant.tenant_id
+                ),
+                user_id=user.user_id,
+                role="member",
+                status="active",
+            )
+
+            db.add(membership)
+            db.commit()
+
+    # First Google login for this identity.
+    else:
+        existing_email_user = get_user_by_email(
+            db,
+            identity.email,
+        )
+
+        if existing_email_user is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "An account already exists "
+                    "with this email. Sign in using "
+                    "the existing authentication method."
+                ),
+            )
+
+        settings = get_tenant_settings(
+            db,
+            tenant_context.tenant.tenant_id,
+        )
+
+        if settings is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Tenant settings not configured",
+            )
+
+        if not settings.allow_self_registration:
+            raise HTTPException(
+                status_code=403,
+                detail="Self-registration is disabled",
+            )
+
+        user = create_google_user(
+            db,
+            google_sub=identity.sub,
+            email=identity.email,
+            name=identity.name,
+            picture_url=identity.picture_url,
+        )
+
+        membership = TenantMembership(
+            tenant_id=(
+                tenant_context.tenant.tenant_id
+            ),
+            user_id=user.user_id,
+            role="member",
+            status="active",
+        )
+
+        db.add(membership)
+        db.commit()
+
+    update_last_login(
+        db,
+        user,
+    )
+
+    _, token = create_session(
+        db,
+        user_id=user.user_id,
+    )
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=30 * 24 * 60 * 60,
+    )
+
+    return UserResponse(
+        user_id=user.user_id,
+        email=user.email,
+        name=user.name,
+    )

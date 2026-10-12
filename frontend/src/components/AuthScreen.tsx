@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
+    googleLogin,
     login,
     register,
     type User,
@@ -28,6 +29,123 @@ export function AuthScreen({
     const [error, setError] =
         useState<string | null>(null);
 
+    const googleButtonRef =
+        useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const clientId =
+            import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+        if (
+            !clientId
+            || !googleButtonRef.current
+        ) {
+            return;
+        }
+
+        let intervalId: number | undefined;
+
+        function tryRenderGoogleButton() {
+            const google = (
+                window as typeof window & {
+                    google?: {
+                        accounts: {
+                            id: {
+                                initialize: (
+                                    options: {
+                                        client_id: string;
+                                        callback: (
+                                            response: {
+                                                credential: string;
+                                            }
+                                        ) => void;
+                                    }
+                                ) => void;
+
+                                renderButton: (
+                                    element: HTMLElement,
+                                    options: {
+                                        theme?: string;
+                                        size?: string;
+                                        width?: number;
+                                    }
+                                ) => void;
+                            };
+                        };
+                    };
+                }
+            ).google;
+
+            if (
+                !google
+                || !googleButtonRef.current
+            ) {
+                return false;
+            }
+
+            google.accounts.id.initialize({
+                client_id: clientId,
+                callback: async (response) => {
+                    try {
+                        setSubmitting(true);
+                        setError(null);
+
+                        console.log(
+                            "Google credential received:",
+                            response.credential
+                        );
+
+                        const user = await googleLogin({
+                            credential:
+                                response.credential,
+                        });
+
+                        onAuthenticated(user);
+                    } catch (error) {
+                        setError(
+                            error instanceof Error
+                                ? error.message
+                                : "Google sign-in failed"
+                        );
+                    } finally {
+                        setSubmitting(false);
+                    }
+                },
+            });
+
+            google.accounts.id.renderButton(
+                googleButtonRef.current,
+                {
+                    theme: "outline",
+                    size: "large",
+                    width: 320,
+                }
+            );
+
+            return true;
+        }
+
+        if (!tryRenderGoogleButton()) {
+            intervalId = window.setInterval(
+                () => {
+                    if (tryRenderGoogleButton()) {
+                        if (intervalId !== undefined) {
+                            window.clearInterval(
+                                intervalId
+                            );
+                        }
+                    }
+                },
+                100
+            );
+        }
+
+        return () => {
+            if (intervalId !== undefined) {
+                window.clearInterval(intervalId);
+            }
+        };
+    }, [onAuthenticated]);
 
     async function handleSubmit(
         event: React.FormEvent
@@ -104,6 +222,7 @@ export function AuthScreen({
             </div>
 
 
+
             <div className="auth-card">
 
                 <div className="auth-tabs">
@@ -136,6 +255,13 @@ export function AuthScreen({
                     </button>
                 </div>
 
+                <div className="google-auth">
+                    <div ref={googleButtonRef} />
+
+                    <div className="auth-divider">
+                        <span>or</span>
+                    </div>
+                </div>
 
                 <div className="auth-heading">
                     <h1>

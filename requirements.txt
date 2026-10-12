@@ -24,6 +24,7 @@ alembic
 redis==8.1.0
 rq==2.12.0
 google-auth
+requests
 pwdlib[argon2]
 email-validator
 psycopg[binary]
