@@ -1,215 +1,418 @@
+import uuid
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.artifacts.service import create_artifact
-from app.db.database import SessionLocal
-from app.db.models import ImageRequest
 from app.artifacts.storage.provider import (
     artifact_store,
 )
+from app.db.database import SessionLocal
+from app.db.models import ImageRequest
 from app.jobs.result import HandlerResult
-
-import uuid
-
 from app.media.providers.base import (
+    ImageProviderResult,
     ResolvedImageRequest,
 )
 from app.media.providers.registry import (
     get_image_provider,
 )
 
-def execute_image_generation(input_data: dict) -> HandlerResult:
-    request_id = input_data["request_id"]
+
+def normalize_image_job_input(
+    input_data: dict,
+) -> dict:
+    """
+    Convert legacy image-generation jobs into the
+    current structured media-request format.
+    """
 
     if "intent" in input_data:
-        prompt = build_image_prompt(
+        return input_data
+
+    return {
+        **input_data,
+        "request_version": "legacy",
+        "interface_level": "easy",
+        "intent": {
+            "description": input_data["prompt"],
+        },
+        "output": {
+            "quality": "standard",
+            "aspect_ratio": "1:1",
+            "count": 1,
+            "layout": {
+                "type": "single",
+                "panel_count": None,
+                "arrangement": None,
+            },
+        },
+        "references": [],
+        "advanced": None,
+    }
+
+
+def get_image_record(
+    db: Session,
+    request_id: str,
+) -> ImageRequest:
+    """
+    Load the persisted ImageRequest and perform
+    basic ownership sanity checks.
+    """
+
+    statement = select(
+        ImageRequest
+    ).where(
+        ImageRequest.request_id
+        == request_id
+    )
+
+    image_record = db.scalar(
+        statement
+    )
+
+    if image_record is None:
+        raise RuntimeError(
+            f"Image request not found: "
+            f"{request_id}"
+        )
+
+    if image_record.user_id is None:
+        raise RuntimeError(
+            f"Image request has no owner: "
+            f"{request_id}"
+        )
+
+    return image_record
+
+
+def build_resolved_image_request(
+    input_data: dict,
+) -> ResolvedImageRequest:
+    """
+    Convert structured job input into the provider-neutral
+    ResolvedImageRequest consumed by image adapters.
+    """
+
+    intent = input_data.get(
+        "intent"
+    ) or {}
+
+    output = input_data.get(
+        "output"
+    ) or {}
+
+    layout = output.get(
+        "layout"
+    ) or {}
+
+    advanced = input_data.get(
+        "advanced"
+    ) or {}
+
+    description = intent.get(
+        "description",
+        "",
+    ).strip()
+
+    if not description:
+        raise RuntimeError(
+            "Image request has no description"
+        )
+
+    return ResolvedImageRequest(
+        description=description,
+        quality=output.get(
+            "quality",
+            "standard",
+        ),
+        aspect_ratio=output.get(
+            "aspect_ratio",
+            "1:1",
+        ),
+        layout_type=layout.get(
+            "type",
+            "single",
+        ),
+        panel_count=layout.get(
+            "panel_count"
+        ),
+        arrangement=layout.get(
+            "arrangement"
+        ),
+        references=input_data.get(
+            "references"
+        ) or [],
+        provider=advanced.get(
+            "provider",
+            "openai",
+        ),
+        model=advanced.get(
+            "model",
+            "gpt-image-2",
+        ),
+        parameters=advanced.get(
+            "parameters"
+        ) or {},
+    )
+
+
+def generate_image(
+    request: ResolvedImageRequest,
+) -> ImageProviderResult:
+    """
+    Resolve the configured provider adapter and execute
+    the image-generation request.
+    """
+
+    provider = get_image_provider(
+        request.provider
+    )
+
+    return provider.generate(
+        request
+    )
+
+
+def persist_image_result(
+    db: Session,
+    *,
+    image_record: ImageRequest,
+    input_data: dict,
+    resolved_request: ResolvedImageRequest,
+    result: ImageProviderResult,
+):
+    """
+    Store provider output and create the Artifact record.
+    """
+
+    filename = (
+        f"{uuid.uuid4()}.png"
+    )
+
+    storage_uri = (
+        artifact_store.put_bytes(
+            filename=filename,
+            data=result.data,
+        )
+    )
+
+    output = input_data.get(
+        "output"
+    ) or {}
+
+    artifact = create_artifact(
+        db,
+        tenant_id=image_record.tenant_id,
+        user_id=image_record.user_id,
+        media_type="image",
+        storage_uri=storage_uri,
+        mime_type=result.mime_type,
+        filename=filename,
+        size_bytes=result.size_bytes,
+        metadata={
+            "provider": result.provider,
+            "model": result.model,
+            "request_version": (
+                input_data.get(
+                    "request_version",
+                    "legacy",
+                )
+            ),
+            "interface_level": (
+                input_data.get(
+                    "interface_level"
+                )
+            ),
+            "layout": output.get(
+                "layout"
+            ),
+            "aspect_ratio": (
+                resolved_request.aspect_ratio
+            ),
+            "quality": (
+                resolved_request.quality
+            ),
+            "provider_metadata": (
+                result.metadata
+            ),
+        },
+    )
+
+    return artifact
+
+
+def complete_image_record(
+    image_record: ImageRequest,
+    *,
+    artifact,
+    result: ImageProviderResult,
+) -> None:
+    """
+    Update the legacy ImageRequest projection after
+    successful artifact creation.
+    """
+
+    image_record.status = "completed"
+
+    image_record.filename = (
+        artifact.filename
+    )
+
+    image_record.mime_type = (
+        result.mime_type
+    )
+
+    image_record.size_bytes = (
+        result.size_bytes
+    )
+
+    image_record.artifact_id = (
+        artifact.artifact_id
+    )
+
+
+def mark_image_failed(
+    db: Session,
+    image_record: ImageRequest,
+) -> None:
+    """
+    Persist failure state after rolling back any partially
+    completed artifact/database work.
+    """
+
+    image_record.status = "failed"
+    db.commit()
+
+
+def build_handler_result(
+    *,
+    artifact,
+    input_data: dict,
+    resolved_request: ResolvedImageRequest,
+    result: ImageProviderResult,
+) -> HandlerResult:
+    """
+    Convert the completed provider result into the generic
+    worker HandlerResult used by Execution tracking.
+    """
+
+    output = input_data.get(
+        "output"
+    ) or {}
+
+    return HandlerResult(
+        provider=result.provider,
+        model=result.model,
+        metadata={
+            "artifact_id": (
+                artifact.artifact_id
+            ),
+            "request_id": (
+                input_data["request_id"]
+            ),
+            "request_version": (
+                input_data.get(
+                    "request_version",
+                    "legacy",
+                )
+            ),
+            "interface_level": (
+                input_data.get(
+                    "interface_level"
+                )
+            ),
+            "layout": output.get(
+                "layout"
+            ),
+            "aspect_ratio": (
+                resolved_request.aspect_ratio
+            ),
+            "quality": (
+                resolved_request.quality
+            ),
+            "provider_metadata": (
+                result.metadata
+            ),
+        },
+    )
+
+
+def execute_image_generation(
+    input_data: dict,
+) -> HandlerResult:
+    """
+    Execute one image-generation job.
+
+    The worker itself remains provider-neutral. Provider-
+    specific prompt construction and API behavior belong
+    to the provider adapter.
+    """
+
+    normalized_input = (
+        normalize_image_job_input(
             input_data
         )
-    else:
-        # Temporary compatibility with jobs
-        # queued before structured media requests.
-        prompt = input_data["prompt"]
+    )
+
+    request_id = normalized_input[
+        "request_id"
+    ]
 
     db = SessionLocal()
 
     try:
-        statement = select(ImageRequest).where(
-            ImageRequest.request_id == request_id
+        image_record = get_image_record(
+            db,
+            request_id,
         )
 
-        image_record = db.scalar(statement)
-
-        if image_record is None:
-            raise RuntimeError(
-                f"Image request not found: {request_id}"
+        resolved_request = (
+            build_resolved_image_request(
+                normalized_input
             )
-
-        if image_record.user_id is None:
-            raise RuntimeError(
-                f"Image request has no owner: {request_id}"
         )
 
         try:
-            intent = input_data.get("intent") or {}
-            output = input_data.get("output") or {}
-            layout = output.get("layout") or {}
-            advanced = input_data.get("advanced") or {}
-
-            # Normalize legacy requests to the new structured format.
-            if "intent" not in input_data:
-                input_data = {
-                    **input_data,
-                    "request_version": "legacy",
-                    "intent": {
-                        "description": input_data["prompt"],
-                    },
-                    "output": {
-                        "quality": "standard",
-                        "aspect_ratio": "1:1",
-                        "layout": {
-                            "type": "single",
-                            "panel_count": None,
-                            "arrangement": None,
-                        },
-                    },
-                    "references": [],
-                    "advanced": None,
-                }
-
-            # Create a ResolvedImageRequest from the structured request data.
-            resolved_request = ResolvedImageRequest(
-                description=intent["description"],
-                quality=output.get(
-                    "quality",
-                    "standard",
-                ),
-                aspect_ratio=output.get(
-                    "aspect_ratio",
-                    "1:1",
-                ),
-                layout_type=layout.get(
-                    "type",
-                    "single",
-                ),
-                panel_count=layout.get(
-                    "panel_count"
-                ),
-                arrangement=layout.get(
-                    "arrangement"
-                ),
-                references=input_data.get(
-                    "references"
-                ) or [],
-                provider=advanced.get(
-                    "provider",
-                    "openai",
-                ),
-                model=advanced.get(
-                    "model",
-                    "gpt-image-2",
-                ),
-                parameters=advanced.get(
-                    "parameters"
-                ) or {},
-            )
-
-            image_provider = get_image_provider(
-                resolved_request.provider
-            )
-
-            result = image_provider.generate(
+            result = generate_image(
                 resolved_request
             )
 
-            filename = (
-                f"{uuid.uuid4()}.png"
-            )
-
-            storage_uri = (
-                artifact_store.put_bytes(
-                    filename=filename,
-                    data=result.data,
-                )
-            )
-
-            artifact = create_artifact(
+            artifact = persist_image_result(
                 db,
-                tenant_id=image_record.tenant_id,
-                user_id=image_record.user_id,
-                media_type="image",
-                storage_uri=storage_uri,
-                mime_type=result.mime_type,
-                filename=filename,
-                size_bytes=result.size_bytes,
-                metadata={
-                    "provider": "openai",
-                    "model": result.model,
-                    "request_version": input_data.get(
-                        "request_version",
-                        "legacy",
-                    ),
-                    "interface_level": input_data.get(
-                        "interface_level"
-                    ),
-                    "layout": (
-                        (
-                            input_data.get("output")
-                            or {}
-                        ).get("layout")
-                    ),
-                    "provider_metadata": result.metadata,
-                },
+                image_record=image_record,
+                input_data=normalized_input,
+                resolved_request=(
+                    resolved_request
+                ),
+                result=result,
             )
 
-            image_record.status = "completed"
-
-            # Legacy compatibility fields
-            image_record.filename = filename
-            image_record.mime_type = (
-                result.mime_type
-            )
-            image_record.size_bytes = (
-                result.size_bytes
-            )
-
-            image_record.artifact_id = (
-                artifact.artifact_id
+            complete_image_record(
+                image_record,
+                artifact=artifact,
+                result=result,
             )
 
             db.commit()
 
-            return HandlerResult(
-                provider="openai",
-                model=result.model,
-                metadata={
-                    "provider": "openai",
-                    "model": result.model,
-                    "request_version": (
-                        input_data.get(
-                            "request_version",
-                            "legacy",
-                        )
-                    ),
-                    "interface_level": (
-                        input_data.get(
-                            "interface_level"
-                        )
-                    ),
-                    "layout": (
-                        (
-                            input_data.get("output")
-                            or {}
-                        ).get("layout")
-                    ),
-                },
+            return build_handler_result(
+                artifact=artifact,
+                input_data=normalized_input,
+                resolved_request=(
+                    resolved_request
+                ),
+                result=result,
             )
 
         except Exception:
             db.rollback()
 
-            # Record failure separately after rolling
-            # back any partially-created artifact.
-            image_record.status = "failed"
-            db.commit()
+            mark_image_failed(
+                db,
+                image_record,
+            )
 
             raise
 
