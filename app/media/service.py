@@ -40,24 +40,6 @@ CAPABILITIES = {
     "audio": "audio.generate",
 }
 
-GridArrangement = Literal[
-    "2x2",
-    "1x4",
-    "4x1",
-]
-
-
-class MediaLayout(BaseModel):
-    type: MediaLayoutType = "single"
-
-    panel_count: int | None = Field(
-        default=None,
-        ge=2,
-        le=4,
-    )
-
-    arrangement: GridArrangement | None = None
-
 def resolve_aspect_ratio(
     request: MediaGenerationRequest,
 ) -> str:
