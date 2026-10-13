@@ -33,6 +33,38 @@ AspectRatio = Literal[
     "16:9",
 ]
 
+GridArrangement = Literal[
+    "2x2",
+    "1x4",
+    "4x1",
+]
+
+GenerationStrategy = Literal[
+    "single",
+    "variations",
+    "compare",
+]
+
+ReferenceRole = Literal[
+    "character",
+    "outfit",
+    "style",
+    "pose",
+    "composition",
+    "environment",
+    "previous_output",
+]
+
+class MediaReference(BaseModel):
+    artifact_id: str
+
+    role: ReferenceRole = "previous_output"
+
+    strength: Literal[
+        "loose",
+        "normal",
+        "strong",
+    ] = "normal"
 
 class MediaIntent(BaseModel):
     description: str = Field(
@@ -48,6 +80,8 @@ class MediaLayout(BaseModel):
         ge=2,
         le=4,
     )
+
+    arrangement: GridArrangement | None = None
 
 
 class MediaOutputPreferences(BaseModel):
@@ -86,6 +120,8 @@ class MediaGenerationRequest(BaseModel):
     media_type: MediaType
 
     interface_level: InterfaceLevel = "easy"
+
+    strategy: GenerationStrategy = "single"
 
     intent: MediaIntent
 

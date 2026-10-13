@@ -40,6 +40,24 @@ CAPABILITIES = {
     "audio": "audio.generate",
 }
 
+GridArrangement = Literal[
+    "2x2",
+    "1x4",
+    "4x1",
+]
+
+
+class MediaLayout(BaseModel):
+    type: MediaLayoutType = "single"
+
+    panel_count: int | None = Field(
+        default=None,
+        ge=2,
+        le=4,
+    )
+
+    arrangement: GridArrangement | None = None
+
 def resolve_aspect_ratio(
     request: MediaGenerationRequest,
 ) -> str:
@@ -50,6 +68,22 @@ def resolve_aspect_ratio(
         return "4:5"
 
     return "1:1"
+
+def resolve_grid_arrangement(
+    request: MediaGenerationRequest,
+) -> str | None:
+    layout = request.output.layout
+
+    if layout.type != "panel_grid":
+        return None
+
+    if layout.arrangement is not None:
+        return layout.arrangement
+
+    if layout.panel_count == 4:
+        return "2x2"
+
+    return None
 
 def submit_media_generation(
     request: MediaGenerationRequest,

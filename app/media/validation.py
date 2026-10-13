@@ -47,3 +47,34 @@ def validate_media_request(
             "advanced provider/model settings "
             "are only available in hard mode"
         )
+
+    if (
+        layout.type == "single"
+        and layout.arrangement is not None
+    ):
+        raise MediaRequestValidationError(
+            "arrangement may only be specified "
+            "for panel_grid layout"
+        )
+
+    if (
+        layout.arrangement is not None
+        and request.interface_level != "hard"
+    ):
+        raise MediaRequestValidationError(
+            "panel arrangement override is only "
+            "available in hard mode"
+        )
+
+    if (
+        layout.arrangement in {
+            "2x2",
+            "1x4",
+            "4x1",
+        }
+        and layout.panel_count != 4
+    ):
+        raise MediaRequestValidationError(
+            "This arrangement requires "
+            "panel_count=4"
+        )
