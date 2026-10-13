@@ -170,13 +170,29 @@ def build_image_prompt(
     output = input_data.get("output") or {}
     layout = output.get("layout") or {}
 
+    aspect_ratio = output.get(
+        "aspect_ratio"
+    )
+
     layout_type = layout.get(
         "type",
         "single",
     )
 
+    aspect_instruction = (
+        f"The final image canvas should use "
+        f"an aspect ratio of {aspect_ratio}. "
+        if aspect_ratio
+        else ""
+    )
+
     if layout_type == "single":
-        return description
+        return (
+            f"{description}\n\n"
+            f"{aspect_instruction}"
+            f"Compose the scene naturally for the "
+            f"full image canvas."
+        )
 
     if layout_type == "panel_grid":
         panel_count = layout.get(
@@ -191,12 +207,27 @@ def build_image_prompt(
         return (
             f"{description}\n\n"
             f"Create this as a {panel_count}-panel "
-            f"visual composition in one image. "
-            f"Each panel should be clearly separated "
-            f"and visually consistent with the others. "
+            f"visual composition contained within "
+            f"one final image. "
+            f"{aspect_instruction}"
+            f"Arrange the {panel_count} panels "
+            f"naturally within that canvas. "
+            f"Each panel should represent a distinct "
+            f"moment or view while remaining visually "
+            f"coherent with the others. "
             f"Maintain consistent characters, setting, "
-            f"lighting, and artistic style across all "
-            f"{panel_count} panels."
+            f"lighting, proportions, and artistic style "
+            f"across all {panel_count} panels. "
+            f"Panel separation should be subtle: use "
+            f"very thin, unobtrusive borders or narrow "
+            f"spacing between panels. "
+            f"Avoid thick comic-book frames, decorative "
+            f"borders, or large gutters. "
+            f"If panel numbers are shown, make them very "
+            f"small, discreet, and visually secondary, "
+            f"placed near a corner of each panel. "
+            f"Do not use large labels, captions, titles, "
+            f"speech bubbles, or other unnecessary text."
         )
 
     raise RuntimeError(
