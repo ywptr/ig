@@ -27,6 +27,12 @@ MediaLayoutType = Literal[
     "panel_grid",
 ]
 
+AspectRatio = Literal[
+    "4:5",
+    "1:1",
+    "16:9",
+]
+
 
 class MediaIntent(BaseModel):
     description: str = Field(
@@ -47,7 +53,7 @@ class MediaLayout(BaseModel):
 class MediaOutputPreferences(BaseModel):
     quality: MediaQuality = "standard"
 
-    aspect_ratio: str | None = None
+    aspect_ratio: AspectRatio | None = None
 
     count: int = Field(
         default=1,

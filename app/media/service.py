@@ -40,6 +40,16 @@ CAPABILITIES = {
     "audio": "audio.generate",
 }
 
+def resolve_aspect_ratio(
+    request: MediaGenerationRequest,
+) -> str:
+    if request.output.aspect_ratio is not None:
+        return request.output.aspect_ratio
+
+    if request.output.layout.type == "panel_grid":
+        return "4:5"
+
+    return "1:1"
 
 def submit_media_generation(
     request: MediaGenerationRequest,
@@ -52,6 +62,9 @@ def submit_media_generation(
     capability = CAPABILITIES[
         request.media_type
     ]
+    resolved_aspect_ratio = resolve_aspect_ratio(
+        request
+    )
 
     if request.media_type != "image":
         raise MediaCapabilityNotAvailableError(
@@ -62,6 +75,27 @@ def submit_media_generation(
         prompt=request.intent.description,
         tenant_id=tenant_id,
         user_id=user_id,
+        media_request={
+            "request_version": "1",
+            "media_type": request.media_type,
+            "interface_level": (
+                request.interface_level
+            ),
+            "intent": request.intent.model_dump(),
+            "output": {
+                **request.output.model_dump(),
+                "aspect_ratio": resolved_aspect_ratio,
+            },
+            "references": [
+                reference.model_dump()
+                for reference in request.references
+            ],
+            "advanced": (
+                request.advanced.model_dump()
+                if request.advanced is not None
+                else None
+            ),
+        },
     )
 
     return MediaSubmission(

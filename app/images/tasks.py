@@ -24,7 +24,15 @@ def get_image_provider():
 
 def execute_image_generation(input_data: dict) -> HandlerResult:
     request_id = input_data["request_id"]
-    prompt = input_data["prompt"]
+
+    if "intent" in input_data:
+        prompt = build_image_prompt(
+            input_data
+        )
+    else:
+        # Temporary compatibility with jobs
+        # queued before structured media requests.
+        prompt = input_data["prompt"]
 
     db = SessionLocal()
 
@@ -96,8 +104,25 @@ def execute_image_generation(input_data: dict) -> HandlerResult:
                 provider="openai",
                 model=result["model"],
                 metadata={
-                    "artifact_id": artifact.artifact_id,
-                    "request_id": request_id,
+                    "provider": "openai",
+                    "model": result["model"],
+                    "request_version": (
+                        input_data.get(
+                            "request_version",
+                            "legacy",
+                        )
+                    ),
+                    "interface_level": (
+                        input_data.get(
+                            "interface_level"
+                        )
+                    ),
+                    "layout": (
+                        (
+                            input_data.get("output")
+                            or {}
+                        ).get("layout")
+                    ),
                 },
             )
 
@@ -113,3 +138,55 @@ def execute_image_generation(input_data: dict) -> HandlerResult:
 
     finally:
         db.close()
+
+def build_image_prompt(
+    input_data: dict,
+) -> str:
+    intent = input_data.get("intent") or {}
+
+    description = intent.get(
+        "description",
+        "",
+    ).strip()
+
+    if not description:
+        raise RuntimeError(
+            "Image request has no description"
+        )
+
+    output = input_data.get("output") or {}
+    layout = output.get("layout") or {}
+
+    layout_type = layout.get(
+        "type",
+        "single",
+    )
+
+    if layout_type == "single":
+        return description
+
+    if layout_type == "panel_grid":
+        panel_count = layout.get(
+            "panel_count"
+        )
+
+        if panel_count is None:
+            raise RuntimeError(
+                "panel_grid requires panel_count"
+            )
+
+        return (
+            f"{description}\n\n"
+            f"Create this as a {panel_count}-panel "
+            f"visual composition in one image. "
+            f"Each panel should be clearly separated "
+            f"and visually consistent with the others. "
+            f"Maintain consistent characters, setting, "
+            f"lighting, and artistic style across all "
+            f"{panel_count} panels."
+        )
+
+    raise RuntimeError(
+        f"Unsupported image layout: "
+        f"{layout_type}"
+    )

@@ -15,6 +15,7 @@ def submit_image_generation(
     prompt: str,
     tenant_id: str,
     user_id: str,
+    media_request: dict | None = None,
     ) -> ImageRequest:
     request_id = str(uuid.uuid4())
 
@@ -35,12 +36,35 @@ def submit_image_generation(
         db.refresh(image_record)
 
         try:
+            if media_request is None:
+                job_input = {
+                    "request_version": "1",
+                    "media_type": "image",
+                    "request_id": request_id,
+                    "interface_level": "easy",
+                    "intent": {
+                        "description": prompt,
+                    },
+                    "output": {
+                        "quality": "standard",
+                        "aspect_ratio": None,
+                        "count": 1,
+                        "layout": {
+                            "type": "single",
+                            "panel_count": None,
+                        },
+                    },
+                    "references": [],
+                    "advanced": None,
+                }
+            else:
+                job_input = {
+                    **media_request,
+                    "request_id": request_id,
+                }
             create_job(
                 capability="image.generate",
-                input_data={
-                    "request_id": request_id,
-                    "prompt": prompt,
-                },
+                input_data=job_input,
                 tenant_id=tenant_id,
                 user_id=user_id,
             )
