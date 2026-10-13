@@ -1,6 +1,7 @@
 import base64
 import os
 from io import BytesIO
+from dataclasses import replace
 from openai import OpenAI
 
 from app.media.providers.base import (
@@ -61,7 +62,7 @@ def build_reference_files(
 
     return files
 
-# Helper function to get the file extension for a given MIME type
+
 def extension_for_mime_type(
     mime_type: str,
 ) -> str:
@@ -83,7 +84,7 @@ def extension_for_mime_type(
         )
 
     return extension
-
+    
 class OpenAIImageProvider(
     ImageProviderAdapter
 ):
@@ -157,31 +158,17 @@ class OpenAIImageProvider(
             or DEFAULT_OPENAI_MODEL
         )
 
-        size = OPENAI_SIZE_BY_ASPECT_RATIO.get(
-            aspect_ratio
+        resolved_request = replace(
+            request,
+            aspect_ratio=aspect_ratio,
+            quality=quality_name,
+            model=model,
         )
-
-        if size is None:
-            raise ValueError(
-                "Unsupported OpenAI aspect ratio: "
-                f"{aspect_ratio}"
-            )
-
-        quality = OPENAI_QUALITY.get(
-            quality_name
-        )
-
-        if quality is None:
-            raise ValueError(
-                "Unsupported OpenAI quality: "
-                f"{quality_name}"
-            )
 
         prompt = build_image_prompt(
-            request
+            resolved_request
         )
 
-        # If we do not have reference, then we can use the generate endpoint, otherwise we need to use the edit endpoint
         if resolved_request.references:
             result = self._generate_with_references(
                 request=resolved_request,
