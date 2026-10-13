@@ -2,10 +2,91 @@ from app.media.providers.base import (
     ResolvedImageRequest,
 )
 
+def build_reference_instructions(
+    request: ResolvedImageRequest,
+) -> str:
+    if not request.references:
+        return ""
+
+    instructions = [
+        "Reference images are provided."
+    ]
+
+    for index, reference in enumerate(
+        request.references,
+        start=1,
+    ):
+        role_instruction = {
+            "character": (
+                "Preserve the character's identity, "
+                "facial features, body proportions, "
+                "and recognizable appearance."
+            ),
+            "outfit": (
+                "Preserve the clothing design, colors, "
+                "materials, accessories, and details."
+            ),
+            "style": (
+                "Use this image as a visual style "
+                "reference rather than copying its "
+                "specific subject."
+            ),
+            "pose": (
+                "Use the pose and body positioning "
+                "as guidance."
+            ),
+            "composition": (
+                "Use the framing and composition "
+                "as guidance."
+            ),
+            "environment": (
+                "Preserve the important environmental "
+                "and location characteristics."
+            ),
+            "previous_output": (
+                "Maintain visual continuity with "
+                "this previous output."
+            ),
+        }.get(
+            reference.role,
+            "Use this image as visual guidance."
+        )
+
+        strength_instruction = {
+            "loose": (
+                "Treat it as loose guidance."
+            ),
+            "normal": (
+                "Follow it with normal consistency."
+            ),
+            "strong": (
+                "Match it closely while still "
+                "following the requested scene."
+            ),
+        }.get(
+            reference.strength,
+            "",
+        )
+
+        instructions.append(
+            f"Reference image {index}: "
+            f"{role_instruction} "
+            f"{strength_instruction}"
+        )
+
+    return " ".join(
+        instructions
+    )
 
 def build_image_prompt(
     request: ResolvedImageRequest,
 ) -> str:
+    # Add reference instructions if any references are provided
+    reference_instructions = (
+        build_reference_instructions(
+            request
+        )
+    )
     if request.layout_type == "single":
         return (
             f"{request.description}\n\n"
@@ -29,6 +110,7 @@ def build_image_prompt(
 
         return (
             f"{request.description}\n\n"
+            f"{reference_instructions}\n\n"
             f"Create one final image containing "
             f"{request.panel_count} distinct visual "
             f"panels. "

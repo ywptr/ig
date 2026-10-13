@@ -78,3 +78,9 @@ def validate_media_request(
             "This arrangement requires "
             "panel_count=4"
         )
+
+    if len(request.references) > 8:
+        raise MediaRequestValidationError(
+            "A maximum of 8 reference images "
+            "is supported"
+        )

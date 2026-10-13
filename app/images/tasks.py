@@ -17,7 +17,15 @@ from app.media.providers.base import (
 from app.media.providers.registry import (
     get_image_provider,
 )
-
+from app.db.models import (
+    Artifact,
+    ImageRequest,
+)
+from app.media.providers.base import (
+    ImageProviderResult,
+    ResolvedImageReference,
+    ResolvedImageRequest,
+)
 
 def normalize_image_job_input(
     input_data: dict,
@@ -88,12 +96,22 @@ def get_image_record(
 
 
 def build_resolved_image_request(
+    db: Session,
+    *,
     input_data: dict,
+    image_record: ImageRequest,
 ) -> ResolvedImageRequest:
     """
     Convert structured job input into the provider-neutral
     ResolvedImageRequest consumed by image adapters.
     """
+
+    # Resolve references to existing artifacts and validate
+    references = resolve_image_references(
+        db,
+        input_data=input_data,
+        image_record=image_record,
+    )
 
     intent = input_data.get(
         "intent"
@@ -129,7 +147,7 @@ def build_resolved_image_request(
         ),
         aspect_ratio=output.get(
             "aspect_ratio",
-            "1:1",
+            "2:3",
         ),
         layout_type=layout.get(
             "type",
@@ -141,9 +159,7 @@ def build_resolved_image_request(
         arrangement=layout.get(
             "arrangement"
         ),
-        references=input_data.get(
-            "references"
-        ) or [],
+        references=references,
         provider=advanced.get(
             "provider",
             "openai",
@@ -370,7 +386,9 @@ def execute_image_generation(
 
         resolved_request = (
             build_resolved_image_request(
-                normalized_input
+                db,
+                input_data=normalized_input,
+                image_record=image_record,
             )
         )
 
@@ -418,3 +436,94 @@ def execute_image_generation(
 
     finally:
         db.close()
+
+def resolve_image_references(
+    db: Session,
+    *,
+    input_data: dict,
+    image_record: ImageRequest,
+) -> list[ResolvedImageReference]:
+    references = (
+        input_data.get("references")
+        or []
+    )
+
+    resolved_references: list[
+        ResolvedImageReference
+    ] = []
+
+    for reference in references:
+        artifact_id = reference.get(
+            "artifact_id"
+        )
+
+        if not artifact_id:
+            raise RuntimeError(
+                "Reference artifact_id is required"
+            )
+
+        statement = select(
+            Artifact
+        ).where(
+            Artifact.artifact_id
+            == artifact_id,
+            Artifact.tenant_id
+            == image_record.tenant_id,
+            Artifact.user_id
+            == image_record.user_id,
+        )
+
+        artifact = db.scalar(
+            statement
+        )
+
+        if artifact is None:
+            raise RuntimeError(
+                "Reference artifact not found "
+                f"or not accessible: "
+                f"{artifact_id}"
+            )
+
+        if artifact.media_type != "image":
+            raise RuntimeError(
+                "Image generation references "
+                "must be image artifacts"
+            )
+
+        if not artifact_store.exists(
+            artifact.storage_uri
+        ):
+            raise RuntimeError(
+                "Reference artifact content "
+                f"is missing: {artifact_id}"
+            )
+
+        data = b"".join(
+            artifact_store.iter_bytes(
+                artifact.storage_uri
+            )
+        )
+
+        resolved_references.append(
+            ResolvedImageReference(
+                artifact_id=(
+                    artifact.artifact_id
+                ),
+                role=reference.get(
+                    "role",
+                    "previous_output",
+                ),
+                strength=reference.get(
+                    "strength",
+                    "normal",
+                ),
+                mime_type=(
+                    artifact.mime_type
+                    or "image/png"
+                ),
+                filename=artifact.filename,
+                data=data,
+            )
+        )
+
+    return resolved_references

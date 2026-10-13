@@ -14,7 +14,9 @@ class ResolvedImageRequest:
     panel_count: int | None
     arrangement: str | None
 
-    references: list[dict] = field(
+    references: list[
+        ResolvedImageReference
+    ] = field(
         default_factory=list,
     )
 
@@ -48,3 +50,15 @@ class ImageProviderAdapter(ABC):
         request: ResolvedImageRequest,
     ) -> ImageProviderResult:
         raise NotImplementedError
+
+@dataclass(frozen=True)
+class ResolvedImageReference:
+    artifact_id: str
+
+    role: str
+    strength: str
+
+    mime_type: str
+    filename: str | None
+
+    data: bytes

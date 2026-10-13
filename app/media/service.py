@@ -49,7 +49,7 @@ def resolve_aspect_ratio(
     if request.output.layout.type == "panel_grid":
         return "4:5"
 
-    return "1:1"
+    return "2:3"
 
 def resolve_grid_arrangement(
     request: MediaGenerationRequest,

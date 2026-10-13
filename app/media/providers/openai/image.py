@@ -1,6 +1,6 @@
 import base64
 import os
-
+from io import BytesIO
 from openai import OpenAI
 
 from app.media.providers.base import (
@@ -32,6 +32,57 @@ OPENAI_QUALITY = {
     "high": "high",
 }
 
+# Helper function to build reference files from the request
+def build_reference_files(
+    request: ResolvedImageRequest,
+) -> list[BytesIO]:
+    files: list[BytesIO] = []
+
+    for index, reference in enumerate(
+        request.references,
+        start=1,
+    ):
+        file = BytesIO(
+            reference.data
+        )
+
+        extension = (
+            extension_for_mime_type(
+                reference.mime_type
+            )
+        )
+
+        file.name = (
+            reference.filename
+            or f"reference-{index}.{extension}"
+        )
+
+        files.append(file)
+
+    return files
+
+# Helper function to get the file extension for a given MIME type
+def extension_for_mime_type(
+    mime_type: str,
+) -> str:
+    mapping = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/webp": "webp",
+    }
+
+    extension = mapping.get(
+        mime_type.lower()
+    )
+
+    if extension is None:
+        raise ValueError(
+            "Unsupported OpenAI reference "
+            f"image type: {mime_type}"
+        )
+
+    return extension
 
 class OpenAIImageProvider(
     ImageProviderAdapter
@@ -43,6 +94,49 @@ class OpenAIImageProvider(
                 "OPENAI_API_KEY"
             ]
         )
+
+    def _generate_without_references(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        size: str,
+        quality: str,
+    ):
+        return self.client.images.generate(
+            model=model,
+            prompt=prompt,
+            size=size,
+            quality=quality,
+        )
+    
+    def _generate_with_references(
+        self,
+        *,
+        request: ResolvedImageRequest,
+        prompt: str,
+        model: str,
+        size: str,
+        quality: str,
+    ):
+        reference_files = (
+            build_reference_files(
+                request
+            )
+        )
+
+        try:
+            return self.client.images.edit(
+                model=model,
+                image=reference_files,
+                prompt=prompt,
+                size=size,
+                quality=quality,
+            )
+
+        finally:
+            for file in reference_files:
+                file.close()
 
     def generate(
         self,
@@ -87,12 +181,22 @@ class OpenAIImageProvider(
             request
         )
 
-        result = self.client.images.generate(
-            model=model,
-            prompt=prompt,
-            size=size,
-            quality=quality,
-        )
+        # If we do not have reference, then we can use the generate endpoint, otherwise we need to use the edit endpoint
+        if resolved_request.references:
+            result = self._generate_with_references(
+                request=resolved_request,
+                prompt=prompt,
+                model=model,
+                size=size,
+                quality=quality,
+            )
+        else:
+            result = self._generate_without_references(
+                prompt=prompt,
+                model=model,
+                size=size,
+                quality=quality,
+            )
 
         if not result.data:
             raise RuntimeError(
