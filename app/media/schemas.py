@@ -28,6 +28,7 @@ MediaLayoutType = Literal[
 ]
 
 AspectRatio = Literal[
+    "2:3",
     "4:5",
     "1:1",
     "16:9",
@@ -98,13 +99,6 @@ class MediaOutputPreferences(BaseModel):
     layout: MediaLayout = Field(
         default_factory=MediaLayout,
     )
-
-
-class MediaReference(BaseModel):
-    artifact_id: str
-
-    role: str | None = None
-
 
 class MediaAdvancedOptions(BaseModel):
     provider: str | None = None
