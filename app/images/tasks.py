@@ -80,6 +80,19 @@ def execute_image_generation(input_data: dict) -> HandlerResult:
                 metadata={
                     "provider": "openai",
                     "model": result["model"],
+                    "request_version": input_data.get(
+                        "request_version",
+                        "legacy",
+                    ),
+                    "interface_level": input_data.get(
+                        "interface_level"
+                    ),
+                    "layout": (
+                        (
+                            input_data.get("output")
+                            or {}
+                        ).get("layout")
+                    ),
                 },
             )
 
