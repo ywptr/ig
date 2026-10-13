@@ -1,7 +1,8 @@
 import base64
 import os
-from io import BytesIO
 from dataclasses import replace
+from io import BytesIO
+
 from openai import OpenAI
 
 from app.media.providers.base import (
@@ -33,34 +34,78 @@ OPENAI_QUALITY = {
     "high": "high",
 }
 
-# Helper function to build reference files from the request
-def build_reference_files(
-    request: ResolvedImageRequest,
-) -> list[BytesIO]:
-    files: list[BytesIO] = []
 
-    for index, reference in enumerate(
-        request.references,
-        start=1,
-    ):
-        file = BytesIO(
-            reference.data
+def resolve_openai_size(
+    aspect_ratio: str | None,
+) -> tuple[str, str]:
+    """
+    Resolve an IG semantic aspect ratio into an
+    OpenAI-native image size.
+
+    Returns:
+        (resolved_aspect_ratio, openai_size)
+    """
+
+    resolved_aspect_ratio = (
+        aspect_ratio
+        or DEFAULT_ASPECT_RATIO
+    )
+
+    size = OPENAI_SIZE_BY_ASPECT_RATIO.get(
+        resolved_aspect_ratio
+    )
+
+    if size is None:
+        raise ValueError(
+            "Unsupported OpenAI aspect ratio: "
+            f"{resolved_aspect_ratio}"
         )
 
-        extension = (
-            extension_for_mime_type(
-                reference.mime_type
-            )
+    return (
+        resolved_aspect_ratio,
+        size,
+    )
+
+
+def resolve_openai_quality(
+    quality: str | None,
+) -> tuple[str, str]:
+    """
+    Resolve an IG semantic quality profile into
+    an OpenAI-native quality value.
+
+    Returns:
+        (resolved_quality_profile, openai_quality)
+    """
+
+    resolved_quality = (
+        quality
+        or DEFAULT_QUALITY
+    )
+
+    openai_quality = OPENAI_QUALITY.get(
+        resolved_quality
+    )
+
+    if openai_quality is None:
+        raise ValueError(
+            "Unsupported OpenAI quality: "
+            f"{resolved_quality}"
         )
 
-        file.name = (
-            reference.filename
-            or f"reference-{index}.{extension}"
-        )
+    return (
+        resolved_quality,
+        openai_quality,
+    )
 
-        files.append(file)
 
-    return files
+def resolve_openai_model(
+    model: str | None,
+) -> str:
+    return (
+        model
+        or DEFAULT_OPENAI_MODEL
+    )
 
 
 def extension_for_mime_type(
@@ -84,7 +129,41 @@ def extension_for_mime_type(
         )
 
     return extension
-    
+
+
+def build_reference_files(
+    request: ResolvedImageRequest,
+) -> list[BytesIO]:
+    files: list[BytesIO] = []
+
+    for index, reference in enumerate(
+        request.references,
+        start=1,
+    ):
+        file = BytesIO(
+            reference.data
+        )
+
+        extension = (
+            extension_for_mime_type(
+                reference.mime_type
+            )
+        )
+
+        file.name = (
+            reference.filename
+            or (
+                f"reference-"
+                f"{index}."
+                f"{extension}"
+            )
+        )
+
+        files.append(file)
+
+    return files
+
+
 class OpenAIImageProvider(
     ImageProviderAdapter
 ):
@@ -110,7 +189,7 @@ class OpenAIImageProvider(
             size=size,
             quality=quality,
         )
-    
+
     def _generate_with_references(
         self,
         *,
@@ -143,25 +222,28 @@ class OpenAIImageProvider(
         self,
         request: ResolvedImageRequest,
     ) -> ImageProviderResult:
-        aspect_ratio = (
+        (
+            aspect_ratio,
+            size,
+        ) = resolve_openai_size(
             request.aspect_ratio
-            or DEFAULT_ASPECT_RATIO
         )
 
-        quality_name = (
+        (
+            quality_profile,
+            quality,
+        ) = resolve_openai_quality(
             request.quality
-            or DEFAULT_QUALITY
         )
 
-        model = (
+        model = resolve_openai_model(
             request.model
-            or DEFAULT_OPENAI_MODEL
         )
 
         resolved_request = replace(
             request,
             aspect_ratio=aspect_ratio,
-            quality=quality_name,
+            quality=quality_profile,
             model=model,
         )
 
@@ -170,19 +252,24 @@ class OpenAIImageProvider(
         )
 
         if resolved_request.references:
-            result = self._generate_with_references(
-                request=resolved_request,
-                prompt=prompt,
-                model=model,
-                size=size,
-                quality=quality,
+            result = (
+                self._generate_with_references(
+                    request=resolved_request,
+                    prompt=prompt,
+                    model=model,
+                    size=size,
+                    quality=quality,
+                )
             )
+
         else:
-            result = self._generate_without_references(
-                prompt=prompt,
-                model=model,
-                size=size,
-                quality=quality,
+            result = (
+                self._generate_without_references(
+                    prompt=prompt,
+                    model=model,
+                    size=size,
+                    quality=quality,
+                )
             )
 
         if not result.data:
@@ -211,7 +298,14 @@ class OpenAIImageProvider(
             metadata={
                 "size": size,
                 "quality": quality,
-                "quality_profile": quality_name,
-                "aspect_ratio": aspect_ratio,
+                "quality_profile": (
+                    quality_profile
+                ),
+                "aspect_ratio": (
+                    aspect_ratio
+                ),
+                "reference_count": len(
+                    resolved_request.references
+                ),
             },
         )
