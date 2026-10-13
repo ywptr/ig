@@ -81,6 +81,11 @@ def submit_media_generation(
     resolved_aspect_ratio = resolve_aspect_ratio(
         request
     )
+    resolved_arrangement = (
+        resolve_grid_arrangement(
+            request
+        )
+    )
 
     if request.media_type != "image":
         raise MediaCapabilityNotAvailableError(
@@ -101,6 +106,12 @@ def submit_media_generation(
             "output": {
                 **request.output.model_dump(),
                 "aspect_ratio": resolved_aspect_ratio,
+                "layout": {
+                    **request.output.layout.model_dump(),
+                    "arrangement": (
+                        resolved_arrangement
+                    ),
+                },
             },
             "references": [
                 reference.model_dump()
