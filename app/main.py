@@ -34,6 +34,10 @@ from app.api.tenant_auth_config import (
     router as tenant_auth_config_router,
 )
 
+from app.api.media import (
+    router as media_router,
+)
+
 from app.core.logging import configure_logging
 
 configure_logging()
@@ -47,6 +51,11 @@ app = FastAPI(
 app.include_router(
     image_router,
     prefix="/v1"
+)
+
+app.include_router(
+    media_router,
+    prefix="/v2",
 )
 
 app.include_router(
