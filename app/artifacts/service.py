@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.db.models import Artifact
-
+from app.artifacts.storage.provider import artifact_store
 
 def create_artifact(
     db: Session,
@@ -80,6 +80,50 @@ def list_artifacts(
         )
 
         return list(db.scalars(statement).all())
+
+    finally:
+        db.close()
+
+def create_uploaded_artifact(
+    *,
+    tenant_id: str,
+    user_id: str,
+    data: bytes,
+    mime_type: str,
+    filename: str,
+    origin: str,
+) -> Artifact:
+    db = SessionLocal()
+
+    try:
+        storage_uri = artifact_store.put_bytes(
+            filename=filename,
+            data=data,
+        )
+
+        artifact = create_artifact(
+            db,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            media_type="image",
+            storage_uri=storage_uri,
+            mime_type=mime_type,
+            filename=filename,
+            size_bytes=len(data),
+            metadata={
+                "origin": origin,
+                "ingest_method": "upload",
+            },
+        )
+
+        db.commit()
+        db.refresh(artifact)
+
+        return artifact
+
+    except Exception:
+        db.rollback()
+        raise
 
     finally:
         db.close()

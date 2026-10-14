@@ -30,3 +30,4 @@ email-validator
 psycopg[binary]
 vercel-queue
 vercel
+python-multipart
