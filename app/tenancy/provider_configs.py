@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from app.db.models import TenantProviderConfig
 from app.security.secrets import (
     decrypt_credentials,
@@ -102,3 +104,38 @@ def set_provider_config(
     )
 
     return provider_config
+
+def provider_config_to_dict(
+    config: TenantProviderConfig,
+) -> dict:
+    return {
+        "provider": config.provider,
+        "enabled": config.enabled,
+        "has_credentials": bool(
+            config.encrypted_credentials
+        ),
+        "config": (
+            config.config_json
+            or {}
+        ),
+    }
+
+def list_provider_configs(
+    db: Session,
+    *,
+    tenant_id: str,
+) -> list[TenantProviderConfig]:
+    statement = (
+        select(TenantProviderConfig)
+        .where(
+            TenantProviderConfig.tenant_id
+            == tenant_id
+        )
+        .order_by(
+            TenantProviderConfig.provider
+        )
+    )
+
+    return list(
+        db.scalars(statement).all()
+    )
