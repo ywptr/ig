@@ -10,10 +10,6 @@ from app.artifacts.storage.provider import (
 from app.db.database import SessionLocal
 from app.db.models import ImageRequest
 from app.jobs.result import HandlerResult
-from app.media.providers.base import (
-    ImageProviderResult,
-    ResolvedImageRequest,
-)
 from app.media.providers.registry import (
     get_image_provider,
 )
