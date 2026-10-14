@@ -1,12 +1,13 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, JSON, String, Text
+from sqlalchemy import BigInteger, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import ForeignKey
 
 from app.db.database import Base
 
-# ImageRequest model represents a request to generate an image using OpenAI's image generation service.
+# ImageRequest represents an image-generation request.
+# Provider/model resolution may happen asynchronously in the worker.
 class ImageRequest(Base):
     __tablename__ = "image_requests"
 
@@ -42,8 +43,9 @@ class ImageRequest(Base):
 
     prompt: Mapped[str] = mapped_column(Text)
 
-    model: Mapped[str] = mapped_column(
-        String(100)
+    model: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
     )
 
     status: Mapped[str] = mapped_column(

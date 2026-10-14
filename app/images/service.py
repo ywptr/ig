@@ -20,7 +20,7 @@ def submit_image_generation(
             tenant_id=tenant_id,
             user_id=user_id,
             prompt=prompt,
-            model="gpt-image-2",
+            model=None,
             status="generating",
         )
 
@@ -41,6 +41,7 @@ def submit_image_generation(
                     "output": {
                         "quality": "standard",
                         "aspect_ratio": None,
+                        "style": "auto",
                         "count": 1,
                         "layout": {
                             "type": "single",

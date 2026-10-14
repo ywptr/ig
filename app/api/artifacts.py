@@ -69,7 +69,8 @@ def artifact_to_dict(
         "user_id": artifact.user_id,
         "media_type": artifact.media_type,
         "mime_type": artifact.mime_type,
-        "storage_uri": artifact.storage_uri,
+# Removed the storage_uri from the response for security reasons - we should not expose the storage URI to clients.
+#        "storage_uri": artifact.storage_uri,
         "filename": artifact.filename,
         "size_bytes": artifact.size_bytes,
         "metadata": artifact.metadata_json,

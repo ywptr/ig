@@ -1,5 +1,5 @@
 import uuid
-
+from dataclasses import replace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -172,8 +172,7 @@ def build_resolved_image_request(
             "openai",
         ),
         model=advanced.get(
-            "model",
-            "gpt-image-2",
+            "model" or ""
         ),
         parameters=advanced.get(
             "parameters"
@@ -209,17 +208,32 @@ def generate_image(
         provider=request.provider,
     )
 
+    provider_settings = (
+        provider_config.config_json
+        or {}
+    )
+
+    resolved_model = (
+        request.model
+        or provider_settings.get(
+            "default_model"
+        )
+        or ""
+    )
+
+    provider_request = replace(
+        request,
+        model=resolved_model,
+    )
+
     provider = create_image_provider(
         request.provider,
         credentials=credentials,
-        config=(
-            provider_config.config_json
-            or {}
-        ),
+        config=provider_settings,
     )
 
     return provider.generate(
-        request
+        provider_request
     )
 
 
@@ -306,6 +320,8 @@ def complete_image_record(
     """
 
     image_record.status = "completed"
+
+    image_record.model = result.model
 
     image_record.filename = (
         artifact.filename
