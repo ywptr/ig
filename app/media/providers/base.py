@@ -2,6 +2,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+@dataclass(frozen=True)
+class ResolvedImageReference:
+    artifact_id: str
+
+    role: str
+    strength: str
+
+    mime_type: str
+    filename: str | None
+
+    data: bytes
 
 @dataclass(frozen=True)
 class ResolvedImageRequest:
@@ -50,15 +61,3 @@ class ImageProviderAdapter(ABC):
         request: ResolvedImageRequest,
     ) -> ImageProviderResult:
         raise NotImplementedError
-
-@dataclass(frozen=True)
-class ResolvedImageReference:
-    artifact_id: str
-
-    role: str
-    strength: str
-
-    mime_type: str
-    filename: str | None
-
-    data: bytes
