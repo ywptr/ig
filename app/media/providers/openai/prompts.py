@@ -140,7 +140,7 @@ def build_image_prompt(
         part
         for part in (
             request.description,
-            style_instruction,
+            style_instructions,
             reference_instructions,
         )
         if part
