@@ -44,6 +44,7 @@ def normalize_image_job_input(
         "output": {
             "quality": "standard",
             "aspect_ratio": "1:1",
+            "style": "auto",
             "count": 1,
             "layout": {
                 "type": "single",
@@ -145,6 +146,10 @@ def build_resolved_image_request(
             "aspect_ratio",
             "2:3",
         ),
+        style=output.get(
+            "style",
+            "auto",
+        ),
         layout_type=layout.get(
             "type",
             "single",
@@ -243,6 +248,9 @@ def persist_image_result(
             "aspect_ratio": (
                 resolved_request.aspect_ratio
             ),
+            "style": (
+                resolved_request.style
+            ),
             "quality": (
                 resolved_request.quality
             ),
@@ -340,6 +348,9 @@ def build_handler_result(
             ),
             "aspect_ratio": (
                 resolved_request.aspect_ratio
+            ),
+            "style": (
+                resolved_request.style
             ),
             "quality": (
                 resolved_request.quality

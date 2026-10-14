@@ -2,6 +2,48 @@ from app.media.providers.base import (
     ResolvedImageRequest,
 )
 
+STYLE_INSTRUCTIONS = {
+    "photoreal": (
+        "Render this as photorealistic imagery with "
+        "natural lighting, realistic materials, "
+        "physically plausible detail, and lifelike texture."
+    ),
+    "anime": (
+        "Render this in a polished anime visual style "
+        "with coherent character design and expressive detail."
+    ),
+    "3d": (
+        "Render this as polished high-quality 3D artwork "
+        "with convincing materials, lighting, and depth."
+    ),
+    "painterly": (
+        "Render this with a painterly artistic treatment, "
+        "visible artistic texture, and expressive color."
+    ),
+    "illustration": (
+        "Render this as a polished professional illustration."
+    ),
+    "comic": (
+        "Render this with a refined comic-art treatment "
+        "and strong visual storytelling."
+    ),
+    "cinematic": (
+        "Render this with cinematic composition, lighting, "
+        "depth, and visual atmosphere."
+    ),
+}
+
+def build_style_instruction(
+    request: ResolvedImageRequest,
+) -> str:
+    if request.style == "auto":
+        return ""
+
+    return STYLE_INSTRUCTIONS.get(
+        request.style,
+        "",
+    )
+
 def build_reference_instructions(
     request: ResolvedImageRequest,
 ) -> str:
@@ -87,10 +129,26 @@ def build_image_prompt(
             request
         )
     )
+    # Add style instructions if a specific style is requested
+    style_instructions = (
+        build_style_instruction(
+            request
+        )
+    )
+    # Join the reference and style instructions into a single string
+    shared_instructions = "\n\n".join(
+        part
+        for part in (
+            request.description,
+            style_instruction,
+            reference_instructions,
+        )
+        if part
+    )
+    # Single image mode: create one image with the requested aspect ratio and natural composition
     if request.layout_type == "single":
         return (
-            f"{request.description}\n\n"
-            f"{reference_instructions}\n\n"
+            f"{shared_instructions}\n\n"
             f"Create one image with an overall "
             f"aspect ratio of "
             f"{request.aspect_ratio}. "
@@ -98,6 +156,7 @@ def build_image_prompt(
             f"the complete canvas."
         )
 
+    # Panel grid mode: create a single image containing multiple distinct panels arranged in a grid
     if request.layout_type == "panel_grid":
         if request.panel_count is None:
             raise RuntimeError(
@@ -110,8 +169,7 @@ def build_image_prompt(
             )
 
         return (
-            f"{request.description}\n\n"
-            f"{reference_instructions}\n\n"
+            f"{shared_instructions}\n\n"
             f"Create one final image containing "
             f"{request.panel_count} distinct visual "
             f"panels. "

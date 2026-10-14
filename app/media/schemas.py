@@ -56,6 +56,17 @@ ReferenceRole = Literal[
     "previous_output",
 ]
 
+ImageStyle = Literal[
+    "auto",
+    "photoreal",
+    "anime",
+    "3d",
+    "painterly",
+    "illustration",
+    "comic",
+    "cinematic",
+]
+
 class MediaReference(BaseModel):
     artifact_id: str
 
@@ -89,6 +100,8 @@ class MediaOutputPreferences(BaseModel):
     quality: MediaQuality = "standard"
 
     aspect_ratio: AspectRatio | None = None
+
+    style: ImageStyle = "auto"
 
     count: int = Field(
         default=1,

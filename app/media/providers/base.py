@@ -20,6 +20,7 @@ class ResolvedImageRequest:
 
     quality: str
     aspect_ratio: str
+    style: str
 
     layout_type: str
     panel_count: int | None
