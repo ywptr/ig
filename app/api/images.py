@@ -12,10 +12,6 @@ from sqlalchemy import select
 
 from app.db.database import SessionLocal
 from app.db.models import ImageRequest
-# 20261001
-# Removed import of OpenAIImageService to avoid runtime import errors in environments where OpenAIImageService is not yet initialized.
-# The service is now initialized at the module level to ensure it is available when the API routes are defined.
-# from app.services.openai_images import OpenAIImageService
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import (
     get_authenticated_tenant_context,
@@ -26,7 +22,6 @@ from app.artifacts.storage.provider import artifact_store
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# image_service = OpenAIImageService()
 LEGACY_OUTPUT_DIR = Path("/app/output")
 
 class ImageRequestPayload(BaseModel):

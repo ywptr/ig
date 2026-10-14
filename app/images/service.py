@@ -1,15 +1,8 @@
 import uuid
 
-from sqlalchemy import select
-
 from app.db.database import SessionLocal
 from app.db.models import ImageRequest
 from app.jobs.service import create_job
-from app.services.openai_images import OpenAIImageService
-
-
-image_provider = OpenAIImageService()
-
 
 def submit_image_generation(
     prompt: str,

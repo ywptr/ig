@@ -12,6 +12,7 @@ from app.db.models import ImageRequest
 from app.jobs.result import HandlerResult
 from app.media.providers.registry import (
     get_image_provider,
+    create_image_provider,
 )
 from app.db.models import (
     Artifact,
@@ -21,6 +22,11 @@ from app.media.providers.base import (
     ImageProviderResult,
     ResolvedImageReference,
     ResolvedImageRequest,
+)
+from app.tenancy.provider_configs import (
+    ProviderNotConfiguredError,
+    get_provider_config,
+    get_provider_credentials,
 )
 
 def normalize_image_job_input(
@@ -176,15 +182,40 @@ def build_resolved_image_request(
 
 
 def generate_image(
+    db: Session,
+    *,
+    tenant_id: str,
     request: ResolvedImageRequest,
 ) -> ImageProviderResult:
-    """
-    Resolve the configured provider adapter and execute
-    the image-generation request.
-    """
+    provider_config = get_provider_config(
+        db,
+        tenant_id=tenant_id,
+        provider=request.provider,
+    )
 
-    provider = get_image_provider(
-        request.provider
+    if (
+        provider_config is None
+        or not provider_config.enabled
+    ):
+        raise ProviderNotConfiguredError(
+            f"Provider is not configured "
+            f"for this tenant: "
+            f"{request.provider}"
+        )
+
+    credentials = get_provider_credentials(
+        db,
+        tenant_id=tenant_id,
+        provider=request.provider,
+    )
+
+    provider = create_image_provider(
+        request.provider,
+        credentials=credentials,
+        config=(
+            provider_config.config_json
+            or {}
+        ),
     )
 
     return provider.generate(
@@ -401,7 +432,9 @@ def execute_image_generation(
 
         try:
             result = generate_image(
-                resolved_request
+                db,
+                tenant_id=image_record.tenant_id,
+                request=resolved_request,
             )
 
             artifact = persist_image_result(

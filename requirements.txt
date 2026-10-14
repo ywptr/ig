@@ -31,3 +31,4 @@ psycopg[binary]
 vercel-queue
 vercel
 python-multipart
+cryptography

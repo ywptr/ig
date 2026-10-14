@@ -1,5 +1,4 @@
 import base64
-import os
 from dataclasses import replace
 from io import BytesIO
 
@@ -168,11 +167,13 @@ class OpenAIImageProvider(
     ImageProviderAdapter
 ):
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+    ):
         self.client = OpenAI(
-            api_key=os.environ[
-                "OPENAI_API_KEY"
-            ]
+            api_key=api_key
         )
 
     def _generate_without_references(

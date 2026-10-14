@@ -21,6 +21,7 @@ dependencies = [
     "redis>=8.1,<9",
     "rq>=2.12,<3",
     "python-multipart>=0.0.20",
+    "cryptography>=46,<47",
 ]
 
 [build-system]
