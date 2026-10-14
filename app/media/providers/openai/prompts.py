@@ -90,6 +90,7 @@ def build_image_prompt(
     if request.layout_type == "single":
         return (
             f"{request.description}\n\n"
+            f"{reference_instructions}\n\n"
             f"Create one image with an overall "
             f"aspect ratio of "
             f"{request.aspect_ratio}. "
