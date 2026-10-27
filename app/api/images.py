@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
-
+from sqlalchemy.orm import Session
 from app.auth.dependencies import get_db
 from app.db.models import ImageRequest
 from app.tenancy.context import TenantContext

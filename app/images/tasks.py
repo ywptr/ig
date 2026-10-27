@@ -11,7 +11,6 @@ from app.db.database import SessionLocal
 from app.db.models import ImageRequest
 from app.jobs.result import HandlerResult
 from app.media.providers.registry import (
-    get_image_provider,
     create_image_provider,
 )
 from app.db.models import (
@@ -172,8 +171,8 @@ def build_resolved_image_request(
             "openai",
         ),
         model=advanced.get(
-            "model" or ""
-        ),
+            "model") or ""
+        ,
         parameters=advanced.get(
             "parameters"
         ) or {},
