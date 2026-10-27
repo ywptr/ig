@@ -10,6 +10,22 @@ export async function getImages(): Promise<Image[]> {
     return response.json();
 }
 
+export async function getImage(
+    requestId: string
+): Promise<Image> {
+    const response = await fetch(
+        `/v1/images/${requestId}`
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            "Failed to load image request"
+        );
+    }
+
+    return response.json();
+}
+
 
 export async function generateImage(
     prompt: string

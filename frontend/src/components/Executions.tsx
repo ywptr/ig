@@ -53,6 +53,11 @@ export function Executions() {
     const [error, setError] =
         useState<string | null>(null);
 
+    const hasActiveExecutions =
+        executions.some(
+            (execution) =>
+                execution.status === "running"
+        );
 
     async function loadExecutions() {
         try {
@@ -75,6 +80,12 @@ export function Executions() {
 
     useEffect(() => {
         loadExecutions();
+    }, []);
+
+    useEffect(() => {
+        if (!hasActiveExecutions) {
+            return;
+        }
 
         const interval =
             window.setInterval(
@@ -87,8 +98,7 @@ export function Executions() {
                 interval
             );
         };
-    }, []);
-
+    }, [hasActiveExecutions]);
 
     return (
         <>

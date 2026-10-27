@@ -8,6 +8,7 @@ import { Executions } from "./components/Executions";
 
 import {
     getImages,
+    getImage,
     generateImage,
 } from "./api/images";
 
@@ -28,6 +29,9 @@ function App() {
     const [generating, setGenerating] =
         useState(false);
 
+    const [activeRequestId, setActiveRequestId] =
+        useState<string | null>(null);
+
     const [error, setError] =
         useState<string | null>(null);
 
@@ -44,11 +48,7 @@ function App() {
     const [authLoading, setAuthLoading] =
         useState(true);
 
-    function hasGeneratingImages(images: Image[]) {
-        return images.some(
-            (image) => image.status === "generating"
-        );
-    }
+
 
     async function loadHistory() {
 
@@ -90,6 +90,10 @@ function App() {
                 result
             );
 
+            setActiveRequestId(
+                result.request_id
+            );
+
             setPrompt("");
 
             await loadHistory();
@@ -115,18 +119,56 @@ function App() {
     }, [user]);
 
     useEffect(() => {
-        if (!user || !hasGeneratingImages(images)) {
+        if (!user || !activeRequestId) {
             return;
         }
 
-        const interval = window.setInterval(() => {
-            loadHistory();
-        }, 3000);
+        let cancelled = false;
+
+        async function pollActiveImage() {
+            try {
+                const image =
+                    await getImage(
+                        activeRequestId
+                    );
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (
+                    image.status === "completed" ||
+                    image.status === "failed"
+                ) {
+                    setActiveRequestId(null);
+                    await loadHistory();
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    console.error(
+                        "Failed to refresh active image:",
+                        error
+                    );
+                }
+            }
+        }
+
+        pollActiveImage();
+
+        const interval =
+            window.setInterval(
+                pollActiveImage,
+                3000
+            );
 
         return () => {
+            cancelled = true;
             window.clearInterval(interval);
         };
-    }, [images, user]);
+    }, [
+        activeRequestId,
+        user,
+    ]);   
 
     useEffect(() => {
         async function checkAuthentication() {

@@ -37,6 +37,11 @@ export function Jobs() {
     const [error, setError] =
         useState<string | null>(null);
 
+    const hasActiveJobs = jobs.some(
+        (job) =>
+            job.status === "queued" ||
+            job.status === "running"
+    );
 
     async function loadJobs() {
         try {
@@ -57,6 +62,12 @@ export function Jobs() {
 
     useEffect(() => {
         loadJobs();
+    }, []);
+
+    useEffect(() => {
+        if (!hasActiveJobs) {
+            return;
+        }
 
         const interval = window.setInterval(
             loadJobs,
@@ -66,8 +77,7 @@ export function Jobs() {
         return () => {
             window.clearInterval(interval);
         };
-    }, []);
-
+    }, [hasActiveJobs]);
 
     return (
         <div className="jobs">
