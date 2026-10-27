@@ -8,7 +8,6 @@ from app.artifacts.storage.provider import (
     artifact_store,
 )
 from app.db.database import SessionLocal
-from app.db.models import ImageRequest
 from app.jobs.result import HandlerResult
 from app.media.providers.registry import (
     create_image_provider,
