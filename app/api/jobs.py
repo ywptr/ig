@@ -2,10 +2,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.db.database import SessionLocal
+
 from sqlalchemy import select
 from app.db.models import Job, Execution
+from app.auth.dependencies import get_db
 from app.jobs.handlers import is_supported
 from app.jobs.service import create_job, get_job
 from app.tenancy.context import TenantContext
@@ -50,6 +52,7 @@ def submit_job(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
     if not is_supported(request.capability):
         raise HTTPException(
@@ -61,6 +64,7 @@ def submit_job(
         )
 
     job = create_job(
+        db,
         capability=request.capability,
         input_data=request.input,
         tenant_id=context.tenant.tenant_id,
@@ -76,8 +80,10 @@ def read_job(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
     job = get_job(
+        db,
         job_id,
         tenant_id=context.tenant.tenant_id,
         user_id=context.membership.user_id,
@@ -96,39 +102,34 @@ def list_jobs(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
-
-    try:
-        statement = (
-            select(Job)
-            .where(
-                Job.tenant_id
-                == context.tenant.tenant_id,
-                Job.user_id
-                == context.membership.user_id,
-            )
-            .order_by(Job.created_at.desc())
-            .limit(100)
+    statement = (
+        select(Job)
+        .where(
+            Job.tenant_id
+            == context.tenant.tenant_id,
+            Job.user_id
+            == context.membership.user_id,
         )
+        .order_by(Job.created_at.desc())
+        .limit(100)
+    )
 
-        jobs = db.scalars(statement).all()
+    jobs = db.scalars(statement).all()
 
-        return [
-            {
-                "job_id": job.job_id,
-                "capability": job.capability,
-                "status": job.status,
-                "error_message": job.error_message,
-                "created_at": job.created_at,
-                "started_at": job.started_at,
-                "completed_at": job.completed_at,
-            }
-            for job in jobs
-        ]
-
-    finally:
-        db.close()
+    return [
+        {
+            "job_id": job.job_id,
+            "capability": job.capability,
+            "status": job.status,
+            "error_message": job.error_message,
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "completed_at": job.completed_at,
+        }
+        for job in jobs
+    ]
 
 @router.get("/jobs/{job_id}/executions")
 def list_job_executions(
@@ -136,10 +137,8 @@ def list_job_executions(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
-
-    try:
         job = db.scalar(
             select(Job).where(
                 Job.job_id == job_id,
@@ -199,6 +198,3 @@ def list_job_executions(
             }
             for execution in executions
         ]
-
-    finally:
-        db.close()

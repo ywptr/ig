@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.db.database import SessionLocal
+from app.auth.dependencies import get_db
 from app.db.models import ImageRequest
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import (
@@ -45,8 +45,10 @@ def image_to_dict(image: ImageRequest):
 def generate_image(
     request: ImageRequestPayload,
     context: TenantContext = Depends(get_authenticated_tenant_context),
+    db: Session = Depends(get_db),
 ):
     image_record = submit_image_generation(
+        db,
         prompt=request.prompt,
         tenant_id=context.tenant.tenant_id,
         user_id=context.membership.user_id,
@@ -60,10 +62,9 @@ def list_images(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
 
-    try:
         statement = (
             select(ImageRequest)
             .where(
@@ -81,9 +82,6 @@ def list_images(
             for image in images
         ]
 
-    finally:
-        db.close()
-
 
 @router.get("/images/{request_id}")
 def get_image(
@@ -91,10 +89,9 @@ def get_image(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
-
-    try:
+   
         statement = select(ImageRequest).where(
             ImageRequest.request_id == request_id,
             ImageRequest.tenant_id
@@ -112,8 +109,6 @@ def get_image(
 
         return image_to_dict(image)
 
-    finally:
-        db.close()
 
 
 @router.get("/images/{request_id}/content")
@@ -122,10 +117,9 @@ def get_image_content(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
 
-    try:
         statement = select(ImageRequest).where(
             ImageRequest.request_id == request_id,
             ImageRequest.tenant_id
@@ -208,6 +202,3 @@ def get_image_content(
             media_type=image.mime_type or "image/png",
             filename=image.filename,
         )
-
-    finally:
-        db.close()

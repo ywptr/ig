@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.db.database import SessionLocal
+from app.auth.dependencies import get_db
 
 from app.db.models import Execution
 from app.tenancy.context import TenantContext
@@ -48,10 +49,9 @@ def list_executions(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
 
-    try:
         statement = (
             select(Execution)
             .where(
@@ -75,8 +75,6 @@ def list_executions(
             for execution in executions
         ]
 
-    finally:
-        db.close()
 
 
 @router.get("/{execution_id}")
@@ -85,10 +83,8 @@ def get_execution(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
-    db = SessionLocal()
-
-    try:
         statement = select(Execution).where(
             Execution.execution_id
             == execution_id,
@@ -109,6 +105,3 @@ def get_execution(
         return execution_to_dict(
             execution
         )
-
-    finally:
-        db.close()

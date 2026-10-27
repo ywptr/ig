@@ -1,20 +1,20 @@
 import uuid
 
-from app.db.database import SessionLocal
+from sqlalchemy.orm import Session
 from app.db.models import ImageRequest
 from app.jobs.service import create_job
 
 def submit_image_generation(
+    db: Session,
+    *,
     prompt: str,
     tenant_id: str,
     user_id: str,
     media_request: dict | None = None,
     ) -> ImageRequest:
-    request_id = str(uuid.uuid4())
+        request_id = str(uuid.uuid4())
 
-    db = SessionLocal()
-
-    try:
+    
         image_record = ImageRequest(
             request_id=request_id,
             tenant_id=tenant_id,
@@ -57,6 +57,7 @@ def submit_image_generation(
                     "request_id": request_id,
                 }
             create_job(
+                db,
                 capability="image.generate",
                 input_data=job_input,
                 tenant_id=tenant_id,
@@ -69,6 +70,3 @@ def submit_image_generation(
             raise
 
         return image_record
-
-    finally:
-        db.close()
