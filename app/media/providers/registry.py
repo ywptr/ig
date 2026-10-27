@@ -33,21 +33,3 @@ def create_image_provider(
         f"{provider}"
     )
 
-def get_image_provider(
-    provider: str,
-) -> ImageProviderAdapter:
-    provider = provider.strip().lower()
-
-    if provider not in _image_providers:
-        if provider == "openai":
-            _image_providers[
-                provider
-            ] = OpenAIImageProvider()
-
-        else:
-            raise ValueError(
-                f"Unsupported image provider: "
-                f"{provider}"
-            )
-
-    return _image_providers[provider]
