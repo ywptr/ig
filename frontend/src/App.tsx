@@ -123,13 +123,15 @@ function App() {
             return;
         }
 
+        const requestId = activeRequestId;
+
         let cancelled = false;
 
         async function pollActiveImage() {
             try {
                 const image =
                     await getImage(
-                        activeRequestId
+                        requestId
                     );
 
                 if (cancelled) {
