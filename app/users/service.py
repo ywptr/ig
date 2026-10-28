@@ -84,6 +84,39 @@ def create_google_user(
 
     return user
 
+def create_external_user(
+    db: Session,
+    *,
+    email: str,
+    name: str | None = None,
+    picture_url: str | None = None,
+) -> User:
+    """
+    Create an IG application principal for a user
+    authenticated by an external identity service.
+
+    Authentication identity is stored separately in
+    UserIdentity. Email is profile data, not the
+    external identity key.
+    """
+
+    user = User(
+        user_id=str(uuid4()),
+        email=email.lower(),
+        name=name,
+        password_hash=None,
+        google_sub=None,
+        picture_url=picture_url,
+        created_at=datetime.utcnow(),
+        last_login_at=None,
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user
+
 def update_last_login(
     db: Session,
     user: User,

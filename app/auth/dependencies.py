@@ -21,19 +21,15 @@ def get_db():
     finally:
         db.close()
 
-
-def get_current_user(
+def get_optional_current_user(
     ig_session: str | None = Cookie(
         default=None,
         alias=SESSION_COOKIE_NAME,
     ),
     db: Session = Depends(get_db),
-) -> User:
+) -> User | None:
     if ig_session is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Not authenticated",
-        )
+        return None
 
     session = get_session_by_token(
         db,
@@ -41,20 +37,24 @@ def get_current_user(
     )
 
     if session is None or not is_session_active(session):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired session",
-        )
+        return None
 
     user = get_user_by_id(
         db,
         session.user_id,
     )
 
-    if user is None:
+    return user
+
+def get_current_user(
+    current_user: User | None = Depends(
+        get_optional_current_user
+    ),
+) -> User:
+    if current_user is None:
         raise HTTPException(
             status_code=401,
-            detail="User not found",
+            detail="Not authenticated",
         )
 
-    return user
+    return current_user

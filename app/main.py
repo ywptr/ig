@@ -9,6 +9,7 @@ from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import get_tenant_context,get_authenticated_tenant_context
 
 from app.api.auth import router as auth_router
+from app.api.auth_is import router as auth_is_router
 from app.api.images import router as image_router
 from app.api.jobs import router as job_router
 from app.api.artifacts import (
@@ -68,6 +69,11 @@ app.include_router(
 
 app.include_router(
     auth_router,
+    prefix="/v2"
+)
+
+app.include_router(
+    auth_is_router,
     prefix="/v2"
 )
 

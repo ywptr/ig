@@ -10,6 +10,7 @@ from app.db.models.tenant_invitation import TenantInvitation
 from app.db.models.tenant_settings import TenantSettings
 from app.db.models.tenant_provider_config import TenantProviderConfig
 from app.db.models.user import User
+from app.db.models.user_identity import UserIdentity
 from app.db.models.user_session import UserSession
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "TenantSettings",
     "TenantProviderConfig",
     "User",
+    "UserIdentity",
     "UserSession",
 ]
