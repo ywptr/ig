@@ -197,6 +197,12 @@ export function AuthScreen({
         onAuthenticated,
     ]);
 
+    function handleISLogin() {
+        window.location.assign(
+            "/v2/auth/is/login"
+        );
+    }
+
     async function handleSubmit(
         event: React.FormEvent
     ) {
@@ -267,22 +273,6 @@ export function AuthScreen({
         );
     }
 
-    if (
-        authConfig
-        && !authConfig.password.enabled
-        && !authConfig.google.enabled
-    ) {
-        return (
-            <div className="auth-page">
-                <div className="auth-card">
-                    <div className="error">
-                        No authentication method is available.
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="auth-page">
 
@@ -299,6 +289,37 @@ export function AuthScreen({
 
 
             <div className="auth-card">
+
+                <div className="auth-heading">
+                    <h1>
+                        Sign in to IG
+                    </h1>
+
+                    <p>
+                        Continue using your shared account.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    className="auth-submit"
+                    onClick={handleISLogin}
+                    disabled={submitting}
+                >
+                    Continue with IS
+                </button>
+
+                {(
+                    authConfig?.password.enabled
+                    || authConfig?.google.enabled
+                ) && (
+                    <div className="auth-divider">
+                        <span>
+                            legacy sign-in
+                        </span>
+                    </div>
+                )}
+
             {authConfig?.password.enabled && (
                 <div className="auth-tabs">
                     <button
@@ -347,19 +368,7 @@ export function AuthScreen({
                 </div>
             )}
 
-                <div className="auth-heading">
-                    <h1>
-                        {mode === "login"
-                            ? "Welcome back"
-                            : "Create your account"}
-                    </h1>
 
-                    <p>
-                        {mode === "login"
-                            ? "Sign in to continue to IG."
-                            : "Create an account to start generating images."}
-                    </p>
-                </div>
 
             {authConfig?.password.enabled && (
                 <form
