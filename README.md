@@ -1,26 +1,26 @@
 # IG — AI Media Generation Control Plane
 
-**Version 3.2**
+**Version 4.0**
 
 IG is a multi-tenant AI media generation control plane.
 
 It provides a provider-neutral API for submitting media-generation requests, executing them asynchronously, resolving reference media, storing generated and uploaded artifacts, and managing tenant-specific provider configuration.
 
-V3 currently implements **image generation**. The media interface is intentionally designed so that future video and audio capabilities can use the same control-plane concepts without exposing provider-specific implementation details to higher-level applications.
-
-IG is also intended to serve as infrastructure for higher-level applications, such as **Sandcastle** and **Sociosight**.
+V4 currently implements **image generation**. The media interface is intentionally designed so that future video and audio capabilities can use the same control-plane concepts without exposing provider-specific implementation details to higher-level applications.
 
 ---
 
 ## Overview
 
-IG V3 includes:
+IG V4 includes:
 
 - Multi-tenant backend architecture
 - Tenant resolution by hostname
 - Tenant membership and administrative roles
-- Tenant-specific authentication policy
-- Password and Google authentication support
+- Tenant-level membership/admission policy
+- IS OIDC authentication
+- JIT local-user and tenant-membership provisioning
+- Legacy local password/direct Google authentication is now DEPRECATED
 - Tenant-specific model-provider configuration
 - Encrypted provider credentials
 - Provider-neutral media generation API
@@ -47,10 +47,13 @@ IG V3 includes:
 
 # Architecture
 
-The standard V3 deployment is:
+The standard deployment is:
 
 ```text
 Browser / API Client / 3rd Party Apps
+               │
+               ├──────────────► IS
+               │                Identity / OIDC
                │
                ▼
         Vercel Frontend
@@ -80,8 +83,6 @@ Browser / API Client / 3rd Party Apps
                                   ▼
                                Artifact
 ```
-
-The development machine is **not part of the deployed runtime**.
 
 Normal development consists of editing, testing, committing, and pushing the repository. Vercel CI/CD deploys changes from GitHub.
 
@@ -499,9 +500,81 @@ Provider credentials are never returned through these APIs.
 
 ---
 
+Alternatively, administrators may use the utility script from a trusted local environment connected to the target database:
+
+```text
+scripts/configure-tenant-provider.py
+```
+
+Before running it, ensure the shell has:
+
+```text
+DATABASE_URL
+TENANT_SECRET_ENCRYPTION_KEY
+```
+
+configured for the intended IG database.
+
+TENANT_SECRET_ENCRYPTION_KEY must match between local dev and targeted Vercel environment!
+
+If the database contains only one tenant:
+
+```bash
+python scripts/configure-tenant-provider.py \
+  --provider openai
+```
+
+If multiple tenants exist:
+
+```bash
+python scripts/configure-tenant-provider.py \
+  --tenant-slug <tenant-slug> \
+  --provider openai
+```
+
+The script prompts securely for provider credentials.
+
+For OpenAI:
+
+```text
+Credentials JSON:
+{"api_key":"<openai-api-key>"}
+```
+
+Then enter non-secret provider configuration:
+
+```text
+Config JSON:
+{"default_model":"gpt-image-2"}
+```
+
+The credential prompt is hidden and the credential is encrypted before
+storage.
+
+The script uses the same provider-configuration service as the runtime
+API, avoiding direct manipulation of `encrypted_credentials`.
+
+Verify safely with:
+
+```sql
+SELECT
+    tenant_id,
+    provider,
+    enabled,
+    encrypted_credentials IS NOT NULL
+        AS has_credentials,
+    config_json
+FROM tenant_provider_configs;
+```
+
+Do not print or inspect decrypted credentials as part of routine
+verification.
+
+---
+
 # Multi-tenancy
 
-IG V3 is tenant-aware throughout the backend.
+IG is tenant-aware throughout the backend.
 
 An incoming request resolves approximately as:
 
@@ -533,25 +606,78 @@ Tenant-scoped resources include:
 
 ---
 
-# Authentication and tenant policy
+# Authentication
 
-Tenant authentication settings currently include:
+IG V4 delegates interactive authentication to the shared Identity Service (IS).
+
+IG no longer treats local username/password or direct Google login as the primary authentication mechanism.
+
+Authentication flow:
 
 ```text
-allow_self_registration
-allow_password_authentication
-allow_google_authentication
+Browser
+   ↓
+IG /v2/auth/is/login
+   ↓
+IS OIDC authorization
+   ↓
+IG callback
+   ↓
+verify issuer / audience / signature / nonce / PKCE
+   ↓
+IS userinfo
+   ↓
+(issuer, subject)
+   ↓
+IG UserIdentity
+   ↓
+local IG User
+   ↓
+TenantMembership
+   ↓
+IG session
 ```
 
-Public self-registration may be enabled or disabled per tenant.
+IS owns:
 
-Password and Google authentication can also be enabled or disabled independently, subject to application validation.
+```text
+identity
+authentication
+login
+identity admission
+```
+
+IG owns:
+
+```text
+local application principal
+tenant membership
+tenant roles
+jobs
+executions
+artifacts
+provider configuration
+```
+
+New IS identities are JIT-provisioned into IG when tenant admission policy allows it.
+
+Email is treated as profile data only. External identity linkage is based on:
+
+```text
+issuer + subject
+```
+
+and never inferred automatically from matching email addresses.
 
 Tenant administrators have access to tenant-management operations that ordinary members do not.
 
 ---
 
-# Tenant authentication APIs
+# Tenant authentication APIs are now DEPRECATED
+
+Because IG now uses IS authentication framework, in-app authentication provider is now deprecated in favour of unified IS experience.
+
+The following APIs are still available, but will be removed in the future.
 
 Public tenant authentication configuration:
 
@@ -570,7 +696,6 @@ Currently recognized authentication providers include:
 
 ```text
 google
-entra
 ```
 
 Example:
@@ -607,9 +732,9 @@ Example:
 
 ```json
 {
-  "allow_self_registration": false,
-  "allow_password_authentication": true,
-  "allow_google_authentication": true
+  "allow_self_registration": true,
+  "allow_password_authentication": false,
+  "allow_google_authentication": false
 }
 ```
 
@@ -618,6 +743,10 @@ Admin membership is required.
 The current API updates an existing `TenantSettings` row.
 
 It does not currently create the first `TenantSettings` row during installation bootstrap.
+
+'allow_self_registration' primarily controls JIT tenant membership for identities already authenticated and admitted by IS.
+
+The password and Google flags apply only to the deprecated local authentication paths.
 
 ---
 
@@ -662,7 +791,7 @@ IG prevents removal or deactivation of the tenant's last active administrator.
 
 ---
 
-# Tenant invitations
+# Tenant invitations - legacy authentication integration
 
 Once the first administrator exists, invitations are the preferred way to add users when public registration is disabled.
 
@@ -688,7 +817,7 @@ member
 admin
 ```
 
-During V3 development, the returned invitation response includes the invitation token directly.
+During development, the returned invitation response includes the invitation token directly.
 
 Future versions may deliver this token through email or another notification mechanism.
 
@@ -716,7 +845,7 @@ POST /v2/tenant/invitations/accept
 }
 ```
 
-New user registers from invitation:
+Legacy new-user registration from invitation (This password-based registration path predates IS integration and is deprecated. Future invitation acceptance should bind an authenticated IS identity to the tenant rather than create application-local credentials.):
 
 ```text
 POST /v2/tenant/invitations/register
@@ -740,7 +869,19 @@ Session
 
 ---
 
-# Self-registration
+# Legacy local self-registration — deprecated
+
+This endpoint belongs to the pre-IS authentication model and is retained
+temporarily for compatibility. New V4 users should authenticate through IS.
+
+For V4, automatic onboarding means:
+
+```text
+valid IS identity
+→ JIT IG User
+→ UserIdentity
+→ optional JIT TenantMembership
+```
 
 When enabled by tenant policy:
 
@@ -818,7 +959,7 @@ resolution.
 
 # Deployment
 
-## Recommended V3 architecture
+## Recommended architecture
 
 The supported primary deployment architecture is:
 
@@ -838,11 +979,32 @@ Model providers
 
 Redis/RQ remains available as an alternative queue implementation, but it is not required for the normal Vercel deployment.
 
-The historical Docker deployment remains in the repository for reference but is not treated as the primary or fully validated V3 deployment path.
+The historical Docker deployment remains in the repository for reference but is not treated as the primary deployment path.
 
 ---
 
 # Deploying IG from scratch
+
+## 0. Deploy IS framework first.
+
+Check https://github.com/ywptr/is.git
+
+Then configure IG as an IS OIDC client.
+
+The registration will provide:
+
+```text
+client_id
+client_secret
+```
+
+and will refer to the callback URI:
+
+```text
+https://<ig-domain>/v2/auth/is/callback
+```
+
+The client secret belongs only in the IG deployment environment. Please keep private.
 
 ## 1. Fork or clone the repository
 
@@ -912,11 +1074,13 @@ The required Vercel Blob credentials should be supplied by the Vercel project/ru
 
 ## 5. Configure the queue
 
-The standard V3 queue is:
+The standard queue is:
 
 ```text
 JOB_QUEUE_PROVIDER=vercel
 ```
+
+Currently the Vercel Queue implementation is pinned at version 0.9.1, because newer implementation breaks the application.
 
 This does not require Redis or a separately hosted RQ worker.
 
@@ -944,19 +1108,19 @@ Do not commit the key.
 
 ## 7. Configure environment variables
 
-Typical V3 production configuration:
+Typical production configuration:
 
 ```text
 DATABASE_URL=<postgresql-url>
-
 TENANT_SECRET_ENCRYPTION_KEY=<fernet-key>
-
 JOB_QUEUE_PROVIDER=vercel
-
 ARTIFACT_STORE_PROVIDER=vercel
-
+IS_OIDC_DISCOVERY_URL=https://<is-domain>/api/auth/.well-known/openid-configuration
+IS_OIDC_CLIENT_ID=<ig-oidc-client-id>
+IS_OIDC_CLIENT_SECRET=<secret>
+IS_OIDC_REDIRECT_URI=https://<ig-domain>/v2/auth/is/callback
+IS_OIDC_POST_LOGIN_REDIRECT=/
 LOG_LEVEL=INFO
-
 IG_TRACE_JOBS=false
 ```
 
@@ -1022,7 +1186,7 @@ A fresh database must be migrated before IG can be initialized.
 
 ## 10. Deploy
 
-The normal V3 workflow uses GitHub-connected Vercel CI/CD.
+The normal workflow uses GitHub-connected Vercel CI/CD.
 
 ```bash
 git add .
@@ -1047,12 +1211,21 @@ The required bootstrap order is:
 ```text
 1. Tenant
 2. TenantDomain
-3. User
-4. TenantMembership with role=admin
-5. TenantSettings
+3. TenantSettings
+4. First IS login
+5. Promote initial membership to admin
+6. Configure tenant model provider credentials
 ```
 
 The first `TenantDomain.hostname` must match the hostname through which the deployment is accessed.
+
+IG resolves the current tenant from the incoming request hostname before
+authentication completes. Without a matching tenant_domains row,
+tenant-aware requests — including the IS OIDC callback — fail with:
+
+```json
+{ "detail": "Tenant not found" }
+```
 
 For example, if the deployment is accessed through:
 
@@ -1068,6 +1241,94 @@ ig.example.com
 
 before tenant-aware APIs can resolve the tenant.
 
+## Configure the initial tenant domain
+
+After creating the initial tenant, insert at least one hostname mapping
+into `tenant_domains`.
+
+First identify the tenant:
+
+```sql
+SELECT
+    tenant_id,
+    slug,
+    name,
+    status
+FROM tenants;
+```
+
+Then insert the hostname actually used to access IG:
+
+```sql
+INSERT INTO tenant_domains (
+    hostname,
+    tenant_id,
+    is_primary
+)
+VALUES (
+    'ig.example.com',
+    '<tenant-id>',
+    true
+);
+```
+
+Verify:
+
+```sql
+SELECT
+    hostname,
+    tenant_id,
+    is_primary
+FROM tenant_domains;
+```
+
+Do not assume a Vercel-generated hostname. Use the real hostname through
+which the deployment is accessed, whether that is:
+
+```text
+*.vercel.app
+```
+
+or a custom domain.
+
+Automatic initial-domain/bootstrap provisioning is planned for a future release.
+
+---
+
+## Configure initial tenant admission policy
+
+V4 uses IS for authentication.
+
+`allow_self_registration` therefore means:
+
+> Allow a valid IS-authenticated identity to receive a tenant membership
+> automatically when no membership already exists.
+
+For the primary IG tenant, a typical configuration is:
+
+```text
+allow_self_registration = true
+allow_password_authentication = false
+allow_google_authentication = false
+```
+
+With this configuration:
+
+```text
+IS authentication
+    ↓
+new external identity
+    ↓
+create local IG User
+    ↓
+create UserIdentity
+    ↓
+create TenantMembership(role=member)
+```
+
+Tenant administrators may disable automatic membership for restricted
+tenants while continuing to use IS authentication.
+
 ---
 
 ## Initial bootstrap API availability
@@ -1078,11 +1339,13 @@ The following first-installation capabilities are **not currently exposed as com
 |---|---:|---|
 | `Tenant` | No | Must currently be created administratively |
 | `TenantDomain` | No | Must exist before hostname-based tenant resolution works |
-| Initial admin `User` | No complete bootstrap API | Normal registration requires an already resolved/configured tenant |
-| Initial admin `TenantMembership` | No complete bootstrap API | Invitations/member APIs require an existing admin |
+| Initial `User` | Yes, via IS JIT provisioning | Created automatically on first valid IS login when tenant admission permits |
+| Initial `UserIdentity` | Yes, via IS JIT provisioning | Maps IS `issuer + subject` to the local IG user |
+| Initial `TenantMembership` | Partially | JIT login creates a `member`; the first administrator must currently be promoted administratively |
+ 
 | Initial `TenantSettings` | No | Existing settings API updates an existing row |
 
-Therefore the very first tenant requires one administrative database bootstrap operation.
+Therefore a fresh installation still requires administrative bootstrap for the Tenant, TenantDomain, TenantSettings, and initial admin promotion.
 
 Once these objects exist, normal tenant administration can proceed through application APIs.
 
@@ -1114,6 +1377,8 @@ resolution.
 
 Once the tenant administrator can authenticate, configure OpenAI:
 
+### Through the admin API
+
 ```text
 PUT /v2/tenant/providers/openai
 ```
@@ -1130,9 +1395,15 @@ PUT /v2/tenant/providers/openai
 }
 ```
 
-The credential is encrypted before being written to PostgreSQL.
+### Or through the administrative utility
 
-A global `OPENAI_API_KEY` environment variable is not required for the V3 runtime.
+```bash
+python scripts/configure-tenant-provider.py \
+ --tenant-slug <tenant-slug> \
+ --provider openai
+  ```
+
+The credential is encrypted before being written to PostgreSQL.
 
 ---
 
@@ -1171,13 +1442,18 @@ Then verify:
 
 The repository includes `.env.example`.
 
-Primary V3 variables include:
+Primary variables include:
 
 ```text
 DATABASE_URL
 TENANT_SECRET_ENCRYPTION_KEY
 JOB_QUEUE_PROVIDER
 ARTIFACT_STORE_PROVIDER
+IS_OIDC_DISCOVERY_URL
+IS_OIDC_CLIENT_ID
+IS_OIDC_CLIENT_SECRET
+IS_OIDC_REDIRECT_URI
+IS_OIDC_POST_LOGIN_REDIRECT
 LOG_LEVEL
 IG_TRACE_JOBS
 ```
@@ -1197,7 +1473,7 @@ Provider API credentials should not normally be placed in `.env`.
 
 ## Vercel Queue
 
-Vercel Queue is the standard V3 execution backend.
+Vercel Queue is the standard execution backend.
 
 ```text
 FastAPI
@@ -1237,7 +1513,7 @@ REDIS_URL
 
 An RQ deployment also requires a persistent RQ worker.
 
-This execution path is retained as an alternative architecture but is not required for the standard V3 deployment.
+This execution path is retained as an alternative architecture but is not required for the standard deployment.
 
 ---
 
@@ -1276,9 +1552,9 @@ local artifact storage
 
 Docker-related files remain in the repository for historical reference and experimentation.
 
-The Docker deployment is **not currently treated as the primary or fully validated V3 deployment path**.
+The Docker deployment is **not currently treated as the primary or fully validated deployment path**.
 
-V3 development and deployment are centered on:
+Development and deployment are centered on:
 
 ```text
 Vercel
@@ -1287,7 +1563,7 @@ Vercel Queue
 Vercel Blob
 ```
 
-No effort is currently being spent maintaining feature parity between the V3 cloud deployment and the legacy Docker architecture.
+No effort is currently being spent maintaining feature parity between the cloud deployment and the legacy Docker architecture.
 
 ---
 
@@ -1320,9 +1596,9 @@ At least one active tenant administrator must be retained.
 
 ---
 
-# V3 status
+# Status
 
-V3 establishes a cloud-hosted, multi-tenant media control plane.
+V4 establishes a cloud-hosted, multi-tenant media control plane, with IS providing shared identity and authentication while IG retains application-specific tenant membership and authorization.
 
 Validated primary runtime:
 
@@ -1340,15 +1616,17 @@ OpenAI
     image generation
 ```
 
-Implemented V3 capabilities include:
+Implemented capabilities include:
 
 - cloud-native runtime
 - multi-tenancy
 - tenant-domain resolution
 - tenant memberships
-- tenant-specific authentication policy
 - invitations
-- Google authentication
+- IS OIDC authentication
+- external identity mapping using issuer + subject
+- JIT IG user provisioning
+- JIT tenant membership provisioning
 - encrypted tenant provider credentials
 - provider-neutral media-generation API
 - semantic image styles
@@ -1358,21 +1636,15 @@ Implemented V3 capabilities include:
 - pluggable storage
 - pluggable queue execution
 
-The development workstation is not part of the deployed runtime.
-
 ---
 
-# V4 / Future wishlist
-
-V3 intentionally stops short of implementing every possible control-plane feature. Its primary goals:
-- Multitenant Ready
-- Multiprovider Ready
-- Capable of single and multipanel image generation
-- Dynamic and future-proof media generation API
+# Future wishlist
 
 ## Bootstrap and tenant administration
 
 The following currently unexposed or partially exposed administrative capabilities should become first-class platform APIs and/or administrative UI in a future release:
+
+These are not identity-service responsibilities. IG continues to own application-specific tenant membership and authorization. Shared platform tenant lifecycle may later integrate with Nexus.
 
 - Create tenant
 - Update tenant metadata/status
@@ -1433,7 +1705,7 @@ These should eventually remove the need for direct database manipulation during 
 
 ---
 
-## Authentication and administration
+## Authentication and administration (via IS)
 
 - Richer tenant-administration UI
 - Invitation delivery by email (partially completed; need to interface with a proper mail server)
@@ -1505,7 +1777,7 @@ Users are responsible for ensuring that their inputs and generated outputs compl
 
 # Current status
 
-**V3 — Multi-tenant cloud media control plane**
+**V4 — Multi-tenant cloud media control plane with IS integration**
 
-The core V3 platform is operational.
+The core V4 platform is operational.
 The frontend still requires work and currently is limited to current-tenant functions.
