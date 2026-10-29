@@ -21,6 +21,7 @@ from app.auth.dependencies import (
 from app.auth.is_oidc import (
     create_authorization_request,
     exchange_authorization_code,
+    get_userinfo,
     get_oidc_discovery,
     get_post_login_redirect,
     verify_id_token,
@@ -215,6 +216,19 @@ def is_callback(
             expected_nonce=oidc_nonce,
         )
 
+        access_token = token_response.get(
+            "access_token"
+        )
+
+        if not access_token:
+            raise RuntimeError(
+                "IS token response did not contain an access_token"
+            )
+
+        userinfo = get_userinfo(
+            access_token=access_token,
+        )
+
     except Exception as exc:
         raise HTTPException(
             status_code=401,
@@ -230,6 +244,14 @@ def is_callback(
     subject = str(
         claims["sub"]
     )
+
+    if str(userinfo["sub"]) != subject:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "IS userinfo subject does not match ID token subject"
+            ),
+        )
 
     user = (
         get_user_by_external_identity(
@@ -292,7 +314,7 @@ def is_callback(
                 tenant_context.tenant.tenant_id
             ),
             issuer=issuer,
-            claims=claims,
+            claims=userinfo,
         )
     )
 

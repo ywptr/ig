@@ -182,6 +182,42 @@ def exchange_authorization_code(
 
     return token_response
 
+def get_userinfo(
+    *,
+    access_token: str,
+) -> dict[str, Any]:
+    discovery = get_oidc_discovery()
+
+    userinfo_endpoint = discovery.get(
+        "userinfo_endpoint"
+    )
+
+    if not userinfo_endpoint:
+        raise RuntimeError(
+            "OIDC discovery does not expose a userinfo_endpoint"
+        )
+
+    response = requests.get(
+        userinfo_endpoint,
+        headers={
+            "Authorization": (
+                f"Bearer {access_token}"
+            ),
+        },
+        timeout=10,
+    )
+
+    response.raise_for_status()
+
+    userinfo = response.json()
+
+    if "sub" not in userinfo:
+        raise RuntimeError(
+            "IS userinfo response does not contain sub"
+        )
+
+    return userinfo
+
 
 def verify_id_token(
     *,
