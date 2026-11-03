@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from sqlalchemy.orm import Session
 
 from app.images.service import (
     submit_image_generation,
@@ -70,6 +71,7 @@ def resolve_grid_arrangement(
 def submit_media_generation(
     request: MediaGenerationRequest,
     *,
+    db: Session,
     tenant_id: str,
     user_id: str,
 ) -> MediaSubmission:
@@ -93,6 +95,7 @@ def submit_media_generation(
         )
 
     image_record = submit_image_generation(
+        db,
         prompt=request.intent.description,
         tenant_id=tenant_id,
         user_id=user_id,

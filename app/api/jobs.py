@@ -84,7 +84,7 @@ def read_job(
 ):
     job = get_job(
         db,
-        job_id,
+        job_id=job_id,
         tenant_id=context.tenant.tenant_id,
         user_id=context.membership.user_id,
     )

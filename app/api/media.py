@@ -3,6 +3,9 @@ from fastapi import (
     Depends,
     HTTPException,
 )
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_db
 
 from app.media.schemas import (
     MediaGenerationRequest,
@@ -35,10 +38,12 @@ def generate_media(
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
+    db: Session = Depends(get_db),
 ):
     try:
         submission = submit_media_generation(
             request,
+            db=db,
             tenant_id=context.tenant.tenant_id,
             user_id=context.membership.user_id,
         )
