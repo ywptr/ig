@@ -64,17 +64,24 @@ def normalize_image_job_input(
 def get_image_record(
     db: Session,
     request_id: str,
+    *,
+    tenant_id: str,
+    user_id: str | None,
 ) -> ImageRequest:
     """
-    Load the persisted ImageRequest and perform
-    basic ownership sanity checks.
+    Load only a request owned by the trusted job tenant and user.
     """
+
+    if not tenant_id or not user_id:
+        raise RuntimeError("Image generation requires trusted tenant and user ownership")
 
     statement = select(
         ImageRequest
     ).where(
         ImageRequest.request_id
-        == request_id
+        == request_id,
+        ImageRequest.tenant_id == tenant_id,
+        ImageRequest.user_id == user_id,
     )
 
     image_record = db.scalar(
@@ -83,13 +90,7 @@ def get_image_record(
 
     if image_record is None:
         raise RuntimeError(
-            f"Image request not found: "
-            f"{request_id}"
-        )
-
-    if image_record.user_id is None:
-        raise RuntimeError(
-            f"Image request has no owner: "
+            f"Image request not found or not accessible: "
             f"{request_id}"
         )
 
@@ -409,6 +410,9 @@ def build_handler_result(
 
 def execute_image_generation(
     input_data: dict,
+    *,
+    tenant_id: str,
+    user_id: str | None,
 ) -> HandlerResult:
     """
     Execute one image-generation job.
@@ -434,6 +438,8 @@ def execute_image_generation(
         image_record = get_image_record(
             db,
             request_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
 
         resolved_request = (

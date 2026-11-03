@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.db.models import Job, Execution
 from app.auth.dependencies import get_db
-from app.jobs.handlers import is_supported
+from app.jobs.handlers import is_publicly_submittable, is_supported
 from app.jobs.service import create_job, get_job
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import (
@@ -60,6 +60,15 @@ def submit_job(
             detail=(
                 f"Unsupported capability: "
                 f"{request.capability}"
+            ),
+        )
+
+    if not is_publicly_submittable(request.capability):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Capability is internal and cannot be submitted directly. "
+                "Use /v2/media/generations for media generation."
             ),
         )
 

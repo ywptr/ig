@@ -59,7 +59,12 @@ def execute_job(job_id: str) -> None:
 
         handler = get_handler(job.capability)
 
-        result = handler(job.input_json)
+        # Ownership comes from persisted Job columns, never from input_json.
+        result = handler(
+            job.input_json,
+            tenant_id=job.tenant_id,
+            user_id=job.user_id,
+        )
 
         if result is not None:
             apply_execution_result(
