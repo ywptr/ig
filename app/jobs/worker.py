@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db.database import SessionLocal
 from app.db.models import Job
@@ -20,6 +20,11 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 def execute_job(job_id: str) -> None:
+    """Dispatch only a queued job, once per committed claim.
+
+    Running/terminal jobs are not reclaimed on redelivery. This prevents repeat
+    provider calls but deliberately leaves crash recovery to a separate design.
+    """
     logger.info(
         "job.worker.start job_id=%s",
         job_id,
@@ -27,21 +32,27 @@ def execute_job(job_id: str) -> None:
     db = SessionLocal()
     job = None
     execution = None
+    claimed = False
 
     try:
-        statement = select(Job).where(
-            Job.job_id == job_id
+        # A single conditional write decides ownership. Concurrent deliveries
+        # must not dispatch based on a separate read of the queued status.
+        claim = db.execute(
+            update(Job)
+            .where(Job.job_id == job_id, Job.status == "queued")
+            .values(status="running", started_at=datetime.utcnow())
         )
 
-        job = db.scalar(statement)
+        if claim.rowcount != 1:
+            db.rollback()
+            if db.scalar(select(Job.job_id).where(Job.job_id == job_id)) is None:
+                raise RuntimeError(f"Job not found: {job_id}")
+            # Running and terminal jobs are never implicitly retried. A crashed
+            # executor can leave running state that needs explicit recovery.
+            logger.info("job.worker.skip job_id=%s reason=not_queued", job_id)
+            return
 
-        if job is None:
-            raise RuntimeError(
-                f"Job not found: {job_id}"
-            )
-
-        job.status = "running"
-        job.started_at = datetime.utcnow()
+        job = db.scalar(select(Job).where(Job.job_id == job_id))
 
         execution = create_execution(
             db,
@@ -52,10 +63,10 @@ def execute_job(job_id: str) -> None:
                 "capability": job.capability,
             },
         )
-        # Persist the fact that this attempt has
-        # actually started before dispatching work
-        # to the capability handler.
+        # Commit the claim and attempt together before any provider side effect.
+        # If this transaction fails, no handler has run and the claim rolls back.
         db.commit()
+        claimed = True
 
         handler = get_handler(job.capability)
 
@@ -83,21 +94,18 @@ def execute_job(job_id: str) -> None:
         db.commit()
 
     except Exception as exc:
-        if execution is not None:
+        db.rollback()
+        # Only the worker with a committed claim can finalize this attempt.
+        if claimed:
             fail_execution(
                 db,
                 execution,
                 error_message=str(exc),
             )
-        
-        if job is not None:
             job.status = "failed"
             job.error_message = str(exc)
             job.completed_at = datetime.utcnow()
 
-            db.commit()
-
-        if job is not None or execution is not None:
             db.commit()
 
         raise

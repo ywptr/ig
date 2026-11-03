@@ -1,6 +1,10 @@
 """Run with: .venv/bin/python -B -m unittest tests.test_media_job_contracts -v."""
 
 import os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Barrier, Lock
 import unittest
 from unittest.mock import ANY, Mock, patch
 
@@ -42,12 +46,15 @@ def sqlite_big_integer(type_, compiler, **kwargs):
 
 
 class MediaJobTestCase(unittest.TestCase):
-    def setUp(self):
-        self.engine = create_engine(
+    def create_test_engine(self):
+        return create_engine(
             "sqlite://",
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
+
+    def setUp(self):
+        self.engine = self.create_test_engine()
         self.addCleanup(self.engine.dispose)
 
         @event.listens_for(self.engine, "connect")
@@ -237,7 +244,7 @@ class MediaJobContractTests(MediaJobTestCase):
             self.queue.enqueue.assert_called_once_with(job.job_id)
 
 
-class JobDispatchSecurityTests(MediaJobTestCase):
+class ImageExecutionTestCase(MediaJobTestCase):
     def setUp(self):
         super().setUp()
         self.enterContext(patch.dict(os.environ, {
@@ -269,6 +276,8 @@ class JobDispatchSecurityTests(MediaJobTestCase):
         self.store.put_bytes.return_value = "file:///test-output.png"
         self.enterContext(patch("app.images.tasks.artifact_store", self.store))
 
+
+class JobDispatchSecurityTests(ImageExecutionTestCase):
     def create_target(self, tenant_id, user_id):
         with self.sessions() as db:
             db.add(ImageRequest(
@@ -427,6 +436,191 @@ class JobDispatchSecurityTests(MediaJobTestCase):
         response = self.client.post("/v2/jobs", json={"capability": "unknown"})
         self.assertEqual(response.status_code, 400, response.text)
         self.queue.enqueue.assert_not_called()
+
+
+class JobIdempotencyTests(ImageExecutionTestCase):
+    def create_test_engine(self):
+        # Use separate connections, unlike StaticPool, so racing workers have
+        # independent transactions and exercise the real database claim.
+        directory = self.enterContext(TemporaryDirectory())
+        return create_engine(
+            f"sqlite:///{Path(directory) / 'jobs.sqlite'}",
+            connect_args={"check_same_thread": False, "timeout": 10},
+        )
+
+    def submit_job(self, legacy=False):
+        response = (
+            self.client.post("/v1/images/generations", json={"prompt": "A lighthouse"})
+            if legacy else self.submit_image()
+        )
+        self.assertEqual(response.status_code, 202, response.text)
+        with self.sessions() as db:
+            return db.scalar(select(Job.job_id))
+
+    def snapshot(self):
+        with self.sessions() as db:
+            job = db.scalar(select(Job))
+            execution = db.scalar(select(Execution))
+            image = db.scalar(select(ImageRequest))
+            return {
+                "job": (job.status, job.started_at, job.completed_at, job.error_message),
+                "execution": (
+                    execution.execution_id, execution.status, execution.attempt,
+                    execution.started_at, execution.completed_at,
+                    execution.error_message, execution.metadata_json,
+                ) if execution else None,
+                "image": (image.status, image.artifact_id),
+                "artifacts": db.scalar(select(func.count()).select_from(Artifact)),
+                "executions": db.scalar(select(func.count()).select_from(Execution)),
+            }
+
+    def assert_completed_once(self):
+        self.provider.generate.assert_called_once()
+        self.store.put_bytes.assert_called_once()
+        state = self.snapshot()
+        self.assertEqual(state["job"][0], "completed")
+        self.assertEqual(state["execution"][1:3], ("completed", 1))
+        self.assertEqual(state["image"][0], "completed")
+        self.assertEqual(state["artifacts"], 1)
+        self.assertEqual(state["executions"], 1)
+
+    def test_authorized_image_job_completes_once(self):
+        execute_job(self.submit_job())
+        self.assert_completed_once()
+
+    def test_completed_job_redelivery_preserves_results_without_dispatch(self):
+        job_id = self.submit_job()
+        execute_job(job_id)
+        before = self.snapshot()
+        with patch("app.jobs.worker.get_handler") as dispatch:
+            execute_job(job_id)
+            execute_job(job_id)
+        dispatch.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        self.assert_completed_once()
+
+    def test_running_job_redelivery_does_not_dispatch_or_create_execution(self):
+        job_id = self.submit_job()
+        with self.sessions() as db:
+            db.scalar(select(Job)).status = "running"
+            db.commit()
+        before = self.snapshot()
+        with patch("app.jobs.worker.get_handler") as dispatch:
+            execute_job(job_id)
+        dispatch.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        self.provider.generate.assert_not_called()
+        self.store.put_bytes.assert_not_called()
+
+    def test_concurrent_deliveries_only_one_claim_and_execution(self):
+        job_id = self.submit_job()
+        barrier = Barrier(2)
+        rowcounts = []
+        lock = Lock()
+
+        def is_claim(statement):
+            return statement.startswith("UPDATE jobs SET") and "AND jobs.status =" in statement
+
+        def before_claim(connection, cursor, statement, parameters, context, executemany):
+            if is_claim(statement):
+                # Both connections reach the conditional UPDATE before either
+                # executes it; the database, rather than a Python lock, decides.
+                barrier.wait(timeout=10)
+
+        def after_claim(connection, cursor, statement, parameters, context, executemany):
+            if is_claim(statement):
+                with lock:
+                    rowcounts.append(cursor.rowcount)
+
+        event.listen(self.engine, "before_cursor_execute", before_claim)
+        event.listen(self.engine, "after_cursor_execute", after_claim)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                attempts = [workers.submit(execute_job, job_id) for _ in range(2)]
+                for attempt in attempts:
+                    attempt.result(timeout=20)
+        finally:
+            event.remove(self.engine, "before_cursor_execute", before_claim)
+            event.remove(self.engine, "after_cursor_execute", after_claim)
+
+        self.assertEqual(sorted(rowcounts), [0, 1])
+        self.assert_completed_once()
+
+    def test_failed_job_redelivery_does_not_retry_provider(self):
+        job_id = self.submit_job()
+        self.provider.generate.side_effect = RuntimeError("Provider failed")
+        with self.assertRaisesRegex(RuntimeError, "Provider failed"):
+            execute_job(job_id)
+        before = self.snapshot()
+        self.assertEqual(before["job"][0], "failed")
+        self.assertEqual(before["execution"][1], "failed")
+        with patch("app.jobs.worker.get_handler") as dispatch:
+            execute_job(job_id)
+        dispatch.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        self.provider.generate.assert_called_once()
+        self.assertEqual(before["executions"], 1)
+        self.assertEqual(before["artifacts"], 0)
+        self.store.put_bytes.assert_not_called()
+
+    def test_legacy_image_redelivery_does_not_repeat_generation(self):
+        job_id = self.submit_job(legacy=True)
+        execute_job(job_id)
+        execute_job(job_id)
+        self.assert_completed_once()
+
+    def test_crash_after_artifact_commit_skips_redelivery_but_remains_running(self):
+        job_id = self.submit_job()
+        # BaseException models abrupt termination: the handler's artifact/request
+        # transaction commits, but the worker cannot finalize its own transaction.
+        with patch("app.jobs.worker.apply_execution_result", side_effect=SystemExit("crash")):
+            with self.assertRaises(SystemExit):
+                execute_job(job_id)
+        before = self.snapshot()
+        self.assertEqual(before["job"][0], "running")
+        self.assertEqual(before["execution"][1], "running")
+        self.assertEqual(before["image"][0], "completed")
+        self.assertEqual(before["artifacts"], 1)
+        execute_job(job_id)
+        self.assertEqual(self.snapshot(), before)
+        self.provider.generate.assert_called_once()
+        self.store.put_bytes.assert_called_once()
+
+    def test_crash_after_claim_before_dispatch_is_not_automatically_reclaimed(self):
+        job_id = self.submit_job()
+        with patch("app.jobs.worker.get_handler", side_effect=SystemExit("crash")):
+            with self.assertRaises(SystemExit):
+                execute_job(job_id)
+        before = self.snapshot()
+        self.assertEqual(before["job"][0], "running")
+        self.assertEqual(before["execution"][1], "running")
+        self.assertEqual(before["executions"], 1)
+        self.assertEqual(before["artifacts"], 0)
+        execute_job(job_id)
+        self.assertEqual(self.snapshot(), before)
+        self.provider.generate.assert_not_called()
+        self.store.put_bytes.assert_not_called()
+
+    def test_execution_creation_failure_rolls_back_claim_before_dispatch(self):
+        job_id = self.submit_job()
+        with patch("app.jobs.worker.create_execution", side_effect=RuntimeError("attempt failed")):
+            with self.assertRaisesRegex(RuntimeError, "attempt failed"):
+                execute_job(job_id)
+        state = self.snapshot()
+        self.assertEqual(state["job"][0], "queued")
+        self.assertIsNone(state["job"][1])
+        self.assertEqual(state["executions"], 0)
+        self.provider.generate.assert_not_called()
+        execute_job(job_id)
+        self.assert_completed_once()
+
+    def test_missing_job_still_raises_without_dispatch(self):
+        with patch("app.jobs.worker.get_handler") as dispatch:
+            with self.assertRaisesRegex(RuntimeError, "Job not found"):
+                execute_job("missing-job")
+        dispatch.assert_not_called()
+        with self.sessions() as db:
+            self.assertIsNone(db.scalar(select(Execution)))
 
 
 if __name__ == "__main__":
