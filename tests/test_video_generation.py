@@ -136,12 +136,69 @@ class GenericVideoTests(VideoTestCase):
         self.queue.enqueue.assert_not_called()
         self.http.assert_not_called()
 
-    def test_image_aspect_ratios_and_reference_roles_are_not_expanded(self):
-        for fields in ({"output": {"aspect_ratio": "9:16"}}, {"references": [{"artifact_id": "x", "role": "first_frame"}]}):
-            response = self.client.post("/v2/media/generations", json={
-                "media_type": "image", "intent": {"description": "image"}, **fields,
-            })
-            self.assertEqual(response.status_code, 422, response.text)
+    def test_video_portrait_aspect_ratio_is_accepted_by_media_route(self):
+        response = self.submit_video(output={"aspect_ratio": "9:16"})
+        self.assertEqual(response.status_code, 202, response.text)
+        job_id, input_data = self.current_job()
+        self.assertEqual(job_id, response.json()["job_id"])
+        self.assertEqual(input_data["request"]["output"]["aspect_ratio"], "9:16")
+        self.queue.enqueue.assert_called_once_with(job_id)
+        self.http.assert_not_called()
+
+    def test_video_rejects_image_only_ratios_in_media_validation(self):
+        for ratio in ("2:3", "4:5"):
+            with self.subTest(ratio=ratio):
+                response = self.submit_video(output={"aspect_ratio": ratio})
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual(response.json()["detail"], {
+                    "code": "INVALID_MEDIA_REQUEST",
+                    "message": f"Unsupported video aspect ratio: {ratio}",
+                })
+        self.queue.enqueue.assert_not_called()
+        self.http.assert_not_called()
+
+    def test_image_rejects_video_only_ratio_before_creating_request_or_job(self):
+        response = self.client.post("/v2/media/generations", json={
+            "media_type": "image", "intent": {"description": "image"},
+            "output": {"aspect_ratio": "9:16"},
+        })
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["detail"], {
+            "code": "INVALID_MEDIA_REQUEST",
+            "message": "Unsupported image aspect ratio: 9:16",
+        })
+        with self.sessions() as db:
+            self.assertIsNone(db.scalar(select(Job)))
+            self.assertIsNone(db.scalar(select(ImageRequest)))
+        self.queue.enqueue.assert_not_called()
+        self.http.assert_not_called()
+
+    def test_existing_image_aspect_ratios_remain_accepted(self):
+        for ratio in ("2:3", "4:5", "1:1", "16:9"):
+            with self.subTest(ratio=ratio):
+                response = self.client.post("/v2/media/generations", json={
+                    "media_type": "image", "intent": {"description": "image"},
+                    "output": {"aspect_ratio": ratio},
+                })
+                self.assertEqual(response.status_code, 202, response.text)
+        self.http.assert_not_called()
+
+    def test_unknown_ratios_remain_schema_errors_for_both_media_types(self):
+        for media_type in ("image", "video"):
+            with self.subTest(media_type=media_type):
+                response = self.client.post("/v2/media/generations", json={
+                    "media_type": media_type, "intent": {"description": "test"},
+                    "output": {"aspect_ratio": "3:2"},
+                })
+                self.assertEqual(response.status_code, 422, response.text)
+        self.queue.enqueue.assert_not_called()
+
+    def test_image_reference_roles_are_not_expanded(self):
+        response = self.client.post("/v2/media/generations", json={
+            "media_type": "image", "intent": {"description": "image"},
+            "references": [{"artifact_id": "x", "role": "first_frame"}],
+        })
+        self.assertEqual(response.status_code, 422, response.text)
         self.queue.enqueue.assert_not_called()
 
     def test_first_frame_checks_tenant_user_media_and_mime_before_enqueue(self):

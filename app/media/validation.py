@@ -8,10 +8,22 @@ class MediaRequestValidationError(ValueError):
     pass
 
 
+ALLOWED_ASPECT_RATIOS = {
+    "image": frozenset({"2:3", "4:5", "1:1", "16:9"}),
+    "video": frozenset({"16:9", "9:16", "1:1"}),
+}
+
+
 def validate_media_request(
     request: MediaGenerationRequest,
 ) -> None:
     layout = request.output.layout
+    aspect_ratio = request.output.aspect_ratio
+    allowed_ratios = ALLOWED_ASPECT_RATIOS.get(request.media_type)
+    if aspect_ratio is not None and allowed_ratios is not None and aspect_ratio not in allowed_ratios:
+        raise MediaRequestValidationError(
+            f"Unsupported {request.media_type} aspect ratio: {aspect_ratio}"
+        )
 
     if request.media_type == "video":
         if request.strategy != "single" or layout.type != "single":

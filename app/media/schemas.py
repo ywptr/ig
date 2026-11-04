@@ -32,6 +32,7 @@ AspectRatio = Literal[
     "4:5",
     "1:1",
     "16:9",
+    "9:16",
 ]
 
 GridArrangement = Literal[
@@ -126,7 +127,7 @@ class MediaAdvancedOptions(BaseModel):
 class VideoOutputPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
     duration_seconds: int = Field(default=5, ge=2, le=30, strict=True)
-    aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+    aspect_ratio: AspectRatio = "16:9"
     resolution: Literal["480p", "720p", "1080p"] = "720p"
     audio: bool = Field(default=False, strict=True)
     count: Literal[1] = 1
