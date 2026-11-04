@@ -1,4 +1,5 @@
 from uuid import uuid4
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,6 +7,28 @@ from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.db.models import Artifact
 from app.artifacts.storage.provider import artifact_store
+from app.artifacts.types import ArtifactPayload
+
+
+def stage_media_result(payload: ArtifactPayload) -> tuple[str, str]:
+    """Upload bounded output outside a database transaction."""
+    if not re.fullmatch(r"[a-z0-9]{1,10}", payload.extension) or not payload.data:
+        raise ValueError("Invalid artifact output")
+    filename = f"{uuid4()}.{payload.extension}"
+    return artifact_store.put_bytes(filename=filename, data=payload.data), filename
+
+
+def persist_media_result(
+    db: Session, *, payload: ArtifactPayload, storage_uri: str, filename: str,
+    tenant_id: str, user_id: str, provider: str, model: str,
+) -> Artifact:
+    """Persist a staged result in the caller's fenced completion transaction."""
+    return create_artifact(
+        db, tenant_id=tenant_id, user_id=user_id, media_type=payload.media_type,
+        mime_type=payload.mime_type, storage_uri=storage_uri, filename=filename,
+        size_bytes=len(payload.data),
+        metadata={**payload.metadata, "provider": provider, "model": model},
+    )
 
 def create_artifact(
     db: Session,

@@ -1,16 +1,22 @@
 from dataclasses import dataclass, field
 from typing import Any
+from app.artifacts.types import ArtifactPayload
 
 
 @dataclass(frozen=True)
 class Completed:
-    """A handler has finished its work, including output persistence."""
+    """Finished work; resume handlers may defer an artifact to fenced finalization."""
 
     provider: str | None = None
     model: str | None = None
     metadata: dict[str, Any] = field(
         default_factory=dict
     )
+    artifact: ArtifactPayload | None = None
+
+
+class TerminalOperationError(RuntimeError):
+    """A provider operation has permanently failed; never resubmit it."""
 
 
 @dataclass(frozen=True)

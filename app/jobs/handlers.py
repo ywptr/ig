@@ -1,4 +1,5 @@
 from app.images.tasks import execute_image_generation
+from app.media.video_tasks import execute_video_generation, resume_video_generation
 from typing import Protocol
 
 from app.jobs.result import Completed, HandlerResult, ProviderOperation
@@ -22,6 +23,7 @@ def noop(
 HANDLERS = {
     "system.noop": noop,
     "image.generate": execute_image_generation,
+    "video.generate": execute_video_generation,
 }
 
 # Public dispatch is opt-in. Generation handlers are internal orchestration
@@ -41,8 +43,8 @@ class ResumeHandler(Protocol):
         ...
 
 
-# Providers opt in explicitly; no asynchronous production provider exists yet.
-RESUME_HANDLERS: dict[str, ResumeHandler] = {}
+# Capabilities opt in explicitly; generation remains internal-only.
+RESUME_HANDLERS: dict[str, ResumeHandler] = {"video.generate": resume_video_generation}
 
 
 def get_resume_handler(capability: str) -> ResumeHandler:

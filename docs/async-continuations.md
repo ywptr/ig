@@ -1,8 +1,8 @@
 # Asynchronous operation continuations (V4.1 Task 5)
 
 Initial handlers remain in `HANDLERS`. A capability supporting asynchronous work
-registers a separate `ResumeHandler` in `RESUME_HANDLERS`. No production async
-provider is registered yet. The deterministic fake exists only in tests.
+registers a separate `ResumeHandler` in `RESUME_HANDLERS`. The video capability
+uses this lifecycle; the deterministic fake remains only in tests.
 
 An initial `Pending` commits provider/model, `provider_operation.operation_id`,
 non-secret checkpoint metadata, and a new `continuation.id` in the original
@@ -65,6 +65,16 @@ schedule a replacement. If no delivery arrives after expiry, an operator must
 explicitly republish. Retry exhaustion or expired messages likewise require
 operator/reconciliation action. Initial submission errors retain the existing
 failed-job behavior and are never implicitly retried.
+
+V4.2 adds a generic `TerminalOperationError`: a known permanent provider failure
+finalizes Job/Execution as failed through the same claim fence, clearing the lease
+without scheduling or submitting a replacement. Other errors retain retry behavior.
+
+Resume handlers may return Completed with a deferred generic ArtifactPayload.
+Bounded bytes are uploaded to storage outside a database transaction. The claim
+is checked again after upload; only the current owner can atomically create the
+Artifact row, attach its ID, and finalize Job/Execution. A crash or stale claim
+after upload can leave an orphan blob, but cannot create a stale Artifact row.
 
 | Crash window | Behavior |
 | --- | --- |

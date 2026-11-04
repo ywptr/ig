@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dataclasses import asdict
 from sqlalchemy.orm import Session
 
 from app.images.service import (
@@ -10,6 +11,8 @@ from app.media.schemas import (
 from app.media.validation import (
     validate_media_request,
 )
+from app.jobs.service import create_job
+from app.media.video_service import resolve_video_selection, resolve_video_references
 
 ### Media generation service and its supporting types
 
@@ -18,6 +21,7 @@ class MediaSubmission:
     media_type: str
     request_id: str
     status: str
+    job_id: str | None = None
 
 
 class MediaCapabilityNotAvailableError(
@@ -76,6 +80,16 @@ def submit_media_generation(
     user_id: str,
 ) -> MediaSubmission:
     validate_media_request(request)
+
+    if request.media_type == "video":
+        selection = resolve_video_selection(db, request, tenant_id=tenant_id)
+        resolve_video_references(db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=False)
+        job = create_job(
+            db, capability="video.generate", tenant_id=tenant_id, user_id=user_id,
+            input_data={"request_version": "1", "media_type": "video",
+                        "request": request.model_dump(), "selection": asdict(selection)},
+        )
+        return MediaSubmission("video", job.job_id, job.status, job.job_id)
 
     capability = CAPABILITIES[
         request.media_type

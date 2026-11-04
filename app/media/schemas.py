@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ### Collection of schemas for media generation requests and responses
 
@@ -123,6 +123,24 @@ class MediaAdvancedOptions(BaseModel):
     )
 
 
+class VideoOutputPreferences(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    duration_seconds: int = Field(default=5, ge=2, le=30, strict=True)
+    aspect_ratio: Literal["16:9", "9:16", "1:1"] = "16:9"
+    resolution: Literal["480p", "720p", "1080p"] = "720p"
+    audio: bool = Field(default=False, strict=True)
+    count: Literal[1] = 1
+    style: Literal["auto"] = "auto"
+    quality: Literal["standard"] = "standard"
+    layout: MediaLayout = Field(default_factory=MediaLayout)
+
+
+class VideoReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact_id: str = Field(min_length=1)
+    role: Literal["first_frame"] = "first_frame"
+
+
 class MediaGenerationRequest(BaseModel):
     media_type: MediaType
 
@@ -132,12 +150,33 @@ class MediaGenerationRequest(BaseModel):
 
     intent: MediaIntent
 
-    output: MediaOutputPreferences = Field(
+    output: MediaOutputPreferences | VideoOutputPreferences = Field(
         default_factory=MediaOutputPreferences,
     )
 
-    references: list[MediaReference] = Field(
+    references: list[MediaReference | VideoReference] = Field(
         default_factory=list,
     )
 
     advanced: MediaAdvancedOptions | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_media_preferences(cls, value):
+        if not isinstance(value, dict):
+            return value
+        value = dict(value)
+        if value.get("media_type") == "video":
+            if set(value) - set(cls.model_fields):
+                raise ValueError("Unsupported video request fields")
+            if isinstance(value.get("intent"), dict) and set(value["intent"]) - {"description"}:
+                raise ValueError("Unsupported video intent fields")
+            advanced = value.get("advanced")
+            if isinstance(advanced, dict) and set(advanced) - {"provider", "model", "parameters"}:
+                raise ValueError("Unsupported advanced video fields")
+            value["output"] = VideoOutputPreferences.model_validate(value.get("output", {}))
+            value["references"] = [VideoReference.model_validate(ref) for ref in value.get("references", [])]
+        else:
+            value["output"] = MediaOutputPreferences.model_validate(value.get("output", {}))
+            value["references"] = [MediaReference.model_validate(ref) for ref in value.get("references", [])]
+        return value

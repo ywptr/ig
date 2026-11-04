@@ -6,6 +6,8 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
+from app.media.providers.video import VideoProviderConfigurationError
+from app.tenancy.provider_configs import ProviderNotConfiguredError
 
 from app.media.schemas import (
     MediaGenerationRequest,
@@ -48,7 +50,7 @@ def generate_media(
             user_id=context.membership.user_id,
         )
 
-    except MediaRequestValidationError as exc:
+    except (MediaRequestValidationError, VideoProviderConfigurationError, ProviderNotConfiguredError) as exc:
         raise HTTPException(
             status_code=400,
             detail={
@@ -66,8 +68,11 @@ def generate_media(
             },
         ) from exc
 
-    return {
+    response = {
         "media_type": submission.media_type,
         "request_id": submission.request_id,
         "status": submission.status,
     }
+    if submission.job_id is not None:
+        response["job_id"] = submission.job_id
+    return response

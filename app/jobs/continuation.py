@@ -13,10 +13,11 @@ from sqlalchemy import and_, or_, select, update
 
 from app.db.database import SessionLocal
 from app.db.models import Execution, Job
-from app.executions.service import apply_execution_result, complete_execution, wait_execution
+from app.executions.service import apply_execution_result, complete_execution, wait_execution, fail_execution
+from app.artifacts.service import stage_media_result, persist_media_result
 from app.jobs.handlers import get_resume_handler
 from app.jobs.provider import get_job_queue
-from app.jobs.result import Completed, HandlerResult, Pending, ProviderOperation
+from app.jobs.result import Completed, HandlerResult, Pending, ProviderOperation, TerminalOperationError
 
 CONTINUATION_DELAY_SECONDS = 30
 # Internal lease policy. Provider status-read timeouts must be shorter than this.
@@ -153,7 +154,7 @@ def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
         return claim
 
 
-def _finalize_claim(claim: _PollClaim, result: HandlerResult) -> bool:
+def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperationError) -> bool:
     operation = claim.operation
     if isinstance(result, Pending):
         if (result.provider, result.model, result.operation_id) != (
@@ -164,8 +165,21 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult) -> bool:
         if result.provider not in (None, operation.provider) or result.model not in (None, operation.model):
             raise ValueError("Continuation cannot replace the persisted provider/model")
         result = replace(result, provider=operation.provider, model=operation.model)
-    else:
+    elif not isinstance(result, TerminalOperationError):
         raise TypeError("Handler must return Completed or Pending")
+
+    staged = None
+    if isinstance(result, Completed) and result.artifact is not None:
+        # Avoid uploading already-stale results; repeat the atomic fence below
+        # after upload. No DB transaction spans storage network I/O either.
+        with SessionLocal() as db:
+            execution = db.get(Execution, claim.execution_id)
+            if (
+                not execution or execution.status != "polling"
+                or execution.metadata_json.get("continuation", {}).get("claim_id") != claim.claim_id
+            ):
+                return False
+        staged = stage_media_result(result.artifact)
 
     with SessionLocal() as db:
         # A conditional no-op update both fences stale workers and locks the row
@@ -196,6 +210,24 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult) -> bool:
         job = db.scalar(select(Job).where(Job.job_id == claim.job_id))
         prior_operation = deepcopy(execution.metadata_json["provider_operation"])
         prior_continuation = dict(execution.metadata_json["continuation"])
+        if isinstance(result, TerminalOperationError):
+            prior_continuation.pop("claim_id", None)
+            prior_continuation.pop("lease_expires_at", None)
+            execution.metadata_json = {**execution.metadata_json, "continuation": prior_continuation}
+            fail_execution(db, execution, error_message=str(result))
+            job.status = "failed"
+            job.error_message = str(result)
+            job.completed_at = datetime.utcnow()
+            db.commit()
+            return True
+        if staged is not None:
+            storage_uri, filename = staged
+            artifact = persist_media_result(
+                db, payload=result.artifact, storage_uri=storage_uri, filename=filename,
+                tenant_id=claim.tenant_id, user_id=claim.user_id,
+                provider=operation.provider, model=operation.model,
+            )
+            result = replace(result, metadata={**result.metadata, "artifact_id": artifact.artifact_id})
         apply_execution_result(execution, result)
         if isinstance(result, Pending):
             # apply_execution_result rotates the token and drops the old lease.
@@ -228,9 +260,12 @@ def continue_job(job_id: str, continuation_id: str) -> None:
         return
 
     handler = get_resume_handler(claim.capability)
-    result = handler(
-        claim.operation, tenant_id=claim.tenant_id, user_id=claim.user_id,
-    )
+    try:
+        result = handler(
+            claim.operation, tenant_id=claim.tenant_id, user_id=claim.user_id,
+        )
+    except TerminalOperationError as exc:
+        result = exc
     if not _finalize_claim(claim, result):
         return  # A newer owner/checkpoint superseded this worker.
     if isinstance(result, Pending):

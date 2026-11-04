@@ -13,6 +13,18 @@ def validate_media_request(
 ) -> None:
     layout = request.output.layout
 
+    if request.media_type == "video":
+        if request.strategy != "single" or layout.type != "single":
+            raise MediaRequestValidationError("Video supports only single strategy and layout")
+        if len(request.references) > 1:
+            raise MediaRequestValidationError("Video supports at most one first_frame image")
+        if request.advanced and request.advanced.parameters:
+            raise MediaRequestValidationError("Video accepts generic controls, not provider parameters")
+        if not request.intent.description.strip():
+            raise MediaRequestValidationError("Video intent must not be blank")
+        if len(request.intent.description) > 20000:
+            raise MediaRequestValidationError("Video intent exceeds the supported length")
+
     if (
         request.media_type != "image"
         and layout.type == "panel_grid"

@@ -201,12 +201,12 @@ class MediaJobContractTests(MediaJobTestCase):
         response = self.client.get(f"http://other.test/v2/jobs/{job_id}")
         self.assertEqual(response.status_code, 404, response.text)
 
-    def test_video_remains_unavailable_without_persisting_or_enqueueing(self):
-        response = self.submit_image(media_type="video")
+    def test_audio_remains_unavailable_without_persisting_or_enqueueing(self):
+        response = self.submit_image(media_type="audio")
         self.assertEqual(response.status_code, 501, response.text)
         self.assertEqual(response.json(), {"detail": {
             "code": "CAPABILITY_NOT_AVAILABLE",
-            "capability": "video.generate",
+            "capability": "audio.generate",
         }})
         with self.sessions() as db:
             self.assertIsNone(db.scalar(select(ImageRequest)))

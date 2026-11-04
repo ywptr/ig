@@ -1,12 +1,12 @@
 # IG — AI Media Generation Control Plane
 
-**Version 4.0**
+**Version 4.2**
 
 IG is a multi-tenant AI media generation control plane.
 
 It provides a provider-neutral API for submitting media-generation requests, executing them asynchronously, resolving reference media, storing generated and uploaded artifacts, and managing tenant-specific provider configuration.
 
-V4 currently implements **image generation**. The media interface is intentionally designed so that future video and audio capabilities can use the same control-plane concepts without exposing provider-specific implementation details to higher-level applications.
+V4.2 implements **image generation and asynchronous video generation** through the same provider-neutral control plane. Video uses Jobs, Executions, leased continuations, and Artifacts without an image-request projection. See the [generic video API](docs/video-generation.md) for the initial feature set and configuration links. Audio remains unavailable.
 
 ---
 
@@ -1683,7 +1683,7 @@ These should eventually remove the need for direct database manipulation during 
 - Self-hosted inference providers
 - Tenant-provided model endpoints
 - BYO model/inference infrastructure
-- Video generation providers
+- Additional video generation providers
 - Audio generation providers
 - Provider capability discovery
 - Provider-specific health/status checks
@@ -1729,7 +1729,7 @@ These should eventually remove the need for direct database manipulation during 
 - Derived-artifact relationships
 - Richer provenance
 - Additional image formats where useful
-- Video artifacts
+- Video artifact playback UI and byte-range delivery
 - Audio artifacts
 
 ---
