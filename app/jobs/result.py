@@ -35,3 +35,13 @@ class Pending:
 
 
 HandlerResult = Completed | Pending
+
+
+@dataclass(frozen=True)
+class ProviderOperation:
+    """Persisted operation supplied to a resume handler, never public input."""
+
+    provider: str
+    model: str
+    operation_id: str
+    metadata: dict[str, Any]

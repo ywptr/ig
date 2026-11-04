@@ -1,11 +1,12 @@
 import anyio
 import os
+from functools import partial
+from uuid import uuid4
 
 from vercel.queue import (
-    ALL_DEPLOYMENTS,
-    send,
     QueueClient,
 )
+from app.jobs.queue import JobKind, validate_delivery
 
 TOPIC = "ig-jobs"
 
@@ -25,18 +26,22 @@ def get_queue_client() -> QueueClient:
 
 async def _enqueue(
     job_id: str,
+    *,
+    kind: JobKind = "initial",
+    continuation_id: str | None = None,
+    delay_seconds: int = 0,
 ) -> None:
-    
-    
+    validate_delivery(kind, continuation_id, delay_seconds)
     client = get_queue_client()
-
+    payload = {"job_id": job_id}
+    identity = job_id
+    if kind == "continue":
+        payload.update(kind=kind, continuation_id=continuation_id)
+        # Republish is permitted after lost/failed scheduling; DB checkpoint
+        # tokens, rather than transport deduplication, gate provider polling.
+        identity = f"{job_id}:continue:{continuation_id}:{uuid4()}"
     await client.send(
-        TOPIC,
-        {
-            "job_id": job_id,
-        },
-        idempotency_key=job_id,
-        
+        TOPIC, payload, idempotency_key=identity, delay=delay_seconds,
     )
 
 
@@ -44,8 +49,14 @@ class VercelJobQueue:
     def enqueue(
         self,
         job_id: str,
+        *,
+        kind: JobKind = "initial",
+        continuation_id: str | None = None,
+        delay_seconds: int = 0,
     ) -> None:
         anyio.run(
-            _enqueue,
-            job_id,
+            partial(
+                _enqueue, job_id, kind=kind, continuation_id=continuation_id,
+                delay_seconds=delay_seconds,
+            ),
         )

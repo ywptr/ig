@@ -6,6 +6,7 @@ from app.db.database import SessionLocal
 from app.db.models import Job
 from app.jobs.handlers import get_handler
 from app.jobs.result import Pending
+from app.jobs.continuation import schedule_continuation
 from app.executions.service import (
     apply_execution_result,
     complete_execution,
@@ -52,6 +53,8 @@ def execute_job(job_id: str) -> None:
             # Running, waiting and terminal jobs are never implicitly retried.
             # A crashed executor can leave running state needing recovery.
             logger.info("job.worker.skip job_id=%s reason=not_queued", job_id)
+            db.rollback()
+            schedule_continuation(job_id)
             return
 
         job = db.scalar(select(Job).where(Job.job_id == job_id))
@@ -95,7 +98,6 @@ def execute_job(job_id: str) -> None:
             job.completed_at = datetime.utcnow()
 
         # The operation checkpoint and both waiting statuses commit together.
-        # Task 4 deliberately schedules no continuation here.
         db.commit()
 
     except Exception as exc:
@@ -117,3 +119,6 @@ def execute_job(job_id: str) -> None:
 
     finally:
         db.close()
+
+    if isinstance(result, Pending):
+        schedule_continuation(job_id)

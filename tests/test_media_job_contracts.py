@@ -101,6 +101,8 @@ class MediaJobTestCase(unittest.TestCase):
 
         # Keep real create_job persistence; stop at the external queue boundary.
         self.queue = Mock(spec=["enqueue"])
+        self.enterContext(patch("app.jobs.continuation.SessionLocal", self.sessions))
+        self.enterContext(patch("app.jobs.continuation.get_job_queue", return_value=self.queue))
         queue_patch = patch("app.jobs.service.get_job_queue", return_value=self.queue)
         queue_patch.start()
         self.addCleanup(queue_patch.stop)
@@ -736,6 +738,7 @@ class HandlerOutcomeTests(ImageExecutionTestCase):
         self.assertIsNone(state["job_error"])
         self.assertIsNone(state["execution_error"])
         self.assertEqual((state["provider"], state["model"]), ("test-provider", "test-model"))
+        self.assertTrue(state["metadata"].pop("continuation")["id"])
         self.assertEqual(state["metadata"], {
             "capability": "system.noop",
             "provider_operation": {
@@ -743,7 +746,7 @@ class HandlerOutcomeTests(ImageExecutionTestCase):
                 "metadata": {"state": "submitted", "checkpoint": {"region": "test"}},
             },
         })
-        self.assertEqual(self.queue.enqueue.call_count, 1)  # Initial submission only.
+        self.assertEqual(self.queue.enqueue.call_count, 2)  # Submission and delayed continuation.
         self.provider_factory.assert_not_called()
         self.store.put_bytes.assert_not_called()
 
@@ -759,7 +762,7 @@ class HandlerOutcomeTests(ImageExecutionTestCase):
         handler.assert_called_once()
         self.assertEqual(self.read_state(job_id), before)
         self.assertEqual(before["executions"], 1)
-        self.assertEqual(self.queue.enqueue.call_count, 1)
+        self.assertEqual(self.queue.enqueue.call_count, 4)  # Submission, poll, two safe republishes.
 
     def test_invalid_returns_fail_explicitly_instead_of_completing(self):
         for result in (None, {}, "completed", object()):

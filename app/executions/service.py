@@ -80,6 +80,9 @@ def apply_execution_result(
                 "operation_id": result.operation_id,
                 "metadata": result.operation_metadata,
             },
+            # Rotate on every committed checkpoint. Stale deliveries cannot
+            # claim the next poll, even if the job is waiting again.
+            "continuation": {"id": str(uuid4())},
         }
     else:
         raise TypeError("Handler must return Completed or Pending")
