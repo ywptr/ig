@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Execution
-from app.jobs.result import HandlerResult
+from app.jobs.result import Completed, HandlerResult, Pending
 
 def create_execution(
     db: Session,
@@ -59,10 +59,31 @@ def fail_execution(
     execution.error_message = error_message
     execution.completed_at = datetime.utcnow()
 
+
+def wait_execution(
+    db: Session,
+    execution: Execution,
+) -> None:
+    execution.status = "waiting"
+    execution.completed_at = None
+
+
 def apply_execution_result(
     execution: Execution,
     result: HandlerResult,
 ) -> None:
+    if isinstance(result, Completed):
+        metadata = result.metadata
+    elif isinstance(result, Pending):
+        metadata = {
+            "provider_operation": {
+                "operation_id": result.operation_id,
+                "metadata": result.operation_metadata,
+            },
+        }
+    else:
+        raise TypeError("Handler must return Completed or Pending")
+
     execution.provider = result.provider
     execution.model = result.model
 
@@ -72,5 +93,5 @@ def apply_execution_result(
 
     execution.metadata_json = {
         **existing_metadata,
-        **result.metadata,
+        **metadata,
     }

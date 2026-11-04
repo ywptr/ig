@@ -5,11 +5,13 @@ from sqlalchemy import select, update
 from app.db.database import SessionLocal
 from app.db.models import Job
 from app.jobs.handlers import get_handler
+from app.jobs.result import Pending
 from app.executions.service import (
     apply_execution_result,
     complete_execution,
     create_execution,
     fail_execution,
+    wait_execution,
 )
 
 import logging
@@ -22,8 +24,8 @@ logger = logging.getLogger(__name__)
 def execute_job(job_id: str) -> None:
     """Dispatch only a queued job, once per committed claim.
 
-    Running/terminal jobs are not reclaimed on redelivery. This prevents repeat
-    provider calls but deliberately leaves crash recovery to a separate design.
+    Running/waiting/terminal jobs are not reclaimed on redelivery. This prevents
+    repeat provider calls but leaves crash recovery to a separate design.
     """
     logger.info(
         "job.worker.start job_id=%s",
@@ -47,8 +49,8 @@ def execute_job(job_id: str) -> None:
             db.rollback()
             if db.scalar(select(Job.job_id).where(Job.job_id == job_id)) is None:
                 raise RuntimeError(f"Job not found: {job_id}")
-            # Running and terminal jobs are never implicitly retried. A crashed
-            # executor can leave running state that needs explicit recovery.
+            # Running, waiting and terminal jobs are never implicitly retried.
+            # A crashed executor can leave running state needing recovery.
             logger.info("job.worker.skip job_id=%s reason=not_queued", job_id)
             return
 
@@ -77,20 +79,23 @@ def execute_job(job_id: str) -> None:
             user_id=job.user_id,
         )
 
-        if result is not None:
-            apply_execution_result(
-                execution,
-                result,
-            )
-
-        complete_execution(
-            db,
+        # Reject implicit/invalid outcomes before any completion transition.
+        apply_execution_result(
             execution,
+            result,
         )
 
-        job.status = "completed"
-        job.completed_at = datetime.utcnow()
+        if isinstance(result, Pending):
+            wait_execution(db, execution)
+            job.status = "waiting"
+            job.completed_at = None
+        else:
+            complete_execution(db, execution)
+            job.status = "completed"
+            job.completed_at = datetime.utcnow()
 
+        # The operation checkpoint and both waiting statuses commit together.
+        # Task 4 deliberately schedules no continuation here.
         db.commit()
 
     except Exception as exc:

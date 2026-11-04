@@ -33,6 +33,8 @@ with patch.dict(os.environ, {"DATABASE_URL": "sqlite://"}):
     from app.main import app
     from app.images.tasks import execute_image_generation
     from app.jobs.service import create_job
+    from app.jobs.handlers import HANDLERS
+    from app.jobs.result import Completed, Pending
     from app.jobs.worker import execute_job
     from app.media.providers.base import ImageProviderResult
     from app.tenancy.provider_configs import get_provider_config, set_provider_config
@@ -621,6 +623,206 @@ class JobIdempotencyTests(ImageExecutionTestCase):
         dispatch.assert_not_called()
         with self.sessions() as db:
             self.assertIsNone(db.scalar(select(Execution)))
+
+
+class HandlerOutcomeTests(ImageExecutionTestCase):
+    def create_test_engine(self):
+        directory = self.enterContext(TemporaryDirectory())
+        return create_engine(
+            f"sqlite:///{Path(directory) / 'outcomes.sqlite'}",
+            connect_args={"check_same_thread": False},
+        )
+
+    def submit_noop(self):
+        response = self.client.post("/v2/jobs", json={"capability": "system.noop"})
+        self.assertEqual(response.status_code, 202, response.text)
+        return response.json()["job_id"]
+
+    def outcome_handler(self, result):
+        def handle(input_data, *, tenant_id, user_id):
+            with self.sessions() as db:
+                job = db.scalar(select(Job).where(Job.status == "running"))
+                self.assertIsNotNone(job)
+                execution = db.scalar(select(Execution).where(Execution.job_id == job.job_id))
+                self.assertEqual(execution.status, "running")
+            self.assertEqual((tenant_id, user_id), ("tenant-one", "user-one"))
+            return result
+
+        handler = Mock(side_effect=handle)
+        self.enterContext(patch.dict(HANDLERS, {"system.noop": handler}))
+        return handler
+
+    def pending(self):
+        return Pending(
+            provider="test-provider", model="test-model", operation_id="operation-one",
+            operation_metadata={"state": "submitted", "checkpoint": {"region": "test"}},
+        )
+
+    def read_state(self, job_id, sessions=None):
+        with (sessions or self.sessions)() as db:
+            job = db.scalar(select(Job).where(Job.job_id == job_id))
+            execution = db.scalar(select(Execution).where(Execution.job_id == job_id))
+            return {
+                "job_status": job.status, "job_completed_at": job.completed_at,
+                "job_error": job.error_message, "execution_id": execution.execution_id,
+                "execution_status": execution.status,
+                "execution_completed_at": execution.completed_at,
+                "execution_error": execution.error_message,
+                "provider": execution.provider, "model": execution.model,
+                "metadata": execution.metadata_json,
+                "executions": db.scalar(select(func.count()).select_from(Execution).where(
+                    Execution.job_id == job_id,
+                )),
+            }
+
+    def test_image_handler_explicitly_completes_without_changing_image_behavior(self):
+        response = self.submit_image()
+        self.assertEqual(response.status_code, 202, response.text)
+        with self.sessions() as db:
+            job_id = db.scalar(select(Job.job_id))
+
+        def generate(input_data, *, tenant_id, user_id):
+            result = execute_image_generation(
+                input_data, tenant_id=tenant_id, user_id=user_id,
+            )
+            self.assertIsInstance(result, Completed)
+            return result
+
+        with patch.dict(HANDLERS, {"image.generate": generate}):
+            execute_job(job_id)
+        state = self.read_state(job_id)
+        self.assertEqual(state["job_status"], "completed")
+        self.assertEqual(state["execution_status"], "completed")
+        self.assertEqual(state["metadata"]["request_id"], response.json()["request_id"])
+        self.provider.generate.assert_called_once()
+        self.store.put_bytes.assert_called_once()
+        with self.sessions() as db:
+            image = db.scalar(select(ImageRequest))
+            self.assertEqual(image.status, "completed")
+            self.assertEqual(image.artifact_id, state["metadata"]["artifact_id"])
+
+    def test_completed_persists_provider_model_and_metadata(self):
+        job_id = self.submit_noop()
+        handler = self.outcome_handler(Completed(
+            provider="test-provider", model="test-model", metadata={"output": "done"},
+        ))
+        execute_job(job_id)
+        handler.assert_called_once()
+        state = self.read_state(job_id)
+        self.assertEqual(state["job_status"], "completed")
+        self.assertEqual(state["execution_status"], "completed")
+        self.assertIsNotNone(state["job_completed_at"])
+        self.assertIsNotNone(state["execution_completed_at"])
+        self.assertEqual((state["provider"], state["model"]), ("test-provider", "test-model"))
+        self.assertEqual(state["metadata"], {"capability": "system.noop", "output": "done"})
+
+    def test_pending_checkpoint_survives_a_fresh_database_connection(self):
+        job_id = self.submit_noop()
+        handler = self.outcome_handler(self.pending())
+        execute_job(job_id)
+        handler.assert_called_once()
+
+        # Read only committed state through a new engine/session; no worker
+        # object or connection is needed to recover the provider operation ID.
+        fresh_engine = create_engine(self.engine.url)
+        try:
+            state = self.read_state(job_id, sessionmaker(bind=fresh_engine))
+        finally:
+            fresh_engine.dispose()
+        self.assertEqual(state["job_status"], "waiting")
+        self.assertEqual(state["execution_status"], "waiting")
+        self.assertIsNone(state["job_completed_at"])
+        self.assertIsNone(state["execution_completed_at"])
+        self.assertIsNone(state["job_error"])
+        self.assertIsNone(state["execution_error"])
+        self.assertEqual((state["provider"], state["model"]), ("test-provider", "test-model"))
+        self.assertEqual(state["metadata"], {
+            "capability": "system.noop",
+            "provider_operation": {
+                "operation_id": "operation-one",
+                "metadata": {"state": "submitted", "checkpoint": {"region": "test"}},
+            },
+        })
+        self.assertEqual(self.queue.enqueue.call_count, 1)  # Initial submission only.
+        self.provider_factory.assert_not_called()
+        self.store.put_bytes.assert_not_called()
+
+    def test_waiting_redelivery_preserves_checkpoint_without_dispatch(self):
+        job_id = self.submit_noop()
+        handler = self.outcome_handler(self.pending())
+        execute_job(job_id)
+        before = self.read_state(job_id)
+        with patch("app.jobs.worker.get_handler") as dispatch:
+            execute_job(job_id)
+            execute_job(job_id)
+        dispatch.assert_not_called()
+        handler.assert_called_once()
+        self.assertEqual(self.read_state(job_id), before)
+        self.assertEqual(before["executions"], 1)
+        self.assertEqual(self.queue.enqueue.call_count, 1)
+
+    def test_invalid_returns_fail_explicitly_instead_of_completing(self):
+        for result in (None, {}, "completed", object()):
+            with self.subTest(result_type=type(result).__name__):
+                job_id = self.submit_noop()
+                self.outcome_handler(result)
+                with self.assertRaisesRegex(TypeError, "Handler must return Completed or Pending"):
+                    execute_job(job_id)
+                state = self.read_state(job_id)
+                self.assertEqual(state["job_status"], "failed")
+                self.assertEqual(state["execution_status"], "failed")
+                self.assertIn("Completed or Pending", state["job_error"])
+                self.assertNotIn("provider_operation", state["metadata"])
+
+    def test_pending_requires_nonempty_operation_identity(self):
+        for field in ("provider", "model", "operation_id"):
+            with self.subTest(field=field):
+                fields = {"provider": "test-provider", "model": "test-model", "operation_id": "op"}
+                fields[field] = " "
+                with self.assertRaisesRegex(ValueError, f"Pending {field}"):
+                    Pending(**fields)
+
+    def test_crash_before_checkpoint_commit_leaves_submission_ambiguous(self):
+        job_id = self.submit_noop()
+        handler = self.outcome_handler(self.pending())
+        with patch("app.jobs.worker.wait_execution", side_effect=SystemExit("crash")):
+            with self.assertRaises(SystemExit):
+                execute_job(job_id)
+        state = self.read_state(job_id)
+        self.assertEqual(state["job_status"], "running")
+        self.assertEqual(state["execution_status"], "running")
+        self.assertEqual(state["metadata"], {"capability": "system.noop"})
+        execute_job(job_id)
+        handler.assert_called_once()
+        self.assertEqual(self.read_state(job_id), state)
+
+    def test_crash_after_checkpoint_commit_preserves_operation_for_future_resume(self):
+        job_id = self.submit_noop()
+        handler = self.outcome_handler(self.pending())
+
+        def crash_after_waiting_commit(session):
+            for value in session.identity_map.values():
+                if isinstance(value, Job) and value.job_id == job_id and value.status == "waiting":
+                    raise SystemExit("crash after commit")
+
+        event.listen(self.sessions, "after_commit", crash_after_waiting_commit)
+        try:
+            with self.assertRaises(SystemExit):
+                execute_job(job_id)
+        finally:
+            event.remove(self.sessions, "after_commit", crash_after_waiting_commit)
+
+        fresh_engine = create_engine(self.engine.url)
+        try:
+            state = self.read_state(job_id, sessionmaker(bind=fresh_engine))
+        finally:
+            fresh_engine.dispose()
+        self.assertEqual(state["job_status"], "waiting")
+        self.assertEqual(state["execution_status"], "waiting")
+        self.assertEqual(state["metadata"]["provider_operation"]["operation_id"], "operation-one")
+        execute_job(job_id)
+        handler.assert_called_once()
+        self.assertEqual(self.read_state(job_id), state)
 
 
 if __name__ == "__main__":

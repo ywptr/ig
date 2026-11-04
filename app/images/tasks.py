@@ -8,7 +8,7 @@ from app.artifacts.storage.provider import (
     artifact_store,
 )
 from app.db.database import SessionLocal
-from app.jobs.result import HandlerResult
+from app.jobs.result import Completed
 from app.media.providers.registry import (
     create_image_provider,
 )
@@ -358,17 +358,17 @@ def build_handler_result(
     input_data: dict,
     resolved_request: ResolvedImageRequest,
     result: ImageProviderResult,
-) -> HandlerResult:
+) -> Completed:
     """
     Convert the completed provider result into the generic
-    worker HandlerResult used by Execution tracking.
+    worker Completed outcome used by Execution tracking.
     """
 
     output = input_data.get(
         "output"
     ) or {}
 
-    return HandlerResult(
+    return Completed(
         provider=result.provider,
         model=result.model,
         metadata={
@@ -413,7 +413,7 @@ def execute_image_generation(
     *,
     tenant_id: str,
     user_id: str | None,
-) -> HandlerResult:
+) -> Completed:
     """
     Execute one image-generation job.
 

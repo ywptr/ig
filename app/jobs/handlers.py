@@ -1,17 +1,17 @@
 from app.images.tasks import execute_image_generation
-from app.jobs.result import HandlerResult
+from app.jobs.result import Completed
 
 def noop(
     input_data: dict,
     *,
     tenant_id: str,
     user_id: str | None,
-) -> HandlerResult:
+) -> Completed:
     print(
         f"system.noop executed: {input_data}",
         flush=True,
     )
-    return HandlerResult(
+    return Completed(
         metadata={
             "handler":"system.noop",
         }
