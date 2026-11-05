@@ -174,6 +174,11 @@ class GenericVideoTests(VideoTestCase):
         self.http.assert_not_called()
 
     def test_existing_image_aspect_ratios_remain_accepted(self):
+        # Task 9 resolves image selection before enqueue, so these image-only
+        # assertions need an available image provider in the video fixture.
+        with self.sessions() as db:
+            set_provider_config(db, tenant_id="tenant-one", provider="openai", enabled=True,
+                                credentials={"api_key": "test-only"}, config={"default_model": "gpt-image-2"})
         for ratio in ("2:3", "4:5", "1:1", "16:9"):
             with self.subTest(ratio=ratio):
                 response = self.client.post("/v2/media/generations", json={

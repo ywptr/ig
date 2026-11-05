@@ -23,6 +23,8 @@ MediaQuality = Literal[
     "high",
 ]
 
+ImagePurpose = Literal["general", "thumbnail"]
+
 MediaLayoutType = Literal[
     "single",
     "panel_grid",
@@ -99,6 +101,7 @@ class MediaLayout(BaseModel):
 
 
 class MediaOutputPreferences(BaseModel):
+    purpose: ImagePurpose = "general"
     quality: MediaQuality = "standard"
 
     aspect_ratio: AspectRatio | None = None

@@ -125,6 +125,15 @@ class MediaJobTestCase(unittest.TestCase):
 
 
 class MediaJobContractTests(MediaJobTestCase):
+    def setUp(self):
+        super().setUp()
+        self.enterContext(patch.dict(os.environ, {
+            "TENANT_SECRET_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        }))
+        with self.sessions() as db:
+            set_provider_config(db, tenant_id="tenant-one", provider="openai", enabled=True,
+                                credentials={"api_key": "test-only"}, config={"default_model": "gpt-image-2"})
+
     def test_v2_image_submission_succeeds(self):
         response = self.submit_image()
         self.assertEqual(response.status_code, 202, response.text)
@@ -244,6 +253,8 @@ class MediaJobContractTests(MediaJobTestCase):
                     "layout": {"type": "single", "panel_count": None},
                 },
                 "references": [], "advanced": None,
+                "selection": {"provider": "openai", "model": "gpt-image-2",
+                              "purpose": "general", "reason": "tenant_default"},
             })
             self.queue.enqueue.assert_called_once_with(job.job_id)
 

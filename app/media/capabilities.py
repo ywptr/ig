@@ -8,8 +8,9 @@ from app.media.capability_schemas import (
     InterfaceSelection, MediaCapabilities, MediaCapability, ModelCapability, ProviderCapability,
 )
 from app.media.constraints import EXPLICIT_SELECTION_LEVELS
-from app.media.providers.registry import DEFAULT_IMAGE_PROVIDER, IMAGE_PROVIDERS, VIDEO_PROVIDERS
-from app.media.schemas import InterfaceLevel
+from app.media.providers.registry import IMAGE_PROVIDERS, VIDEO_PROVIDERS
+from app.media.schemas import InterfaceLevel, ImagePurpose
+from app.media.routing import normal_image_selection
 from app.tenancy.provider_configs import list_provider_configs
 
 
@@ -46,17 +47,23 @@ def media_capabilities(db: Session, *, tenant_id: str) -> MediaCapabilities:
                 default_model_available=any(model.available and model.id == default_model for model in models),
                 models=models,
             ))
-        # Reflect current routing; do not choose a new automatic provider here.
-        candidates = ([DEFAULT_IMAGE_PROVIDER] if media_type == "image" else [
-            provider_id for provider_id in registrations
-            if provider_id in configurations and configurations[provider_id].enabled
-        ])
-        default_provider = next((provider.id for provider in providers
-            if len(candidates) == 1 and provider.id == candidates[0]
-            and provider.default_model_available), None)
+        if media_type == "image":
+            try:
+                default_provider = normal_image_selection(configurations).provider
+            except ValueError:
+                default_provider = None
+        else:
+            # Preserve the existing video rule, including enabled-but-incomplete
+            # rows participating in automatic-provider ambiguity.
+            candidates = [provider_id for provider_id in registrations
+                          if provider_id in configurations and configurations[provider_id].enabled]
+            default_provider = next((provider.id for provider in providers
+                if len(candidates) == 1 and provider.id == candidates[0]
+                and provider.default_model_available), None)
         media_types.append(MediaCapability(
             id=media_type, available=any(provider.available for provider in providers),
             default_provider=default_provider, providers=providers,
+            purposes=list(get_args(ImagePurpose)) if media_type == "image" else [],
         ))
     return MediaCapabilities(
         interface_levels={level: InterfaceSelection(

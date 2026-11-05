@@ -38,7 +38,7 @@ class GoogleImageProvider(ImageProviderAdapter):
             panel_counts=[4], panel_arrangements=list(get_args(GridArrangement)),
             panel_arrangements_selectable_in=["hard"],
             quality_profiles=["draft", "standard", "high"], styles=["auto", *STYLE_INSTRUCTIONS],
-        ), use_cases=("thumbnail", "draft", "preview"), supported_interface_levels=("hard",),
+        ), use_cases=("thumbnail", "draft", "preview"),
     )}
     CAPABILITIES = ProviderMetadata("Google Gemini", tuple(MODELS.values()))
 
@@ -56,11 +56,16 @@ class GoogleImageProvider(ImageProviderAdapter):
         return isinstance(config, dict) and isinstance(config.get("default_models") or {}, dict)
 
     @classmethod
+    def tenant_default_model(cls, config: dict) -> str | None:
+        if not cls.configuration_is_valid(config):
+            raise ImageProviderConfigurationError("Invalid image model defaults")
+        return (config.get("default_models") or {}).get("image") or config.get("default_model")
+
+    @classmethod
     def resolve_tenant_model(cls, config: dict, explicit_model: str | None = None) -> str:
         if not cls.configuration_is_valid(config):
             raise ImageProviderConfigurationError("Invalid image model defaults")
-        model = (explicit_model or (config.get("default_models") or {}).get("image")
-                 or config.get("default_model") or cls.DEFAULT_MODEL)
+        model = explicit_model or cls.tenant_default_model(config) or cls.DEFAULT_MODEL
         if not isinstance(model, str) or model not in cls.MODELS:
             raise ImageProviderConfigurationError("Unsupported image model")
         return model

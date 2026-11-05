@@ -2,8 +2,9 @@
 
 Provider ID: `google`. Initial model: `gemini-3.1-flash-lite-image` (display name
 Gemini 3.1 Flash-Lite Image). IG positions it as an economical option for thumbnail,
-draft and preview imagery. Those discovery `use_cases` tags are descriptive only;
-purpose/profile routing, ranking, fallback and cost estimation are not implemented.
+draft and preview imagery. The `thumbnail` use-case tag participates in generic
+[purpose routing](../media-routing.md). Draft/preview remain descriptive tags;
+ranking, cost estimation and post-failure fallback are not implemented.
 
 ## Tenant configuration
 
@@ -33,10 +34,12 @@ Google model selection is explicit hard-mode model → tenant `default_models.im
 → legacy `default_model` → adapter default. Unknown models fail locally without a
 provider call. OpenAI retains its existing `default_model` policy unchanged.
 
-Automatic easy/medium image generation still selects OpenAI, including when both
-providers are configured. Google-only tenants must use hard mode with an explicit
-provider; IG does not silently switch automatic requests to Google. Hard mode with
-no explicit provider also retains OpenAI. Task 9 will address purpose/profile routing.
+General image generation retains OpenAI when available, including when both
+providers are configured. Google-only tenants can use Google automatically in
+easy/medium. `output.purpose: "thumbnail"` prefers a compatible available model
+tagged for thumbnails, currently this model; otherwise it falls back to the normal
+image route. Explicit hard-mode selection always wins. Purpose never changes
+quality, style or aspect ratio. No automatic fallback occurs after provider failure.
 
 ## Generic API request
 
@@ -56,8 +59,8 @@ Poll `GET /v1/images/{request_id}` until completed/failed; retrieve completed co
 at `GET /v1/images/{request_id}/content`. Existing Artifact APIs also remain usable.
 Google is automatically listed by `GET /v2/media/capabilities`; discovery neither
 decrypts credentials nor contacts Google and does not guarantee runtime model access.
-The model currently reports hard-only supported interface levels, matching its
-explicit-selection-only availability before Task 9 routing.
+The model supports easy/medium/hard; explicit provider/model selection remains
+hard-only. IG persists the selected provider/model before enqueue.
 
 Initial supported controls:
 

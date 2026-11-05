@@ -16,7 +16,9 @@ The response contains:
 - `models`: stable IDs and display names, availability, supported interface levels,
   `selectable_in` (hard when available), generic `capabilities`, and optional
   `use_cases` metadata. The economical Google image model carries `thumbnail`,
-  `draft` and `preview` tags; these tags do not affect routing.
+  `draft` and `preview` tags. Image `thumbnail` routing uses its matching tag;
+  `draft` and `preview` are descriptive tags, not additional request purposes.
+- Image `purposes`: `general` and `thumbnail`. Video has no purposes.
 
 Provider state means:
 
@@ -36,10 +38,10 @@ media URLs are returned.
 
 `default_provider` is the current automatic provider when discovery can establish
 a usable registered default. It is null when none can be established. Image
-selection retains OpenAI as the existing default, even when Google is enabled.
-A Google-only tenant must explicitly select Google in hard mode; its image
-`available` can be true while `default_provider` is null. Google's registered model
-reports `supported_interface_levels: ["hard"]` until automatic routing supports it.
+selection retains OpenAI when its normal default is usable, even when Google is
+enabled. A Google-only tenant can use Google automatically in easy/medium.
+Both current image models support easy/medium/hard. `default_provider` reflects
+the general route; thumbnail selection can differ. See [purpose routing](media-routing.md).
 Video still requires
 exactly one enabled registered provider for automatic selection; multiple enabled
 providers remain selectable in hard mode but do not trigger automatic ranking.
@@ -52,7 +54,8 @@ OpenAI defaults. Google image defaults resolve `default_models.image`, then lega
 `default_model`, then the adapter default. Explicit hard-mode models take priority.
 Existing custom image defaults are reported as identifiers, but
 `default_model_available` is false when they are outside the registered catalog;
-this does not change existing image-generation acceptance behavior. Video uses
+legacy configured image defaults retain their existing acceptance behavior. Explicit
+hard-mode model IDs must be registered. Video uses
 `default_models.video` with adapter fallback and registered-model validation.
 Invalid video defaults produce a null default rather than failing discovery.
 
@@ -74,8 +77,8 @@ discovery. See [video generation](video-generation.md) for request details.
 
 Future adapters declare model names and generic capabilities beside their
 registration; the API route does not need provider-specific branches. Generic
-`use_cases` tags can later describe draft or thumbnail intent without changing
-the response schema. Tags do not implement routing.
+`use_cases` tags describe intended model usage. The routing service consumes tags
+for supported non-general purposes; discovery itself never submits generation.
 
 The future Generation Lab should use `interface_levels`, `selectable_in` and
 generic controls from discovery, keep provider/model automatic in easy/medium,

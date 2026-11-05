@@ -77,6 +77,7 @@ class MediaCapability(BaseModel):
     available: bool
     default_provider: str | None
     providers: list[ProviderCapability]
+    purposes: list[str] = Field(default_factory=list)
 
 
 class MediaCapabilities(BaseModel):

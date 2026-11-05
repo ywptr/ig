@@ -9,6 +9,7 @@ from app.artifacts.storage.provider import (
 )
 from app.db.database import SessionLocal
 from app.jobs.result import Completed
+from app.media.routing import MediaSelection
 from app.media.providers.registry import (
     create_image_provider,
     DEFAULT_IMAGE_PROVIDER,
@@ -132,6 +133,7 @@ def build_resolved_image_request(
     advanced = input_data.get(
         "advanced"
     ) or {}
+    selection = MediaSelection.model_validate(input_data["selection"]) if "selection" in input_data else None
 
     description = intent.get(
         "description",
@@ -168,10 +170,8 @@ def build_resolved_image_request(
             "arrangement"
         ),
         references=references,
-        provider=(advanced.get("provider") or DEFAULT_IMAGE_PROVIDER).strip().lower(),
-        model=advanced.get(
-            "model") or ""
-        ,
+        provider=selection.provider if selection else (advanced.get("provider") or DEFAULT_IMAGE_PROVIDER).strip().lower(),
+        model=selection.model if selection else advanced.get("model") or "",
         parameters=advanced.get(
             "parameters"
         ) or {},
@@ -183,6 +183,7 @@ def generate_image(
     *,
     tenant_id: str,
     request: ResolvedImageRequest,
+    model_is_resolved: bool = False,
 ) -> ImageProviderResult:
     provider_config = get_provider_config(
         db,
@@ -211,7 +212,7 @@ def generate_image(
         or {}
     )
 
-    resolved_model = resolve_image_model(
+    resolved_model = request.model if model_is_resolved else resolve_image_model(
         request.provider, config=provider_settings, model=request.model,
     )
 
@@ -267,6 +268,7 @@ def persist_image_result(
         filename=filename,
         size_bytes=result.size_bytes,
         metadata={
+            **selection_metadata(input_data),
             "provider": result.provider,
             "model": result.model,
             "request_version": (
@@ -366,6 +368,7 @@ def build_handler_result(
         provider=result.provider,
         model=result.model,
         metadata={
+            **selection_metadata(input_data),
             "artifact_id": (
                 artifact.artifact_id
             ),
@@ -449,6 +452,7 @@ def execute_image_generation(
                 db,
                 tenant_id=image_record.tenant_id,
                 request=resolved_request,
+                model_is_resolved="selection" in normalized_input,
             )
 
             artifact = persist_image_result(
@@ -490,6 +494,13 @@ def execute_image_generation(
 
     finally:
         db.close()
+
+
+def selection_metadata(input_data: dict) -> dict:
+    if "selection" not in input_data:
+        return {}
+    selection = MediaSelection.model_validate(input_data["selection"])
+    return {"purpose": selection.purpose, "selection": selection.model_dump()}
 
 def resolve_image_references(
     db: Session,

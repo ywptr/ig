@@ -7,7 +7,9 @@ from pathlib import Path
 # StreamingResponse supports provider-backed artifact content.
 from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from app.media.providers.base import ImageProviderConfigurationError
+from app.media.validation import MediaRequestValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.auth.dependencies import get_db
@@ -47,12 +49,19 @@ def generate_image(
     context: TenantContext = Depends(get_authenticated_tenant_context),
     db: Session = Depends(get_db),
 ):
-    image_record = submit_image_generation(
-        db,
-        prompt=request.prompt,
-        tenant_id=context.tenant.tenant_id,
-        user_id=context.membership.user_id,
-    )
+    try:
+        image_record = submit_image_generation(
+            db, prompt=request.prompt, tenant_id=context.tenant.tenant_id,
+            user_id=context.membership.user_id,
+        )
+    except (ImageProviderConfigurationError, MediaRequestValidationError) as exc:
+        raise HTTPException(status_code=400, detail={
+            "code": "INVALID_MEDIA_REQUEST", "message": str(exc),
+        }) from exc
+    except ValidationError:
+        raise HTTPException(status_code=400, detail={
+            "code": "INVALID_MEDIA_REQUEST", "message": "Invalid image request",
+        }) from None
 
     return image_to_dict(image_record)
 

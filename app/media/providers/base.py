@@ -73,9 +73,13 @@ class ImageProviderAdapter(ABC):
         pass
 
     @classmethod
+    def tenant_default_model(cls, config: dict) -> str | None:
+        return config.get("default_model")
+
+    @classmethod
     def resolve_tenant_model(cls, config: dict, explicit_model: str | None = None) -> str:
         # Preserve legacy image resolution and adapter-side fallback.
-        return explicit_model or config.get("default_model") or ""
+        return explicit_model or cls.tenant_default_model(config) or ""
 
     @abstractmethod
     def generate(

@@ -220,11 +220,11 @@ class GoogleImageGenerationTests(MediaJobTestCase):
         self.assertTrue(provider["available"])
         self.assertFalse(other["configured"])
         self.assertFalse(other["available"])
-        self.assertIsNone(media["default_provider"])  # Google is not an automatic route.
+        self.assertEqual(media["default_provider"], "google")
         model = provider["models"][0]
         self.assertEqual(model["id"], MODEL)
         self.assertEqual(model["selectable_in"], ["hard"])
-        self.assertEqual(model["supported_interface_levels"], ["hard"])
+        self.assertEqual(model["supported_interface_levels"], ["easy", "medium", "hard"])
         self.assertEqual(model["use_cases"], ["thumbnail", "draft", "preview"])
         self.assertEqual(model["capabilities"]["resolutions"], ["1k"])
         self.assertEqual(model["capabilities"]["max_references"], 1)
@@ -255,10 +255,28 @@ class GoogleImageGenerationTests(MediaJobTestCase):
         media, _ = self.catalog()
         self.assertEqual(media["default_provider"], "openai")
 
-    def test_google_only_tenant_is_not_silently_used_in_easy_mode(self):
-        with self.assertRaisesRegex(RuntimeError, "Provider is not configured"):
-            self.execute(self.submit_image())
-        self.http.assert_not_called()
+    def test_google_only_tenant_can_use_easy_mode(self):
+        self.execute(self.submit_image())
+        self.http.assert_called_once()
+
+    def test_thumbnail_automatic_route_uses_real_google_adapter_with_both_configured(self):
+        self.configure(provider="openai", config={"default_model": "gpt-image-2"})
+        with patch("app.media.providers.openai.image.OpenAI", side_effect=AssertionError("Wrong route")):
+            self.execute(self.submit_image(output={
+                "purpose": "thumbnail", "quality": "standard", "aspect_ratio": "16:9", "style": "illustration",
+            }))
+        self.http.assert_called_once()
+        self.assertEqual(self.http.call_args.kwargs["json"]["generationConfig"]["imageConfig"]["aspectRatio"], "16:9")
+        with self.sessions() as db:
+            self.assertEqual(db.scalar(select(Artifact)).metadata_json["selection"]["reason"], "purpose:thumbnail")
+
+    def test_queued_google_selection_survives_later_invalid_default_mapping(self):
+        response = self.submit_image(output={"purpose": "thumbnail"})
+        self.assertEqual(response.status_code, 202, response.text)
+        self.configure(config={"default_models": "changed-after-enqueue"})
+        self.execute(response)
+        self.http.assert_called_once()
+        self.assertIn(f"/{MODEL}:generateContent", self.http.call_args.args[0])
 
     def test_google_generation_is_not_publicly_dispatchable(self):
         response = self.client.post("/v2/jobs", json={
