@@ -1,8 +1,8 @@
-export interface Execution {
+import { requestJSON } from "./client";
+import type { JobStatus } from "../types/media";
+export interface JobExecution {
     execution_id: string;
-    job_id: string;
-    user_id: string;
-    status: string;
+    status: JobStatus;
     attempt: number;
     provider: string | null;
     model: string | null;
@@ -15,20 +15,14 @@ export interface Execution {
     started_at: string | null;
     completed_at: string | null;
     error_message: string | null;
+}
+export interface Execution extends JobExecution {
+    job_id: string;
+    user_id: string | null;
     created_at: string;
 }
 
 
-export async function getExecutions(): Promise<Execution[]> {
-    const response = await fetch(
-        "/v2/executions"
-    );
-
-    if (!response.ok) {
-        throw new Error(
-            `Failed to load executions: ${response.status}`
-        );
-    }
-
-    return response.json();
+export function getExecutions(signal?: AbortSignal): Promise<Execution[]> {
+    return requestJSON("/v2/executions", { signal });
 }

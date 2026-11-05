@@ -1,13 +1,8 @@
 import type { Image } from "../components/ImageCard";
+import { requestJSON } from "./client";
 
-export async function getImages(): Promise<Image[]> {
-    const response = await fetch("/v1/images");
-
-    if (!response.ok) {
-        throw new Error("Failed to load image history");
-    }
-
-    return response.json();
+export function getImages(signal?: AbortSignal): Promise<Image[]> {
+    return requestJSON("/v1/images", { signal });
 }
 
 export async function getImage(

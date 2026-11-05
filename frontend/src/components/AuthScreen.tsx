@@ -282,7 +282,7 @@ export function AuthScreen({
                 </span>
 
                 <span className="brand-subtitle">
-                    AI Image Generator
+                    AI Media Control Plane
                 </span>
             </div>
 

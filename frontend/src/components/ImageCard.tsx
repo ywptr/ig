@@ -2,7 +2,7 @@ export interface Image {
     request_id: string;
     created_at: string;
     prompt: string;
-    model: string;
+    model: string | null;
     status: string;
     filename: string | null;
     size_bytes: number | null;

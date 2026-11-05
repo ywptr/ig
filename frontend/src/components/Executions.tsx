@@ -1,7 +1,6 @@
-import {
-    useEffect,
-    useState,
-} from "react";
+import { useActivePolling } from "../hooks/useActivePolling";
+import { isActiveStatus } from "../lib/generation";
+import { safeMessage } from "../api/client";
 
 import {
     getExecutions,
@@ -47,62 +46,14 @@ function formatDuration(
 
 
 export function Executions() {
-    const [executions, setExecutions] =
-        useState<Execution[]>([]);
-
-    const [error, setError] =
-        useState<string | null>(null);
-
-    const hasActiveExecutions =
-        executions.some(
-            (execution) =>
-                execution.status === "running"
-        );
-
-    async function loadExecutions() {
-        try {
-            setError(null);
-
-            const result =
-                await getExecutions();
-
-            setExecutions(result);
-
-        } catch (error) {
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to load executions"
-            );
-        }
-    }
-
-
-    useEffect(() => {
-        loadExecutions();
-    }, []);
-
-    useEffect(() => {
-        if (!hasActiveExecutions) {
-            return;
-        }
-
-        const interval =
-            window.setInterval(
-                loadExecutions,
-                3000
-            );
-
-        return () => {
-            window.clearInterval(
-                interval
-            );
-        };
-    }, [hasActiveExecutions]);
+    const { data: executions, loading, error, refresh } = useActivePolling<Execution[]>(
+        getExecutions, rows => rows.some(row => isActiveStatus(row.status)), [],
+    );
 
     return (
         <>
             <div className="section-heading">
+                <button className="secondary-button" onClick={refresh} disabled={loading}>{loading ? "Refreshing…" : "Refresh Executions"}</button>
                 <h2>
                     Executions
                 </h2>
@@ -243,7 +194,7 @@ export function Executions() {
                             {execution.error_message && (
                                 <div className="execution-error">
                                     {
-                                        execution.error_message
+                                            safeMessage(execution.error_message)
                                     }
                                 </div>
                             )}

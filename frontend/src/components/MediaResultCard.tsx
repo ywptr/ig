@@ -1,0 +1,34 @@
+import { memo, useState } from "react";
+import { artifactContentUrl } from "../api/artifacts";
+import { safeMessage } from "../api/client";
+import { humanize } from "../lib/generation";
+import type { GenerationResult } from "../types/media";
+
+function time(value: string) { return Number.isNaN(Date.parse(value)) ? "—" : new Date(value).toLocaleString(); }
+
+export const MediaResultCard = memo(function MediaResultCard({ result }: { result: GenerationResult }) {
+    const [previewError, setPreviewError] = useState(false);
+    const url = result.artifact ? artifactContentUrl(result.artifact.artifact_id) : null;
+    return <article className="media-result">
+        <div className="result-heading"><strong>{humanize(result.media_type)}</strong>
+            <span className={`job-status ${result.status}`}>{humanize(result.status)}</span></div>
+        {url && !previewError ? result.media_type === "image"
+            ? <a href={url} target="_blank" rel="noreferrer"><img className="media-preview" src={url} alt={result.prompt} loading="lazy"
+                onError={() => setPreviewError(true)} /></a>
+            : <video className="media-preview" src={url} controls preload="metadata" aria-label={result.prompt}
+                onError={() => setPreviewError(true)}>Your browser cannot play this video. <a href={url}>Open video</a></video>
+            : <div className="media-placeholder">{previewError ? "Preview could not load. Check your session or open the output." : result.status === "completed"
+                ? "Output is not available yet." : result.status === "failed" ? "Generation failed" : "Generation in progress"}</div>}
+        <p className="result-prompt">{result.prompt}</p>
+        <dl className="result-meta">
+            <div><dt>Provider</dt><dd>{result.provider ?? "Auto · awaiting resolution"}</dd></div>
+            <div><dt>Model</dt><dd>{result.model ?? "—"}</dd></div>
+            {result.purpose && <div><dt>Purpose</dt><dd>{humanize(result.purpose)}</dd></div>}
+            <div><dt>Created</dt><dd><time dateTime={result.created_at}>{time(result.created_at)}</time></dd></div>
+            {result.completed_at && <div><dt>Finished</dt><dd><time dateTime={result.completed_at}>{time(result.completed_at)}</time></dd></div>}
+        </dl>
+        {result.error && <p className="error" role="alert">{safeMessage(result.error)}</p>}
+        {previewError && <button type="button" className="secondary-button" onClick={() => setPreviewError(false)}>Retry preview</button>}
+        {url && <a href={url} target="_blank" rel="noreferrer">Open {result.media_type} output</a>}
+    </article>;
+});

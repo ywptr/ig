@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { getJobs } from "../api/jobs";
+import { safeMessage } from "../api/client";
 import type { Job } from "../types/Job";
 
 
@@ -32,58 +31,16 @@ function formatDuration(job: Job) {
 }
 
 
-export function Jobs() {
-    const [jobs, setJobs] = useState<Job[]>([]);
-    const [error, setError] =
-        useState<string | null>(null);
-
-    const hasActiveJobs = jobs.some(
-        (job) =>
-            job.status === "queued" ||
-            job.status === "running"
-    );
-
-    async function loadJobs() {
-        try {
-            const result = await getJobs();
-
-            setJobs(result);
-            setError(null);
-
-        } catch (error) {
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to load jobs"
-            );
-        }
-    }
-
-
-    useEffect(() => {
-        loadJobs();
-    }, []);
-
-    useEffect(() => {
-        if (!hasActiveJobs) {
-            return;
-        }
-
-        const interval = window.setInterval(
-            loadJobs,
-            3000
-        );
-
-        return () => {
-            window.clearInterval(interval);
-        };
-    }, [hasActiveJobs]);
+export function Jobs({ jobs, error, loading, onRefresh }: {
+    jobs: Job[]; error: string | null; loading: boolean; onRefresh: () => void;
+}) {
 
     return (
         <div className="jobs">
 
             <div className="section-heading">
                 <h2>Jobs</h2>
+                <button className="secondary-button" onClick={onRefresh} disabled={loading}>{loading ? "Refreshing…" : "Refresh Jobs"}</button>
 
                 <span className="image-count">
                     {jobs.length}
@@ -156,7 +113,7 @@ export function Jobs() {
                         {job.error_message && (
                             <div className="job-error">
                                 <strong>Error</strong>
-                                {job.error_message}
+                                {safeMessage(job.error_message)}
                             </div>
                         )}
 

@@ -80,8 +80,7 @@ registration; the API route does not need provider-specific branches. Generic
 `use_cases` tags describe intended model usage. The routing service consumes tags
 for supported non-general purposes; discovery itself never submits generation.
 
-The future Generation Lab should use `interface_levels`, `selectable_in` and
-generic controls from discovery, keep provider/model automatic in easy/medium,
-and optionally offer selection in hard mode. It must independently follow Job
-correlation, treat waiting/polling as active states, and render video Artifacts.
-No frontend is implemented here.
+The [Generation Lab](generation-lab.md) uses `interface_levels`, `selectable_in`
+and generic controls from discovery. It keeps provider/model automatic in
+easy/medium, allows optional hard-mode selection, follows IG Job correlation,
+treats waiting/polling as active, and renders IG image/video Artifacts.

@@ -1,384 +1,55 @@
-import { useEffect, useState, } from "react";
-
-import PromptBox from "./components/PromptBox";
-import ImageGrid from "./components/ImageGrid";
-import type { Image } from "./components/ImageCard";
+import { useEffect, useState } from "react";
+import { AuthScreen } from "./components/AuthScreen";
+import { GenerationLab } from "./components/GenerationLab";
 import { Jobs } from "./components/Jobs";
 import { Executions } from "./components/Executions";
-
-import {
-    getImages,
-    getImage,
-    generateImage,
-} from "./api/images";
-
-import { AuthScreen } from "./components/AuthScreen";
-
-import {
-    getCurrentUser,
-    logout,
-    type User,
-} from "./api/auth";
-
-function App() {
-    const [prompt, setPrompt] = useState("");
-
-    const [images, setImages] =
-        useState<Image[]>([]);
-
-    const [generating, setGenerating] =
-        useState(false);
-
-    const [activeRequestId, setActiveRequestId] =
-        useState<string | null>(null);
-
-    const [error, setError] =
-        useState<string | null>(null);
-
-    const [view, setView] =
-        useState<
-            "images" |
-            "jobs" |
-            "executions"
-        >("images");
-
-    const [user, setUser] =
-        useState<User | null>(null);
-
-    const [authLoading, setAuthLoading] =
-        useState(true);
-
-
-
-    async function loadHistory() {
-
-        try {
-
-            setError(null);
-
-            const result =
-                await getImages();
-
-            setImages(result);
-
-        } catch (error) {
-
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to load history"
-            );
-        }
-    }
-
-
-    async function handleGenerate() {
-        const value = prompt.trim();
-
-        if (!value || generating) {
-            return;
-        }
-
-        try {
-            setGenerating(true);
-            setError(null);
-
-            const result = await generateImage(value);
-
-            console.log(
-                "Generation accepted:",
-                result
-            );
-
-            setActiveRequestId(
-                result.request_id
-            );
-
-            setPrompt("");
-
-            await loadHistory();
-
-        } catch (error) {
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Generation failed"
-            );
-        } finally {
-            setGenerating(false);
-        }
-    }
-
-
-    useEffect(() => {
-        if (!user) {
-            return;
-        }
-
-        loadHistory();
-    }, [user]);
-
-    useEffect(() => {
-        if (!user || !activeRequestId) {
-            return;
-        }
-
-        const requestId = activeRequestId;
-
-        let cancelled = false;
-
-        async function pollActiveImage() {
-            try {
-                const image =
-                    await getImage(
-                        requestId
-                    );
-
-                if (cancelled) {
-                    return;
-                }
-
-                if (
-                    image.status === "completed" ||
-                    image.status === "failed"
-                ) {
-                    setActiveRequestId(null);
-                    await loadHistory();
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    console.error(
-                        "Failed to refresh active image:",
-                        error
-                    );
-                }
-            }
-        }
-
-        pollActiveImage();
-
-        const interval =
-            window.setInterval(
-                pollActiveImage,
-                3000
-            );
-
-        return () => {
-            cancelled = true;
-            window.clearInterval(interval);
-        };
-    }, [
-        activeRequestId,
-        user,
-    ]);   
-
-    useEffect(() => {
-        async function checkAuthentication() {
-            try {
-                const currentUser =
-                    await getCurrentUser();
-
-                setUser(currentUser);
-
-            } catch (error) {
-                console.error(
-                    "Authentication check failed:",
-                    error
-                );
-
-                setUser(null);
-
-            } finally {
-                setAuthLoading(false);
-            }
-        }
-
-        checkAuthentication();
-    }, []);
-
-    async function handleLogout() {
-        try {
-            await logout();
-        } finally {
-            setUser(null);
-            setImages([]);
-            setView("images");
-        }
-    }
-
-    if (authLoading) {
-        return (
-            <div className="auth-loading">
-                Loading IG…
-            </div>
-        );
-    }
-
-    if (!user) {
-        return (
-            <AuthScreen
-                onAuthenticated={setUser}
-            />
-        );
-    }
-
-    return (
-        <div className="app">
-
-            <header className="app-header">
-
-                <div className="header-inner">
-
-                    <div className="brand">
-                        <span className="brand-name">
-                            IG
-                        </span>
-
-                        <span className="brand-subtitle">
-                            AI Image Generator
-                        </span>
-                    </div>
-
-                    <nav className="app-nav">
-                        <button
-                            onClick={() => setView("images")}
-                            className={view === "images" ? "active" : ""}
-                        >
-                            Images
-                        </button>
-
-                        <button
-                            onClick={() => setView("jobs")}
-                            className={view === "jobs" ? "active" : ""}
-                        >
-                            Jobs
-                        </button>
-
-                        <button
-                            onClick={() =>
-                                setView("executions")
-                            }
-                            className={
-                                view === "executions"
-                                    ? "active"
-                                    : ""
-                            }
-                        >
-                            Executions
-                        </button>
-                    </nav>
-                    <div className="user-menu">
-
-                        <div className="user-info">
-                            <strong>
-                                {user.name || user.email}
-                            </strong>
-
-                            {user.name && (
-                                <span>
-                                    {user.email}
-                                </span>
-                            )}
-                        </div>
-
-                        <button
-                            className="logout-button"
-                            onClick={handleLogout}
-                        >
-                            Sign out
-                        </button>
-
-                    </div>
-                </div>
-
-            </header>
-            {view === "images" ? (
-                <main className="main">
-
-                    <section className="hero">
-
-                        <div className="hero-heading">
-
-                            <h1>
-                                Create an image
-                            </h1>
-
-                            <p>
-                                Describe what you want to generate.
-                            </p>
-
-                        </div>
-
-
-                        <PromptBox
-                            prompt={prompt}
-                            onPromptChange={setPrompt}
-                            onGenerate={handleGenerate}
-                            generating={generating}
-                        />
-
-
-                        {generating && (
-                            <div className="generation-status">
-                                Generating image…
-                                This may take a little while.
-                            </div>
-                        )}
-
-
-                        {error && (
-                            <div className="error">
-                                {error}
-                            </div>
-                        )}
-
-                    </section>
-
-
-                    <section className="history-section">
-
-                        <div className="section-heading">
-
-                            <h2>
-                                History
-                            </h2>
-
-                            <span className="image-count">
-                                {images.length}
-                                {" "}
-                                {images.length === 1
-                                    ? "image"
-                                    : "images"}
-                            </span>
-
-                        </div>
-
-
-                        <ImageGrid
-                            images={images}
-                        />
-
-                    </section>
-                </main>
-
-            ) : view === "jobs" ? (
-                <main className="main">
-                    <section className="history-section">
-                        <Jobs />
-                    </section>
-                </main>
-            ) : (
-                <main className="main">
-
-                    <section className="history-section">
-                        <Executions />
-                    </section>
-
-                </main>
-            )}
-
-        </div>
-    );
+import { getCurrentUser, logout, type User } from "./api/auth";
+import { safeMessage } from "./api/client";
+import { useGenerationFeed } from "./hooks/useGenerationFeed";
+
+function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<void> }) {
+    const [view, setView] = useState<"generate" | "jobs" | "executions">("generate");
+    const feed = useGenerationFeed();
+    return <div className="app">
+        <header className="app-header"><div className="header-inner">
+            <div className="brand"><span className="brand-name">IG</span><span className="brand-subtitle">AI Media Control Plane</span></div>
+            <nav className="app-nav" aria-label="Main navigation">
+                <button className={view === "generate" ? "active" : ""} aria-current={view === "generate" ? "page" : undefined} onClick={() => setView("generate")}>Generate</button>
+                <button className={view === "jobs" ? "active" : ""} aria-current={view === "jobs" ? "page" : undefined} onClick={() => { setView("jobs"); feed.refresh(); }}>Jobs</button>
+                <button className={view === "executions" ? "active" : ""} aria-current={view === "executions" ? "page" : undefined} onClick={() => setView("executions")}>Executions</button>
+            </nav>
+            <div className="user-menu"><div className="user-info"><strong>{user.name || user.email}</strong>{user.name && <span>{user.email}</span>}</div>
+                <button className="logout-button" onClick={() => void onLogout()}>Sign out</button></div>
+        </div></header>
+        <main className="main">
+            <section hidden={view !== "generate"}>
+                <GenerationLab results={feed.data.results} receipts={feed.receipts} loading={feed.loading} error={feed.error}
+                    onRefresh={feed.refresh} onAccepted={feed.accepted} />
+            </section>
+            {view === "jobs" && <Jobs jobs={feed.data.jobs} error={feed.error} loading={feed.loading} onRefresh={feed.refresh} />}
+            {view === "executions" && <Executions />}
+        </main>
+    </div>;
 }
 
-export default App;
+export default function App() {
+    const [user, setUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        void getCurrentUser().then(value => { if (!cancelled) setUser(value); })
+            .catch(error => { if (!cancelled) setError(safeMessage(error instanceof Error ? error.message : null)); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, []);
+    async function signOut() {
+        try { await logout(); }
+        catch { /* Leave the workspace even if the network logout request fails. */ }
+        finally { setUser(null); setError(null); }
+    }
+    if (loading) return <div className="auth-loading">Loading IG…</div>;
+    if (!user) return <>{error && <p className="error" role="alert">{error}</p>}<AuthScreen onAuthenticated={setUser} /></>;
+    // Remount all tenant/user data and cancel requests when the signed-in user changes.
+    return <Workspace key={user.user_id} user={user} onLogout={signOut} />;
+}

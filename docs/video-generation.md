@@ -88,10 +88,9 @@ or stale completion cannot create a second Artifact row.
 
 ## Limits and follow-up
 
-- No frontend video flow yet. It needs media selection, optional hard-mode model
-  choices using [tenant-aware discovery](media-capabilities.md), Job correlation/polling with waiting and
-  polling active, and a video Artifact renderer. Easy/medium should not require
-  provider/model selection.
+- The [Generation Lab](generation-lab.md) supports text-to-video with generic
+  controls, optional hard-mode model selection and native video playback.
+  An Artifact Library / first-frame selector remains future work.
 - No last-frame, multi-reference, reference-video/audio, editing, or extension.
 - Existing put_bytes storage requires bounded output assembly in memory. True
   streaming to storage and HTTP byte ranges remain future work. Blob reads also

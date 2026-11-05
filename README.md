@@ -1,8 +1,13 @@
 # IG — AI Media Generation Control Plane
 
-**Version 4.5**
+**Version 4.6**
 
 IG is a multi-tenant AI media generation control plane.
+
+The [Generation Lab](docs/generation-lab.md) provides a capability-driven frontend
+for image and video generation, optional hard-mode model selection, active Job
+recovery, and IG Artifact previews. Existing Jobs, Executions and legacy image
+history remain available.
 
 Authenticated tenant members can discover available media, models, defaults and
 generic controls through `GET /v2/media/capabilities`. See
