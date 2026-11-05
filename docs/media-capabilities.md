@@ -15,7 +15,8 @@ The response contains:
   `default_model`, `default_model_available`, and the registered model catalog.
 - `models`: stable IDs and display names, availability, supported interface levels,
   `selectable_in` (hard when available), generic `capabilities`, and optional
-  `use_cases` metadata. Current models have no specialized use-case tags.
+  `use_cases` metadata. The economical Google image model carries `thumbnail`,
+  `draft` and `preview` tags; these tags do not affect routing.
 
 Provider state means:
 
@@ -35,14 +36,20 @@ media URLs are returned.
 
 `default_provider` is the current automatic provider when discovery can establish
 a usable registered default. It is null when none can be established. Image
-selection retains the existing image provider default. Video still requires
+selection retains OpenAI as the existing default, even when Google is enabled.
+A Google-only tenant must explicitly select Google in hard mode; its image
+`available` can be true while `default_provider` is null. Google's registered model
+reports `supported_interface_levels: ["hard"]` until automatic routing supports it.
+Video still requires
 exactly one enabled registered provider for automatic selection; multiple enabled
 providers remain selectable in hard mode but do not trigger automatic ranking.
 An enabled provider with incomplete configuration still participates in that
 existing video ambiguity rule. This endpoint does not change generation routing.
 
-Image defaults retain `config_json.default_model` with adapter fallback. The
-unused ORM `default_model` column and `default_models.image` do not override it.
+OpenAI image defaults retain `config_json.default_model` with adapter fallback.
+The unused ORM `default_model` column and `default_models.image` do not override
+OpenAI defaults. Google image defaults resolve `default_models.image`, then legacy
+`default_model`, then the adapter default. Explicit hard-mode models take priority.
 Existing custom image defaults are reported as identifiers, but
 `default_model_available` is false when they are outside the registered catalog;
 this does not change existing image-generation acceptance behavior. Video uses
@@ -55,6 +62,10 @@ advertises one output image and four-panel grids: the current adapter returns on
 image, and the current layout resolver only automatically arranges four panels,
 although request schemas accept broader counts. This task does not change those
 legacy request semantics. Explicit panel arrangements remain hard-only.
+Google initially accepts one reference and strictly enforces one output/single
+strategy. Its `resolutions: ["1k"]` describes a fixed output tier, not a new
+generic image resolution input. All semantic quality profiles use that same tier.
+See [Google image generation](providers/google-image.md) for configuration and limits.
 
 Generic video controls include text input, one optional `first_frame` image,
 one output, single layout, 2–30 seconds, `480p`/`720p`/`1080p`, `16:9`/`9:16`/`1:1`

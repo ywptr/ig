@@ -13,6 +13,8 @@ from app.media.validation import (
 )
 from app.jobs.service import create_job
 from app.media.video_service import resolve_video_selection, resolve_video_references
+from app.media.providers.registry import image_provider_registration
+from app.tenancy.provider_configs import get_provider_config
 
 ### Media generation service and its supporting types
 
@@ -106,6 +108,15 @@ def submit_media_generation(
     if request.media_type != "image":
         raise MediaCapabilityNotAvailableError(
             capability
+        )
+
+    if request.advanced and request.advanced.provider:
+        registration = image_provider_registration(request.advanced.provider)
+        config = get_provider_config(db, tenant_id=tenant_id, provider=request.advanced.provider)
+        registration.validate_submission_options(
+            config=(config.config_json or {}) if config is not None else {},
+            model=request.advanced.model, count=request.output.count, strategy=request.strategy,
+            reference_count=len(request.references), parameters=request.advanced.parameters,
         )
 
     image_record = submit_image_generation(

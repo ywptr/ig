@@ -36,6 +36,7 @@ class ModelMetadata:
     display_name: str
     capabilities: GenerationControls
     use_cases: tuple[str, ...] = ()
+    supported_interface_levels: tuple[InterfaceLevel, ...] = get_args(InterfaceLevel)
 
 
 @dataclass(frozen=True)

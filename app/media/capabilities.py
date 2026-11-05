@@ -35,7 +35,9 @@ def media_capabilities(db: Session, *, tenant_id: str) -> MediaCapabilities:
             metadata = adapter.CAPABILITIES
             models = [ModelCapability(
                 id=model.id, display_name=model.display_name, available=available,
-                selectable_in=list(EXPLICIT_SELECTION_LEVELS) if available else [],
+                supported_interface_levels=list(model.supported_interface_levels),
+                selectable_in=[level for level in EXPLICIT_SELECTION_LEVELS
+                               if level in model.supported_interface_levels] if available else [],
                 capabilities=model.capabilities.model_copy(deep=True), use_cases=list(model.use_cases),
             ) for model in metadata.models]
             providers.append(ProviderCapability(

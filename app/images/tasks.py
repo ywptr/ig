@@ -12,6 +12,7 @@ from app.jobs.result import Completed
 from app.media.providers.registry import (
     create_image_provider,
     DEFAULT_IMAGE_PROVIDER,
+    resolve_image_model,
 )
 from app.db.models import (
     Artifact,
@@ -167,10 +168,7 @@ def build_resolved_image_request(
             "arrangement"
         ),
         references=references,
-        provider=advanced.get(
-            "provider",
-            DEFAULT_IMAGE_PROVIDER,
-        ),
+        provider=(advanced.get("provider") or DEFAULT_IMAGE_PROVIDER).strip().lower(),
         model=advanced.get(
             "model") or ""
         ,
@@ -213,12 +211,8 @@ def generate_image(
         or {}
     )
 
-    resolved_model = (
-        request.model
-        or provider_settings.get(
-            "default_model"
-        )
-        or ""
+    resolved_model = resolve_image_model(
+        request.provider, config=provider_settings, model=request.model,
     )
 
     provider_request = replace(
@@ -249,9 +243,8 @@ def persist_image_result(
     Store provider output and create the Artifact record.
     """
 
-    filename = (
-        f"{uuid.uuid4()}.png"
-    )
+    extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(result.mime_type, "png")
+    filename = f"{uuid.uuid4()}.{extension}"
 
     storage_uri = (
         artifact_store.put_bytes(

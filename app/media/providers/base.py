@@ -2,6 +2,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+
+class ImageProviderError(RuntimeError):
+    """Sanitized provider failure safe for Job/Execution error reporting."""
+
+
+class ImageProviderConfigurationError(ValueError):
+    pass
+
 @dataclass(frozen=True)
 class ResolvedImageReference:
     artifact_id: str
@@ -55,6 +63,19 @@ class ImageProviderResult:
 
 
 class ImageProviderAdapter(ABC):
+
+    @classmethod
+    def validate_submission_options(
+        cls, *, config: dict, model: str | None, count: int, strategy: str,
+        reference_count: int, parameters: dict,
+    ) -> None:
+        # Existing adapters retain their request acceptance behavior.
+        pass
+
+    @classmethod
+    def resolve_tenant_model(cls, config: dict, explicit_model: str | None = None) -> str:
+        # Preserve legacy image resolution and adapter-side fallback.
+        return explicit_model or config.get("default_model") or ""
 
     @abstractmethod
     def generate(

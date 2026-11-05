@@ -1,6 +1,6 @@
 # IG — AI Media Generation Control Plane
 
-**Version 4.3**
+**Version 4.4**
 
 IG is a multi-tenant AI media generation control plane.
 
@@ -10,6 +10,11 @@ generic controls through `GET /v2/media/capabilities`. See
 and model selection automatic; hard permits explicit selection. Configured,
 enabled and available are tenant-specific states calculated locally without
 provider calls or real-time health guarantees.
+
+A second image adapter is available through optional hard-mode selection; see
+[tenant configuration and economical image generation](docs/providers/google-image.md).
+Automatic image selection retains the existing provider default until purpose/profile
+routing is introduced. Discovery supplies the provider/model catalog to clients.
 
 It provides a provider-neutral API for submitting media-generation requests, executing them asynchronously, resolving reference media, storing generated and uploaded artifacts, and managing tenant-specific provider configuration.
 
