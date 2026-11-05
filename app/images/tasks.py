@@ -11,6 +11,7 @@ from app.db.database import SessionLocal
 from app.jobs.result import Completed
 from app.media.providers.registry import (
     create_image_provider,
+    DEFAULT_IMAGE_PROVIDER,
 )
 from app.db.models import (
     Artifact,
@@ -168,7 +169,7 @@ def build_resolved_image_request(
         references=references,
         provider=advanced.get(
             "provider",
-            "openai",
+            DEFAULT_IMAGE_PROVIDER,
         ),
         model=advanced.get(
             "model") or ""

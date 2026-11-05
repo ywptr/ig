@@ -1,6 +1,10 @@
 from app.media.schemas import (
     MediaGenerationRequest,
 )
+from app.media.constraints import (
+    IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS, MAX_IMAGE_REFERENCES,
+    MAX_VIDEO_REFERENCES, EXPLICIT_SELECTION_LEVELS,
+)
 
 #### Validation logic for media generation requests
 
@@ -9,8 +13,8 @@ class MediaRequestValidationError(ValueError):
 
 
 ALLOWED_ASPECT_RATIOS = {
-    "image": frozenset({"2:3", "4:5", "1:1", "16:9"}),
-    "video": frozenset({"16:9", "9:16", "1:1"}),
+    "image": frozenset(IMAGE_ASPECT_RATIOS),
+    "video": frozenset(VIDEO_ASPECT_RATIOS),
 }
 
 
@@ -28,7 +32,7 @@ def validate_media_request(
     if request.media_type == "video":
         if request.strategy != "single" or layout.type != "single":
             raise MediaRequestValidationError("Video supports only single strategy and layout")
-        if len(request.references) > 1:
+        if len(request.references) > MAX_VIDEO_REFERENCES:
             raise MediaRequestValidationError("Video supports at most one first_frame image")
         if request.advanced and request.advanced.parameters:
             raise MediaRequestValidationError("Video accepts generic controls, not provider parameters")
@@ -63,8 +67,7 @@ def validate_media_request(
         )
 
     if (
-        request.interface_level
-        in {"easy", "medium"}
+        request.interface_level not in EXPLICIT_SELECTION_LEVELS
         and request.advanced is not None
     ):
         raise MediaRequestValidationError(
@@ -83,7 +86,7 @@ def validate_media_request(
 
     if (
         layout.arrangement is not None
-        and request.interface_level != "hard"
+        and request.interface_level not in EXPLICIT_SELECTION_LEVELS
     ):
         raise MediaRequestValidationError(
             "panel arrangement override is only "
@@ -103,8 +106,8 @@ def validate_media_request(
             "panel_count=4"
         )
 
-    if len(request.references) > 8:
+    if len(request.references) > MAX_IMAGE_REFERENCES:
         raise MediaRequestValidationError(
-            "A maximum of 8 reference images "
+            f"A maximum of {MAX_IMAGE_REFERENCES} reference images "
             "is supported"
         )

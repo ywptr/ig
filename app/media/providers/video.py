@@ -68,6 +68,17 @@ class VideoProviderAdapter(ABC):
         return selected
 
     @classmethod
+    def resolve_tenant_model(cls, config: dict, explicit_model: str | None = None) -> str:
+        defaults = config.get("default_models") or {}
+        if not isinstance(defaults, dict):
+            raise VideoProviderConfigurationError("Invalid video model defaults")
+        return cls.resolve_model(explicit_model or defaults.get("video"))
+
+    @classmethod
+    def default_model_for(cls, config: dict) -> str:
+        return cls.resolve_tenant_model(config)
+
+    @classmethod
     @abstractmethod
     def from_config(cls, *, credentials: dict[str, str], config: dict, model: str):
         ...

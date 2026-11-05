@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.media.constraints import VIDEO_DURATION_MIN, VIDEO_DURATION_MAX, VideoResolution
 
 ### Collection of schemas for media generation requests and responses
 
@@ -126,9 +127,9 @@ class MediaAdvancedOptions(BaseModel):
 
 class VideoOutputPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    duration_seconds: int = Field(default=5, ge=2, le=30, strict=True)
+    duration_seconds: int = Field(default=5, ge=VIDEO_DURATION_MIN, le=VIDEO_DURATION_MAX, strict=True)
     aspect_ratio: AspectRatio = "16:9"
-    resolution: Literal["480p", "720p", "1080p"] = "720p"
+    resolution: VideoResolution = "720p"
     audio: bool = Field(default=False, strict=True)
     count: Literal[1] = 1
     style: Literal["auto"] = "auto"

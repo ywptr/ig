@@ -1,8 +1,15 @@
 # IG — AI Media Generation Control Plane
 
-**Version 4.2**
+**Version 4.3**
 
 IG is a multi-tenant AI media generation control plane.
+
+Authenticated tenant members can discover available media, models, defaults and
+generic controls through `GET /v2/media/capabilities`. See
+[tenant-aware discovery](docs/media-capabilities.md). Easy/medium keep provider
+and model selection automatic; hard permits explicit selection. Configured,
+enabled and available are tenant-specific states calculated locally without
+provider calls or real-time health guarantees.
 
 It provides a provider-neutral API for submitting media-generation requests, executing them asynchronously, resolving reference media, storing generated and uploaded artifacts, and managing tenant-specific provider configuration.
 
@@ -1685,7 +1692,6 @@ These should eventually remove the need for direct database manipulation during 
 - BYO model/inference infrastructure
 - Additional video generation providers
 - Audio generation providers
-- Provider capability discovery
 - Provider-specific health/status checks
 - Provider fallback/routing policies
 
@@ -1736,8 +1742,7 @@ These should eventually remove the need for direct database manipulation during 
 
 ## Control plane
 
-- Provider capability registry
-- Model registry
+- Extended model catalog and capability metadata
 - Capability routing
 - Usage policies
 - Quotas

@@ -5,6 +5,11 @@ import time
 from urllib.parse import urlparse, quote
 
 import requests
+from app.media.capability_schemas import GenerationControls, IntegerRange, ModelMetadata, ProviderMetadata
+from app.media.constraints import (
+    VIDEO_ASPECT_RATIOS, VIDEO_RESOLUTIONS, VIDEO_DURATION_MIN, VIDEO_DURATION_MAX,
+    MAX_VIDEO_REFERENCES,
+)
 
 from app.media.providers.video import (
     ResolvedVideoRequest, VideoProviderAdapter, VideoProviderCompleted,
@@ -21,16 +26,33 @@ DOWNLOAD_TIMEOUT = (5, 10)
 class AlibabaWanVideoProvider(VideoProviderAdapter):
     DEFAULT_MODEL = "wan3.0-video"
     MODELS = frozenset({DEFAULT_MODEL})
+    CAPABILITIES = ProviderMetadata("Alibaba Model Studio", (ModelMetadata(
+        DEFAULT_MODEL, "Wan 3.0 Video", GenerationControls(
+            aspect_ratios=list(VIDEO_ASPECT_RATIOS), resolutions=list(VIDEO_RESOLUTIONS),
+            duration_seconds=IntegerRange(min=VIDEO_DURATION_MIN, max=VIDEO_DURATION_MAX),
+            reference_roles=["first_frame"], max_references=MAX_VIDEO_REFERENCES,
+            audio=True, count=IntegerRange(min=1, max=1), layout_types=["single"],
+        ),
+    ),))
+
+    @staticmethod
+    def configuration_is_valid(config: dict) -> bool:
+        base_url = config.get("base_url")
+        try:
+            parsed = urlparse(base_url) if isinstance(base_url, str) else None
+            return bool(
+                parsed and parsed.scheme == "https" and parsed.hostname
+                and not (parsed.username or parsed.password or parsed.query or parsed.fragment)
+                and parsed.path in ("", "/")
+                and isinstance(config.get("default_models") or {}, dict)
+            )
+        except ValueError:
+            return False
 
     def __init__(self, *, api_key: str, base_url: str, model: str):
         if not isinstance(api_key, str) or not api_key.strip():
             raise VideoProviderConfigurationError("Video provider credential api_key is required")
-        parsed = urlparse(base_url) if isinstance(base_url, str) else None
-        if (
-            not parsed or parsed.scheme != "https" or not parsed.hostname
-            or parsed.username or parsed.password or parsed.query or parsed.fragment
-            or parsed.path not in ("", "/")
-        ):
+        if not self.configuration_is_valid({"base_url": base_url}):
             raise VideoProviderConfigurationError("Video provider requires an HTTPS base_url origin")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -88,10 +110,10 @@ class AlibabaWanVideoProvider(VideoProviderAdapter):
         if request.provider != "alibaba" or self.resolve_model(request.model) != self.model:
             raise VideoProviderConfigurationError("Video request does not match selected provider/model")
         if (
-            not 2 <= request.duration_seconds <= 30
-            or request.aspect_ratio not in {"16:9", "9:16", "1:1"}
-            or request.resolution not in {"480p", "720p", "1080p"}
-            or len(request.references) > 1 or len(request.description) > 20000
+            not VIDEO_DURATION_MIN <= request.duration_seconds <= VIDEO_DURATION_MAX
+            or request.aspect_ratio not in VIDEO_ASPECT_RATIOS
+            or request.resolution not in VIDEO_RESOLUTIONS
+            or len(request.references) > MAX_VIDEO_REFERENCES or len(request.description) > 20000
         ):
             raise VideoProviderConfigurationError("Unsupported video request")
         inputs = {"prompt": request.description}

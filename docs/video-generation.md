@@ -89,7 +89,7 @@ or stale completion cannot create a second Artifact row.
 ## Limits and follow-up
 
 - No frontend video flow yet. It needs media selection, optional hard-mode model
-  choices, capability-driven discovery, Job correlation/polling with waiting and
+  choices using [tenant-aware discovery](media-capabilities.md), Job correlation/polling with waiting and
   polling active, and a video Artifact renderer. Easy/medium should not require
   provider/model selection.
 - No last-frame, multi-reference, reference-video/audio, editing, or extension.

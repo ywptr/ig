@@ -9,6 +9,8 @@ from app.media.providers.video import VideoProviderAdapter, VideoProviderConfigu
 
 
 VIDEO_PROVIDERS: dict[str, type[VideoProviderAdapter]] = {"alibaba": AlibabaWanVideoProvider}
+DEFAULT_IMAGE_PROVIDER = "openai"
+IMAGE_PROVIDERS = {"openai": OpenAIImageProvider}
 
 
 def video_provider_registration(provider: str) -> type[VideoProviderAdapter]:
@@ -34,20 +36,9 @@ def create_image_provider(
 ) -> ImageProviderAdapter:
     provider = provider.strip().lower()
 
-    if provider == "openai":
-        api_key = credentials.get(
-            "api_key"
-        )
-
-        if not api_key:
-            raise ValueError(
-                "OpenAI credential "
-                "'api_key' is required"
-            )
-
-        return OpenAIImageProvider(
-            api_key=api_key,
-        )
+    registration = IMAGE_PROVIDERS.get(provider)
+    if registration is not None:
+        return registration.from_config(credentials=credentials, config=config)
 
     raise ValueError(
         f"Unsupported image provider: "

@@ -1,8 +1,13 @@
 import base64
 from dataclasses import replace
 from io import BytesIO
+from typing import get_args
 
 from openai import OpenAI
+from app.media.capability_schemas import GenerationControls, IntegerRange, ModelMetadata, ProviderMetadata
+from app.media.constraints import IMAGE_ASPECT_RATIOS, MAX_IMAGE_REFERENCES
+from app.media.schemas import ReferenceRole, GridArrangement, MediaReference
+from app.media.providers.openai.prompts import STYLE_INSTRUCTIONS
 
 from app.media.providers.base import (
     ImageProviderAdapter,
@@ -166,6 +171,32 @@ def build_reference_files(
 class OpenAIImageProvider(
     ImageProviderAdapter
 ):
+    CAPABILITIES = ProviderMetadata("OpenAI", (ModelMetadata(
+        DEFAULT_OPENAI_MODEL, "GPT Image 2", GenerationControls(
+            aspect_ratios=list(IMAGE_ASPECT_RATIOS),
+            reference_roles=list(get_args(ReferenceRole)), max_references=MAX_IMAGE_REFERENCES,
+            reference_strengths=list(get_args(MediaReference.model_fields["strength"].annotation)),
+            count=IntegerRange(min=1, max=1), layout_types=["single", "panel_grid"],
+            panel_counts=[4], panel_arrangements=list(get_args(GridArrangement)),
+            panel_arrangements_selectable_in=["hard"],
+            quality_profiles=list(OPENAI_QUALITY), styles=["auto", *STYLE_INSTRUCTIONS],
+        ),
+    ),))
+
+    @staticmethod
+    def configuration_is_valid(config: dict) -> bool:
+        return isinstance(config, dict)
+
+    @staticmethod
+    def default_model_for(config: dict) -> str:
+        return resolve_openai_model(config.get("default_model"))
+
+    @classmethod
+    def from_config(cls, *, credentials: dict[str, str], config: dict):
+        api_key = credentials.get("api_key")
+        if not api_key:
+            raise ValueError("OpenAI credential 'api_key' is required")
+        return cls(api_key=api_key)
 
     def __init__(
         self,

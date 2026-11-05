@@ -45,11 +45,8 @@ def resolve_video_selection(db: Session, request: MediaGenerationRequest, *, ten
     config = get_provider_config(db, tenant_id=tenant_id, provider=provider)
     if not config or not config.enabled:
         raise VideoProviderConfigurationError("Video provider is not enabled for this tenant")
-    defaults = (config.config_json or {}).get("default_models") or {}
-    if not isinstance(defaults, dict):
-        raise VideoProviderConfigurationError("Invalid video model defaults")
-    model = video_provider_registration(provider).resolve_model(
-        (advanced.model if advanced else None) or defaults.get("video"),
+    model = video_provider_registration(provider).resolve_tenant_model(
+        config.config_json or {}, advanced.model if advanced else None,
     )
     load_video_provider(db, tenant_id=tenant_id, provider=provider, model=model)
     return VideoSelection(provider, model)

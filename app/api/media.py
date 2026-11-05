@@ -6,6 +6,8 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
+from app.media.capabilities import media_capabilities
+from app.media.capability_schemas import MediaCapabilities
 from app.media.providers.video import VideoProviderConfigurationError
 from app.tenancy.provider_configs import ProviderNotConfiguredError
 
@@ -29,6 +31,14 @@ router = APIRouter(
     prefix="/media",
     tags=["media"],
 )
+
+
+@router.get("/capabilities", response_model=MediaCapabilities)
+def get_media_capabilities(
+    context: TenantContext = Depends(get_authenticated_tenant_context),
+    db: Session = Depends(get_db),
+):
+    return media_capabilities(db, tenant_id=context.tenant.tenant_id)
 
 
 @router.post(
