@@ -2,6 +2,7 @@
 import base64
 import binascii
 import json
+import logging
 import re
 import time
 from dataclasses import replace
@@ -25,6 +26,47 @@ MAX_RESPONSE_BYTES = 24 * 1024 * 1024
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 MAX_REFERENCE_BYTES = 10 * 1024 * 1024
 SUPPORTED_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+MAX_ERROR_BYTES = 16 * 1024
+MAX_ERROR_MESSAGE_CHARS = 256
+logger = logging.getLogger(__name__)
+
+
+class GoogleImageHTTPError(ImageProviderError):
+    """Only allowlisted, sanitized diagnostics; no response/request retained."""
+    def __init__(self, http_status: int, *, code: int | None = None,
+                 status: str | None = None, message: str | None = None):
+        self.http_status = http_status
+        self.code = code
+        self.status = status
+        self.message = message
+        super().__init__(f"Google image provider HTTP {http_status}"
+                         f" code={code} status={status} message={message}")
+
+
+def _safe_error_message(message: str, *, api_key: str, payload: dict) -> str:
+    # Drop messages that look like echoed wire payloads or authentication headers.
+    if re.search(r"authorization|x-goog-api-key|inlineData|contents|data:image|api[_ -]?key", message, re.I):
+        return "[redacted provider message]"
+    message = message.replace(api_key, "[redacted]")
+
+    def redact_values(value):
+        nonlocal message
+        if isinstance(value, dict):
+            for child in value.values():
+                redact_values(child)
+        elif isinstance(value, list):
+            for child in value:
+                redact_values(child)
+        elif isinstance(value, str) and value:
+            message = message.replace(value, "[redacted]")
+
+    redact_values(payload)
+    # Also remove unknown tokens/base64 and control characters before truncation.
+    message = re.sub(r"[A-Za-z0-9_+/=-]{40,}", "[redacted]", message)
+    message = " ".join(message.split())
+    message = "".join(char for char in message if char.isprintable())
+    return message[:MAX_ERROR_MESSAGE_CHARS]
+
 
 
 class GoogleImageProvider(ImageProviderAdapter):
@@ -95,7 +137,7 @@ class GoogleImageProvider(ImageProviderAdapter):
                 timeout=API_TIMEOUT, allow_redirects=False, stream=True,
             ) as response:
                 if response.status_code != 200:
-                    raise ImageProviderError("Image provider HTTP request failed")
+                    raise self._http_error(response, payload, deadline) from None
                 chunks, total = [], 0
                 for chunk in response.iter_content(chunk_size=64 * 1024):
                     if time.monotonic() > deadline:
@@ -110,6 +152,38 @@ class GoogleImageProvider(ImageProviderAdapter):
         if not isinstance(body, dict) or body.get("error"):
             raise ImageProviderError("Image provider returned an invalid response")
         return body
+
+    def _http_error(self, response, payload: dict, deadline: float) -> GoogleImageHTTPError:
+        code = status = message = None
+        chunks, total = [], 0
+        try:
+            # Read at most the budget plus a single byte to detect truncation.
+            for chunk in response.iter_content(chunk_size=1024):
+                if time.monotonic() > deadline:
+                    break
+                remaining = MAX_ERROR_BYTES + 1 - total
+                chunks.append(chunk[:remaining])
+                total += len(chunks[-1])
+                if total > MAX_ERROR_BYTES:
+                    break
+            if total <= MAX_ERROR_BYTES and time.monotonic() <= deadline:
+                body = json.loads(b"".join(chunks))
+                error = body.get("error") if isinstance(body, dict) else None
+                if isinstance(error, dict):
+                    if type(error.get("code")) is int and 100 <= error["code"] <= 599:
+                        code = error["code"]
+                    candidate = error.get("status")
+                    if (isinstance(candidate, str) and re.fullmatch(r"[A-Z_]{1,64}", candidate)
+                            and self._api_key not in candidate):
+                        status = candidate
+                    if isinstance(error.get("message"), str):
+                        message = _safe_error_message(error["message"], api_key=self._api_key, payload=payload)
+        except (requests.RequestException, ValueError, RecursionError):
+            # HTTP status remains useful even if reading/parsing the error fails.
+            pass
+        failure = GoogleImageHTTPError(response.status_code, code=code, status=status, message=message)
+        logger.warning("google.image.http_error %s", failure)
+        return failure
 
     @staticmethod
     def _image(body: dict) -> tuple[str, bytes]:

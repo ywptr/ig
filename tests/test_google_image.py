@@ -11,7 +11,9 @@ from app.media.providers.base import (
     ImageProviderConfigurationError, ImageProviderError, ImageProviderResult,
     ResolvedImageReference, ResolvedImageRequest,
 )
-from app.media.providers.google.image import GoogleImageProvider
+from app.media.providers.google.image import (
+    GoogleImageProvider, GoogleImageHTTPError, MAX_ERROR_BYTES, MAX_ERROR_MESSAGE_CHARS,
+)
 from app.media.providers.openai.image import OpenAIImageProvider
 from app.media.providers.openai.prompts import build_image_prompt as legacy_prompt
 from app.media.prompts import build_image_prompt
@@ -170,6 +172,88 @@ class GoogleAdapterTests(unittest.TestCase):
             self.adapter.generate(self.request())
         self.assertNotIn(TEST_CREDENTIAL, str(error.exception))
         self.assertIsNone(error.exception.__cause__)
+
+    def test_http_json_diagnostics_logged_without_retry(self):
+        for http_status, status in ((400, "INVALID_ARGUMENT"), (401, "UNAUTHENTICATED"),
+                                    (403, "PERMISSION_DENIED"), (404, "NOT_FOUND"),
+                                    (429, "RESOURCE_EXHAUSTED"), (500, "INTERNAL"),
+                                    (503, "UNAVAILABLE")):
+            with self.subTest(http_status=http_status):
+                self.http.reset_mock()
+                self.http.return_value = GoogleResponse({"error": {
+                    "code": http_status, "status": status, "message": "Diagnostic detail",
+                    "details": [{"private": TEST_CREDENTIAL}],
+                }}, status=http_status)
+                with self.assertLogs("app.media.providers.google.image", level="WARNING") as logs:
+                    with self.assertRaises(GoogleImageHTTPError) as caught:
+                        self.adapter.generate(self.request())
+                error = caught.exception
+                self.assertEqual((error.http_status, error.code, error.status, error.message),
+                                 (http_status, http_status, status, "Diagnostic detail"))
+                self.assertIn(str(http_status), logs.output[0])
+                self.assertIn(status, logs.output[0])
+                self.assertNotIn(TEST_CREDENTIAL, str(error) + repr(error) + str(logs.output))
+                self.http.assert_called_once()
+
+    def test_non_json_oversized_and_unreadable_error_bodies(self):
+        for raw in (b"private html " + TEST_CREDENTIAL.encode(),
+                    json.dumps({"error": {"message": "x" * MAX_ERROR_BYTES}}).encode(),
+                    b"[]", b'{"error": "invalid"}'):
+            self.http.return_value = GoogleResponse(status=503, raw=raw)
+            with self.assertRaises(GoogleImageHTTPError) as caught:
+                self.adapter.generate(self.request())
+            self.assertEqual(caught.exception.http_status, 503)
+            self.assertIsNone(caught.exception.message)
+            self.assertNotIn(TEST_CREDENTIAL, str(caught.exception))
+        response = GoogleResponse(status=403)
+        response.iter_content = Mock(side_effect=requests.Timeout(TEST_CREDENTIAL))
+        self.http.return_value = response
+        with self.assertRaises(GoogleImageHTTPError) as caught:
+            self.adapter.generate(self.request())
+        self.assertEqual(caught.exception.http_status, 403)
+        self.assertNotIn(TEST_CREDENTIAL, str(caught.exception))
+
+    def test_error_message_redaction_and_truncation(self):
+        encoded = base64.b64encode(PNG).decode()
+        for message in (f"invalid {TEST_CREDENTIAL}",
+                        "Authorization: Bearer private-token",
+                        "x-goog-api-key: private-token",
+                        "api_key=private-token", f"reference {encoded}",
+                        'contents: [{"inlineData": "private"}]',
+                        "bad\nrequest\x00 " + "long diagnostic " * 50):
+            self.http.return_value = GoogleResponse({"error": {
+                "code": 400, "status": "INVALID_ARGUMENT", "message": message,
+                "request": {"secret": TEST_CREDENTIAL},
+            }}, status=400)
+            with self.assertLogs("app.media.providers.google.image", level="WARNING") as logs:
+                with self.assertRaises(GoogleImageHTTPError) as caught:
+                    self.adapter.generate(self.request(references=[self.reference()]))
+            output = str(caught.exception) + repr(caught.exception) + str(logs.output)
+            for secret in (TEST_CREDENTIAL, "private-token", encoded, "inlineData"):
+                self.assertNotIn(secret, output)
+            self.assertLessEqual(len(caught.exception.message), MAX_ERROR_MESSAGE_CHARS)
+            self.assertNotIn("\n", caught.exception.message)
+            self.assertNotIn("\x00", caught.exception.message)
+
+    def test_oversized_stream_stops_reading_and_closes_response(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.status_code = 429
+        consumed = []
+
+        def chunks(chunk_size):
+            for index in range(100):
+                consumed.append(index)
+                yield b"x" * chunk_size
+
+        response.iter_content.side_effect = chunks
+        self.http.return_value = response
+        with self.assertRaises(GoogleImageHTTPError):
+            self.adapter.generate(self.request())
+        self.assertLessEqual(len(consumed) * 1024, MAX_ERROR_BYTES + 1024)
+        response.__exit__.assert_called_once()
+        self.http.assert_called_once()
 
     def test_blocked_truncated_missing_or_multiple_images_fail(self):
         bodies = [{}, [], {"promptFeedback": {"blockReason": "SAFETY"}}]
