@@ -1,0 +1,42 @@
+# Explicit local-development override. Requires Docker Compose >= 2.24.4.
+# docker compose -f compose.yaml -f compose.dev.yaml up --build -d
+services:
+  ig:
+    ports: !override
+      - "127.0.0.1:8011:8000"
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/app
+    environment:
+      JOB_QUEUE_PROVIDER: rq
+      REDIS_URL: redis://ig-redis:6379/0
+      ARTIFACT_STORE_PROVIDER: local
+
+  ig-worker:
+    environment:
+      JOB_QUEUE_PROVIDER: rq
+      REDIS_URL: redis://ig-redis:6379/0
+      ARTIFACT_STORE_PROVIDER: local
+
+  ig-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports: !override
+      - "127.0.0.1:5181:5173"
+    environment:
+      IG_DEV_API_TARGET: http://ig:8000
+    volumes:
+      - ./frontend:/app
+      - ig-web-node-modules:/app/node_modules
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+
+volumes:
+  ig-web-node-modules:
