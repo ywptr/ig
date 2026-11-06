@@ -14,6 +14,10 @@ class Tenant(Base):
         primary_key=True,
     )
 
+    nexus_tenant_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, unique=True, index=True,
+    )
+
     slug: Mapped[str] = mapped_column(
         String(100),
         unique=True,

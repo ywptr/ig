@@ -1151,6 +1151,13 @@ They are configured per tenant after tenant initialization.
 
 ## 8. Prepare a development environment
 
+For containerized development with automatic source reloads, follow
+[local Docker development](docs/local-development.md). The frontend uses
+http://localhost:5181 and the API uses http://localhost:8011. This explicit
+development override leaves the production deployment configuration unchanged.
+
+The host-installed alternative is described below.
+
 A normal Linux development environment requires:
 
 ```text

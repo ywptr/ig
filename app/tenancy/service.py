@@ -28,3 +28,11 @@ def get_tenant_by_hostname(
     )
 
     return db.scalar(statement)
+
+def get_canonical_tenant_id(db: Session, tenant_id: str) -> str | None:
+    """Return an explicit mapping only; unmapped local IDs are not canonical."""
+    return db.scalar(select(Tenant.nexus_tenant_id).where(Tenant.tenant_id == tenant_id))
+
+
+def get_tenant_by_canonical_id(db: Session, canonical_tenant_id: str) -> Tenant | None:
+    return db.scalar(select(Tenant).where(Tenant.nexus_tenant_id == canonical_tenant_id))

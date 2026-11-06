@@ -35,7 +35,7 @@ def get_tenant_context(
 
 from app.auth.dependencies import get_current_user
 from app.db.models import User
-from app.tenancy.membership import get_tenant_membership
+from app.tenancy.governance import TenancyGovernance, get_tenancy_governance
 
 
 def get_authenticated_tenant_context(
@@ -46,8 +46,9 @@ def get_authenticated_tenant_context(
         get_current_user
     ),
     db: Session = Depends(get_db),
+    governance: TenancyGovernance = Depends(get_tenancy_governance),
 ) -> TenantContext:
-    membership = get_tenant_membership(
+    membership = governance.get_active_membership(
         db,
         tenant_context.tenant.tenant_id,
         current_user.user_id,
