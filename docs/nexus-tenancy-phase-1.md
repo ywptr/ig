@@ -17,7 +17,8 @@ Run the read-only report from the repository root, with the intended database
 configured and the migration applied:
 
 ```sh
-PYTHONPATH=. .venv/bin/python scripts/audit-tenancy.py --is-issuer https://verified-is-issuer.example
+docker compose -f compose.yaml -f compose.dev.yaml exec -T ig \
+  python scripts/audit-tenancy.py --is-issuer https://verified-is-issuer.example
 ```
 
 The report includes mapping readiness, UUID validity, missing domains, orphaned
