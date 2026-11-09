@@ -28,11 +28,17 @@ if [[ -f ".env" ]]; then
     set +a
 fi
 
-if [[ -f ".env.local" ]]; then
-    set -a
-    source .env.local
-    set +a
+# Cloud execution is deliberately selected; never auto-load production dotenv files.
+if [[ -z "${IG_CLOUD_ENV_FILE:-}" || ! -f "${IG_CLOUD_ENV_FILE}" ]]; then
+    echo "Set IG_CLOUD_ENV_FILE to the intentionally selected cloud environment file."
+    exit 1
 fi
+set -a
+source "${IG_CLOUD_ENV_FILE}"
+set +a
+
+# Check before starting a worker, queue consumer, or application against this target.
+"${IG_ADMIN_PYTHON:-${ROOT_DIR}/.venv/bin/python}" -m app.ops.database_safety "$@"
 
 export JOB_QUEUE_PROVIDER="vercel"
 

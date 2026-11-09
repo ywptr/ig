@@ -1,4 +1,4 @@
-"""Run from repository root: PYTHONPATH=. .venv/bin/python scripts/audit-tenancy.py --is-issuer URL"""
+"""Read-only report; run through docker compose exec -T ig in development."""
 import argparse
 import json
 

@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 import argparse
 import json
+import os
+import sys
+from pathlib import Path
 from getpass import getpass
 
 from sqlalchemy import select
 
-from app.db.database import SessionLocal
-from app.db.models import Tenant
-from app.tenancy.provider_configs import (
-    provider_config_to_dict,
-    set_provider_config,
+# Prefer the checked-out application when invoked as python scripts/....
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.ops.database_safety import (
+    UnsafeDatabaseTarget, add_write_confirmation_arguments, require_safe_admin_target,
 )
 
 
@@ -51,6 +55,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    add_write_confirmation_arguments(parser)
     return parser.parse_args()
 
 
@@ -60,6 +65,8 @@ def resolve_tenant(
     tenant_id: str | None,
     tenant_slug: str | None,
 ) -> Tenant:
+    from app.db.models import Tenant
+
     if tenant_id is not None:
         tenant = db.get(
             Tenant,
@@ -189,6 +196,14 @@ def normalize_credentials(
 
 def main() -> None:
     args = parse_args()
+    require_safe_admin_target(
+        os.environ.get("DATABASE_URL"),
+        allow_production_write=args.allow_production_write,
+        confirm_database_target=args.confirm_database_target,
+    )
+    # Refuse unsafe targets before importing the engine, connecting, or prompting.
+    from app.db.database import SessionLocal
+    from app.tenancy.provider_configs import provider_config_to_dict, set_provider_config
 
     provider = (
         args.provider
@@ -312,4 +327,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except UnsafeDatabaseTarget as exc:
+        raise SystemExit(str(exc)) from None

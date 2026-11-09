@@ -4,7 +4,8 @@ import os
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-from alembic import context
+from alembic import context, util
+from app.ops.database_safety import UnsafeDatabaseTarget, require_safe_admin_target
 
 from app.db.database import Base
 from app.db import models
@@ -48,6 +49,24 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in online mode."""
+
+    # CLI read-only commands retain access without a write acknowledgment.
+    opts = getattr(config, "cmd_opts", None)
+    command = getattr(opts, "cmd", None)
+    name = getattr(command[0], "__name__", "") if command else ""
+    if name not in {"current", "check", "revision", "history", "heads", "branches", "show"}:
+        acknowledgment = context.get_x_argument(as_dictionary=True)
+        try:
+            require_safe_admin_target(
+                database_url,
+                allow_production_write=acknowledgment.get("allow-production-write") == "yes",
+                confirm_database_target=acknowledgment.get("confirm-database-target"),
+            )
+        except UnsafeDatabaseTarget as exc:
+            raise util.CommandError(
+                str(exc) + " Alembic uses -x allow-production-write=yes "
+                "-x confirm-database-target=HOST[:PORT]/DATABASE before the command."
+            ) from None
 
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
