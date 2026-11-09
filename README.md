@@ -519,37 +519,21 @@ Provider credentials are never returned through these APIs.
 
 ---
 
-Alternatively, administrators may use the utility script from a trusted local environment connected to the target database:
+For Docker development, provider administration must run inside the API container.
+Keep the interactive TTY for hidden credential prompts:
 
-```text
-scripts/configure-tenant-provider.py
-```
-
-Before running it, ensure the shell has:
-
-```text
-DATABASE_URL
-TENANT_SECRET_ENCRYPTION_KEY
-```
-
-configured for the intended IG database.
-
-TENANT_SECRET_ENCRYPTION_KEY must match between local dev and targeted Vercel environment!
-
-If the database contains only one tenant:
-
-```bash
-python scripts/configure-tenant-provider.py \
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml exec ig \
+  python scripts/configure-tenant-provider.py \
+  --tenant-slug default \
   --provider openai
 ```
 
-If multiple tenants exist:
-
-```bash
-python scripts/configure-tenant-provider.py \
-  --tenant-slug <tenant-slug> \
-  --provider openai
-```
+Use `exec -T` only for piped/noninteractive stdin. Host `.venv` execution is not the
+canonical development runtime: a shell may retain production database credentials.
+See [database operations](docs/database-operations.md) for safe target verification
+and the explicit production override procedure. Provider administration and online
+migrations refuse production/unknown remote targets unless deliberately acknowledged.
 
 The script prompts securely for provider credentials.
 
@@ -1153,7 +1137,7 @@ They are configured per tenant after tenant initialization.
 
 For containerized development with automatic source reloads, follow
 [local Docker development](docs/local-development.md). The frontend uses
-http://localhost:5181 and the API uses http://localhost:8011. This explicit
+https://localhost:5181 and the API uses http://localhost:8011. This explicit
 development override leaves the production deployment configuration unchanged.
 
 The host-installed alternative is described below.
@@ -1191,6 +1175,11 @@ cd ..
 ---
 
 ## 9. Apply database migrations
+
+For local development use the container commands in
+[database operations](docs/database-operations.md). The host commands below are for
+a deliberately selected operations environment. Production/remote migration writes
+require the documented explicit target acknowledgment.
 
 Ensure `DATABASE_URL` points to the intended database.
 
@@ -1424,7 +1413,8 @@ PUT /v2/tenant/providers/openai
 ### Or through the administrative utility
 
 ```bash
-python scripts/configure-tenant-provider.py \
+docker compose -f compose.yaml -f compose.dev.yaml exec ig \
+ python scripts/configure-tenant-provider.py \
  --tenant-slug <tenant-slug> \
  --provider openai
   ```
@@ -1564,32 +1554,18 @@ Artifacts expose storage-independent IDs to API consumers.
 
 ---
 
-# Legacy Docker deployment
+# Docker development and historical deployment
 
-Earlier IG versions used Docker Compose with:
+For local development on `5480-deb13`, use the
+[Docker development workflow](docs/local-development.md): Vite, FastAPI, and the
+RQ worker run in containers, using host PostgreSQL (`ig_dev`), host Redis, and
+local filesystem artifacts. The frontend is https://localhost:5181 and the API is
+http://localhost:8011. Source changes use Vite HMR and Uvicorn reload.
 
-```text
-Nginx
-FastAPI
-MariaDB
-Redis / RQ
-local artifact storage
-```
-
-Docker-related files remain in the repository for historical reference and experimentation.
-
-The Docker deployment is **not currently treated as the primary or fully validated deployment path**.
-
-Development and deployment are centered on:
-
-```text
-Vercel
-Neon
-Vercel Queue
-Vercel Blob
-```
-
-No effort is currently being spent maintaining feature parity between the cloud deployment and the legacy Docker architecture.
+The base Compose file retains the historical Nginx/MariaDB/Redis deployment for
+compatibility. The explicit development override selects host infrastructure and
+does not start those historical infrastructure containers. Production deployment
+remains Vercel/Neon/Vercel Queue/Vercel Blob.
 
 ---
 

@@ -1,9 +1,27 @@
 # Explicit local-development override. Requires Docker Compose >= 2.24.4.
 # docker compose -f compose.yaml -f compose.dev.yaml up --build -d
 services:
+  # Retain historical infrastructure without starting duplicates in development.
+  ig-db:
+    profiles: [legacy-infrastructure]
+  ig-redis:
+    profiles: [legacy-infrastructure]
+  phpmyadmin:
+    profiles: [legacy-infrastructure]
+
   ig:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on: !reset []
+    extra_hosts:
+      - "host.docker.internal:${IG_DEV_HOST_GATEWAY:-host-gateway}"
+      - "5480-deb13.lan.com:${IG_DEV_HOST_GATEWAY:-host-gateway}"
     ports: !override
       - "127.0.0.1:8011:8000"
+      - "192.168.0.99:8011:8000"
+    volumes:
+      - ./scripts:/app/scripts:ro
     command:
       - uvicorn
       - app.main:app
@@ -15,14 +33,30 @@ services:
       - --reload-dir
       - /app/app
     environment:
+      DATABASE_URL: ${IG_DEV_DATABASE_URL:?Set the local IG development database URL in ignored .env}
       JOB_QUEUE_PROVIDER: rq
-      REDIS_URL: redis://ig-redis:6379/0
+      REDIS_URL: ${REDIS_URL:?Set the host Redis development URL in ignored .env}
       ARTIFACT_STORE_PROVIDER: local
 
   ig-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    # Worker needs generation/database configuration, not browser OIDC secrets.
+    env_file: !reset []
+    depends_on: !reset []
+    extra_hosts:
+      - "host.docker.internal:${IG_DEV_HOST_GATEWAY:-host-gateway}"
+    # RQ CLI uses RQ_REDIS_URL; application jobs use the same REDIS_URL.
+    command: ["rq", "worker", "ig"]
     environment:
+      DATABASE_URL: ${IG_DEV_DATABASE_URL:?Set the local IG development database URL in ignored .env}
+      TENANT_SECRET_ENCRYPTION_KEY: ${TENANT_SECRET_ENCRYPTION_KEY:?Set the local encryption key in ignored .env}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      IG_TRACE_JOBS: ${IG_TRACE_JOBS:-false}
+      RQ_REDIS_URL: ${REDIS_URL:?Set the host Redis development URL in ignored .env}
       JOB_QUEUE_PROVIDER: rq
-      REDIS_URL: redis://ig-redis:6379/0
+      REDIS_URL: ${REDIS_URL:?Set the host Redis development URL in ignored .env}
       ARTIFACT_STORE_PROVIDER: local
 
   ig-web:
@@ -31,12 +65,33 @@ services:
       dockerfile: Dockerfile.dev
     ports: !override
       - "127.0.0.1:5181:5173"
+      - "192.168.0.99:5181:5173"
     environment:
       IG_DEV_API_TARGET: http://ig:8000
+      IG_DEV_TLS_CERT: /run/ig-tls/cert.pem
+      IG_DEV_TLS_KEY: /run/ig-tls/key.pem
     volumes:
       - ./frontend:/app
+      - ./scripts:/app/scripts
       - ig-web-node-modules:/app/node_modules
+      - type: bind
+        source: ${IG_DEV_TLS_CERT_FILE:?Set the development leaf certificate path in .env}
+        target: /run/ig-tls/cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${IG_DEV_TLS_KEY_FILE:?Set the development leaf private-key path in .env}
+        target: /run/ig-tls/key.pem
+        read_only: true
+        bind:
+          create_host_path: false
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
 
 volumes:
   ig-web-node-modules:
+
+networks:
+  default:
+    external: true
+    name: ${IG_DEV_NETWORK:-platform-dev}
