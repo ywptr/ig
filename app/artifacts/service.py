@@ -119,6 +119,7 @@ def create_uploaded_artifact(
     db = SessionLocal()
 
     try:
+        # The store allocates an immutable key; filename remains display metadata.
         storage_uri = artifact_store.put_bytes(
             filename=filename,
             data=data,

@@ -1,5 +1,6 @@
 from typing import Iterator
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from vercel.blob import (
     BlobNotFoundError,
@@ -21,7 +22,7 @@ class VercelBlobArtifactStore:
         data: bytes,
     ) -> str:
         result = put(
-            f"artifacts/{filename}",
+            f"artifacts/{uuid4().hex}",
             data,
             access="private",
             add_random_suffix=True,

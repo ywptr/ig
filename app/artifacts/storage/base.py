@@ -2,6 +2,12 @@ from typing import Iterator, Protocol
 
 
 class ArtifactStore(Protocol):
+    """Each put allocates a fresh immutable object and returns a private locator.
+
+    filename is a display/compatibility hint, never an authoritative storage key.
+    Reads must enforce backend containment. Application authorization uses Artifact
+    IDs and ownership, independently of these locators.
+    """
 
     def put_bytes(
         self,
