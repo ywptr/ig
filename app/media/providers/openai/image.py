@@ -4,6 +4,7 @@ from io import BytesIO
 from typing import get_args
 
 from openai import OpenAI
+from app.media.technical import TechnicalCapabilities, ExecutionBehavior
 from app.media.capability_schemas import GenerationControls, IntegerRange, ModelMetadata, ProviderMetadata
 from app.media.constraints import IMAGE_ASPECT_RATIOS, MAX_IMAGE_REFERENCES
 from app.media.schemas import ReferenceRole, GridArrangement, MediaReference
@@ -180,6 +181,12 @@ class OpenAIImageProvider(
             panel_counts=[4], panel_arrangements=list(get_args(GridArrangement)),
             panel_arrangements_selectable_in=["hard"],
             quality_profiles=list(OPENAI_QUALITY), styles=["auto", *STYLE_INSTRUCTIONS],
+        ), technical=TechnicalCapabilities(
+            input_media=("text", "image"), output_media=("image",),
+            operations=("text_to_image", "image_to_image", "reference_image_conditioning", "multi_reference_conditioning",),
+            execution=ExecutionBehavior(mode="synchronous", polling_required=False),
+            reference_mime_types=("image/png", "image/jpeg", "image/webp", "image/jpg"),
+            output_mime_types=("image/png",),
         ),
     ),))
 

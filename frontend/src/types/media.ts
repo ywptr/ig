@@ -1,3 +1,23 @@
+export type MediaKind = "text" | "image" | "video" | "audio";
+export type GenerationOperation = "text_to_image" | "image_to_image" | "reference_image_conditioning"
+    | "multi_reference_conditioning" | "text_to_video" | "image_to_video" | "image_editing"
+    | "inpainting" | "variation" | "upscale";
+export interface TechnicalCapabilities {
+    version: 1;
+    input_media: MediaKind[];
+    output_media: MediaKind[];
+    operations: GenerationOperation[];
+    execution: {
+        mode: "synchronous" | "asynchronous";
+        polling_required: boolean;
+        webhook_supported: boolean;
+        cancellation: "none" | "queue_only" | "cooperative";
+        provider_cancellation_supported: boolean;
+    };
+    reference_mime_types: string[];
+    output_mime_types: string[];
+    max_prompt_characters: number | null;
+}
 export type MediaType = "image" | "video";
 export type InterfaceLevel = "easy" | "medium" | "hard";
 export type JobStatus = "queued" | "running" | "waiting" | "polling" | "cancel_requested" | "canceled" | "completed" | "failed";
@@ -16,6 +36,8 @@ export interface GenerationCapabilities {
     styles: string[];
 }
 export interface MediaModel {
+    usable: boolean;
+    technical: TechnicalCapabilities | null;
     id: string;
     display_name: string;
     available: boolean;
@@ -42,6 +64,7 @@ export interface MediaCapability {
     purposes: string[];
 }
 export interface MediaCapabilities {
+    schema_version: 1;
     interface_levels: Record<InterfaceLevel, {
         explicit_provider_selection: boolean;
         explicit_model_selection: boolean;

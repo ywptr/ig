@@ -5,6 +5,7 @@ from typing import Literal, get_args
 from pydantic import BaseModel, Field
 
 from app.media.schemas import InterfaceLevel
+from app.media.technical import TechnicalCapabilities
 
 
 class IntegerRange(BaseModel):
@@ -37,6 +38,7 @@ class ModelMetadata:
     capabilities: GenerationControls
     use_cases: tuple[str, ...] = ()
     supported_interface_levels: tuple[InterfaceLevel, ...] = get_args(InterfaceLevel)
+    technical: TechnicalCapabilities | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,8 @@ class ModelCapability(BaseModel):
     id: str
     display_name: str
     available: bool
+    usable: bool
+    technical: TechnicalCapabilities | None = None
     supported_interface_levels: list[InterfaceLevel] = Field(default_factory=lambda: list(get_args(InterfaceLevel)))
     selectable_in: list[InterfaceLevel]
     capabilities: GenerationControls
@@ -81,5 +85,6 @@ class MediaCapability(BaseModel):
 
 
 class MediaCapabilities(BaseModel):
+    schema_version: Literal[1] = 1
     interface_levels: dict[InterfaceLevel, InterfaceSelection]
     media_types: list[MediaCapability]

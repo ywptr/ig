@@ -1,3 +1,8 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.media.capability_schemas import ModelMetadata
+
 from app.media.schemas import (
     MediaGenerationRequest,
 )
@@ -111,3 +116,46 @@ def validate_media_request(
             f"A maximum of {MAX_IMAGE_REFERENCES} reference images "
             "is supported"
         )
+
+
+def validate_model_capabilities(request: MediaGenerationRequest, metadata: "ModelMetadata") -> None:
+    """Validate a selected declaration before creating work; no tenant or provider I/O.
+
+    Count/layout legacy acceptance remains adapter-owned. Undeclared legacy models
+    must be handled explicitly by callers, never inferred from another model.
+    """
+    technical = metadata.technical
+    if technical is None:
+        raise MediaRequestValidationError("Model capabilities are unknown")
+    if request.media_type not in technical.output_media:
+        raise MediaRequestValidationError("Model does not support requested output media")
+    if "text" not in technical.input_media:
+        raise MediaRequestValidationError("Model does not accept text input")
+    if not request.references:
+        operation = {"image": "text_to_image", "video": "text_to_video"}.get(request.media_type)
+        if operation is None or operation not in technical.operations:
+            raise MediaRequestValidationError("Model does not support text generation for requested media")
+    controls = metadata.capabilities
+    if request.references and (
+        "image" not in technical.input_media
+        or "reference_image_conditioning" not in technical.operations
+    ):
+        raise MediaRequestValidationError("Model does not support reference images")
+    if len(request.references) > controls.max_references:
+        raise MediaRequestValidationError("Too many reference images for model")
+    if len(request.references) > 1 and "multi_reference_conditioning" not in technical.operations:
+        raise MediaRequestValidationError("Model does not support multiple references")
+    ratio = request.output.aspect_ratio
+    if ratio is not None and ratio not in controls.aspect_ratios:
+        raise MediaRequestValidationError("Unsupported model aspect ratio")
+    if technical.max_prompt_characters and len(request.intent.description) > technical.max_prompt_characters:
+        raise MediaRequestValidationError("Prompt exceeds model limit")
+    duration = getattr(request.output, "duration_seconds", None)
+    if duration is not None and (controls.duration_seconds is None or not
+        controls.duration_seconds.min <= duration <= controls.duration_seconds.max):
+        raise MediaRequestValidationError("Unsupported model duration")
+    resolution = getattr(request.output, "resolution", None)
+    if resolution is not None and resolution not in controls.resolutions:
+        raise MediaRequestValidationError("Unsupported model resolution")
+    if getattr(request.output, "audio", False) and not controls.audio:
+        raise MediaRequestValidationError("Model does not support audio output")

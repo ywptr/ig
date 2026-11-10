@@ -84,3 +84,110 @@ The [Generation Lab](generation-lab.md) uses `interface_levels`, `selectable_in`
 and generic controls from discovery. It keeps provider/model automatic in
 easy/medium, allows optional hard-mode selection, follows IG Job correlation,
 treats waiting/polling as active, and renders IG image/video Artifacts.
+
+## Technical contract (schema version 1)
+
+The discovery document now includes `schema_version: 1`. Each model has an
+additive `technical` contract and `usable` flag. Existing `capabilities` controls
+and interface hints remain compatible. Technical declarations are independent of
+UI modes and reusable by routing, workflow validation, and future consumers.
+
+`TechnicalCapabilities` (`app/media/technical.py`) uses closed Literal types for
+media kinds and generation operations. Inputs and outputs can represent text,
+image, video, and audio without enabling their execution. Execution describes the
+provider operation, not the HTTP submission: synchronous image operations still
+run inside queued IG Jobs. It records polling, webhooks, IG cancellation semantics,
+and provider-side cancellation separately. Current registered adapters have no
+webhook or provider cancellation support. `cooperative` means IG can cancel queued
+work and fence running results at safe checkpoints; an in-flight provider call
+may continue and incur charges.
+
+Adapter model declarations are the sole authority for technical support. The
+provider registry determines which adapters are deployed. The database controls
+tenant credentials, enablement, and defaults only; it cannot grant features.
+There is no Provider, Model, Capability, or Workflow database entity to synchronize,
+and no migration or capability seed is required. New models are reviewed code
+changes with tests rather than schema migrations. Contract versions are independent
+of provider model IDs. Adding fields is additive; changing semantics requires a
+contract-version decision.
+
+Provider metadata owns identity, display name and its model catalog. Technical
+behavior belongs on each model because models from one provider can differ.
+Provider-wide support is the union of its declared models, never an implicit grant
+to every model. Shared declarations can be constructed in adapter code when useful.
+No duplicated provider-wide feature flags or tenant overrides are introduced.
+
+`available` preserves the existing local configuration meaning. `usable` additionally
+requires a known technical declaration. Neither flag verifies credentials or account
+entitlements remotely. An unknown legacy OpenAI default is still accepted for
+backward compatibility but has no invented model contract; it is not added to the
+catalog and `default_model_available` remains false. Catalog models remain usable
+through explicit selection even with an unknown configured default.
+
+`validate_model_capabilities` rejects incompatible output media, text/reference
+inputs, reference counts, multiple-reference support, aspect ratios, and declared
+prompt/duration/resolution/audio limits before creating jobs. Image selection calls
+it for known models, including legacy image submission through `/v2/images`.
+Existing video execution retains its existing validation; future adapters can use
+the reusable validator without changing it. Artifact
+ownership, MIME and byte validation remain at reference resolution, where the
+actual artifact is known; technical MIME lists describe supported formats.
+Count/layout/strategy and native parameters retain existing adapter/legacy checks:
+OpenAI historically accepts counts/layouts broader than the conservative discovery
+controls, so this milestone does not tighten them. Unknown legacy image defaults
+retain their earlier validation. Strict discovery-based validation therefore applies
+to known models rather than promising universal validation of legacy requests.
+
+Example excerpt for a configured, enabled tenant (other response fields omitted):
+
+```json
+{
+  "schema_version": 1,
+  "media_types": [{
+    "id": "image",
+    "providers": [{
+      "id": "openai", "configured": true, "enabled": true, "available": true,
+      "models": [{
+        "id": "gpt-image-2", "available": true, "usable": true,
+        "technical": {
+          "version": 1,
+          "input_media": ["text", "image"], "output_media": ["image"],
+          "operations": ["text_to_image", "image_to_image", "reference_image_conditioning", "multi_reference_conditioning"],
+          "execution": {
+            "mode": "synchronous", "polling_required": false,
+            "webhook_supported": false, "cancellation": "cooperative",
+            "provider_cancellation_supported": false
+          },
+          "reference_mime_types": ["image/png", "image/jpeg", "image/webp", "image/jpg"],
+          "output_mime_types": ["image/png"], "max_prompt_characters": null
+        }
+      }]
+    }]
+  }]
+}
+```
+
+OpenAI's controls declare eight references, `2:3`, `4:5`, `1:1`, `16:9`, semantic
+quality/styles, one output and single/four-panel layouts. Reference images route to
+`images.edit`; no mask/inpainting, upscale or standalone variation operation is
+claimed merely because an upstream API might support it.
+
+Illustrative only: a future model can declare:
+
+```python
+TechnicalCapabilities(
+    input_media=("text", "image"), output_media=("video",),
+    operations=("text_to_video", "image_to_video", "reference_image_conditioning"),
+    execution=ExecutionBehavior(mode="asynchronous", polling_required=True),
+    reference_mime_types=("image/png",), output_mime_types=("video/mp4",),
+    max_prompt_characters=4000,
+)
+```
+
+Pair this with model-specific `GenerationControls` (duration, aspect ratios,
+resolution, reference limits), declare it in adapter `CAPABILITIES`, and register
+the adapter. Discovery and generic validation require no provider-specific branches.
+Execution support must be implemented and tested separately before registration;
+a declaration does not create an executable path. This milestone adds no provider,
+video execution path, selector, external model-catalog fetch, or remote health poll.
+The pre-existing Alibaba video implementation remains in the checkout.

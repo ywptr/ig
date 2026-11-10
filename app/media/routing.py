@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.media.providers.base import ImageProviderConfigurationError
 from app.media.providers.registry import DEFAULT_IMAGE_PROVIDER, IMAGE_PROVIDERS
+from app.media.validation import validate_model_capabilities
 from app.media.schemas import ImagePurpose, InterfaceLevel, MediaGenerationRequest
 from app.tenancy.provider_configs import list_provider_configs
 
@@ -50,6 +51,10 @@ def normal_image_selection(
 
 
 def _validate_options(adapter, request: MediaGenerationRequest, model: str, config: dict) -> None:
+    metadata = next((item for item in adapter.CAPABILITIES.models if item.id == model), None)
+    # Preserve legacy custom defaults, whose technical capabilities are unknown.
+    if metadata is not None:
+        validate_model_capabilities(request, metadata)
     adapter.validate_submission_options(
         config=config, model=model, count=request.output.count, strategy=request.strategy,
         reference_count=len(request.references),

@@ -1,4 +1,6 @@
 """Single-turn Gemini image generation. All Google wire semantics stay here."""
+from app.media.technical import TechnicalCapabilities, ExecutionBehavior
+
 import base64
 import binascii
 import json
@@ -80,6 +82,12 @@ class GoogleImageProvider(ImageProviderAdapter):
             panel_counts=[4], panel_arrangements=list(get_args(GridArrangement)),
             panel_arrangements_selectable_in=["hard"],
             quality_profiles=["draft", "standard", "high"], styles=["auto", *STYLE_INSTRUCTIONS],
+        ), technical=TechnicalCapabilities(
+            input_media=("text", "image"), output_media=("image",),
+            operations=("text_to_image", "image_to_image", "reference_image_conditioning",),
+            execution=ExecutionBehavior(mode="synchronous", polling_required=False),
+            reference_mime_types=("image/png", "image/jpeg", "image/webp"),
+            output_mime_types=("image/png", "image/jpeg", "image/webp",),
         ), use_cases=("thumbnail", "draft", "preview"),
     )}
     CAPABILITIES = ProviderMetadata("Google Gemini", tuple(MODELS.values()))

@@ -12,7 +12,7 @@ export async function getMediaCapabilities(signal?: AbortSignal): Promise<MediaC
     const value = await requestJSON<MediaCapabilities>("/v2/media/capabilities", { signal });
     try {
         const strings = (values: unknown) => Array.isArray(values) && values.every(value => typeof value === "string");
-        const valid = ["easy", "medium", "hard"].every(level => {
+        const valid = value.schema_version === 1 && ["easy", "medium", "hard"].every(level => {
             const rules = value.interface_levels[level as keyof typeof value.interface_levels];
             return typeof rules.explicit_provider_selection === "boolean" && typeof rules.explicit_model_selection === "boolean";
         }) && Array.isArray(value.media_types) && value.media_types.every(media =>
@@ -21,7 +21,15 @@ export async function getMediaCapabilities(signal?: AbortSignal): Promise<MediaC
                 typeof provider.id === "string" && typeof provider.display_name === "string" && typeof provider.available === "boolean"
                 && Array.isArray(provider.models) && provider.models.every(model => {
                     const controls = model.capabilities;
-                    return typeof model.id === "string" && typeof model.display_name === "string" && typeof model.available === "boolean"
+                    const technical = model.technical;
+                    return typeof model.usable === "boolean" && (technical === null || (
+                        technical.version === 1 && strings(technical.input_media) && strings(technical.output_media)
+                        && strings(technical.operations) && strings(technical.reference_mime_types)
+                        && strings(technical.output_mime_types)
+                        && ["synchronous", "asynchronous"].includes(technical.execution.mode)
+                        && typeof technical.execution.polling_required === "boolean"
+                        && typeof technical.execution.provider_cancellation_supported === "boolean"))
+                        && typeof model.id === "string" && typeof model.display_name === "string" && typeof model.available === "boolean"
                         && strings(model.supported_interface_levels) && strings(model.selectable_in)
                         && typeof controls.text_to_media === "boolean" && typeof controls.audio === "boolean"
                         && [controls.aspect_ratios, controls.resolutions, controls.styles, controls.quality_profiles, controls.layout_types].every(strings)
