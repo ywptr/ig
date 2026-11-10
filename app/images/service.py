@@ -14,6 +14,7 @@ def submit_image_generation(
     tenant_id: str,
     user_id: str,
     media_request: dict | None = None,
+    defer_dispatch: bool = False,
 ) -> ImageRequest:
     if media_request is None:
         job_input = {
@@ -40,13 +41,18 @@ def submit_image_generation(
         prompt=prompt, model=None, status="generating",
     )
     db.add(image_record)
-    db.commit()
-    db.refresh(image_record)
+    if defer_dispatch:
+        db.flush()
+    else:
+        db.commit()
+        db.refresh(image_record)
 
     try:
         create_job(db, capability="image.generate", input_data=job_input,
-                   tenant_id=tenant_id, user_id=user_id)
+                   tenant_id=tenant_id, user_id=user_id, defer_dispatch=defer_dispatch)
     except Exception:
+        if defer_dispatch:
+            raise
         image_record.status = "failed"
         db.commit()
         raise

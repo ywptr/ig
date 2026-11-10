@@ -100,7 +100,21 @@ export interface GenerationSubmission extends MediaSubmission {
     prompt: string;
     purpose?: string;
 }
+export interface ArtifactPreview {
+    status: "missing" | "processing" | "ready" | "failed" | "unsupported";
+    kind: "thumbnail" | "contact_sheet" | null;
+    version: number;
+    url: string | null;
+    mime_type: string | null;
+    width: number | null;
+    height: number | null;
+    size_bytes: number | null;
+    frame_count: number | null;
+    positions: number[];
+    error_code: string | null;
+}
 export interface Artifact {
+    preview?: ArtifactPreview;
     artifact_id: string;
     media_type: MediaType;
     mime_type: string | null;

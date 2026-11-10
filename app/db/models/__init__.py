@@ -1,3 +1,5 @@
+from app.db.models.artifact_preview import ArtifactPreview
+from app.db.models.service_access import ServiceCredential, MediaSubmissionKey
 from app.db.models.artifact import Artifact
 from app.db.models.execution import Execution
 from app.db.models.image_request import ImageRequest
@@ -14,6 +16,9 @@ from app.db.models.user_identity import UserIdentity
 from app.db.models.user_session import UserSession
 
 __all__ = [
+    "ArtifactPreview",
+    "ServiceCredential",
+    "MediaSubmissionKey",
     "Artifact",
     "Execution",
     "ImageRequest",

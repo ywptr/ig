@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from dataclasses import asdict
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from app.db.models import Job
 
 from app.images.service import (
     submit_image_generation,
@@ -78,6 +80,7 @@ def submit_media_generation(
     db: Session,
     tenant_id: str,
     user_id: str,
+    defer_dispatch: bool = False,
 ) -> MediaSubmission:
     validate_media_request(request)
 
@@ -86,6 +89,7 @@ def submit_media_generation(
         resolve_video_references(db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=False)
         job = create_job(
             db, capability="video.generate", tenant_id=tenant_id, user_id=user_id,
+            defer_dispatch=defer_dispatch,
             input_data={"request_version": "1", "media_type": "video",
                         "request": request.model_dump(), "selection": asdict(selection)},
         )
@@ -111,6 +115,7 @@ def submit_media_generation(
     image_record = submit_image_generation(
         db,
         prompt=request.intent.description,
+        defer_dispatch=defer_dispatch,
         tenant_id=tenant_id,
         user_id=user_id,
         media_request={
@@ -147,4 +152,8 @@ def submit_media_generation(
         media_type=request.media_type,
         request_id=image_record.request_id,
         status=image_record.status,
+        job_id=db.scalar(select(Job.job_id).where(
+            Job.tenant_id == tenant_id, Job.user_id == user_id,
+            Job.input_json["request_id"].as_string() == image_record.request_id,
+        )) if defer_dispatch else None,
     )

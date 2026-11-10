@@ -1,5 +1,6 @@
 from fastapi import (
     APIRouter,
+    Request,
     Depends,
     HTTPException,
 )
@@ -48,18 +49,26 @@ def get_media_capabilities(
 )
 def generate_media(
     request: MediaGenerationRequest,
+    http_request: Request,
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
     db: Session = Depends(get_db),
 ):
     try:
-        submission = submit_media_generation(
-            request,
-            db=db,
-            tenant_id=context.tenant.tenant_id,
-            user_id=context.membership.user_id,
-        )
+        from app.auth.principal import RequestPrincipal
+        from app.auth.service_access import fail
+        from app.media.submissions import submit_delegated_media
+        if isinstance(context, RequestPrincipal) and context.caller_type == "service":
+            keys = http_request.headers.getlist("idempotency-key")
+            if len(keys) != 1:
+                fail(400, "INVALID_IDEMPOTENCY_KEY")
+            submission = submit_delegated_media(db, request, principal=context, idempotency_key=keys[0])
+        else:
+            submission = submit_media_generation(
+                request, db=db, tenant_id=context.tenant.tenant_id,
+                user_id=context.membership.user_id,
+            )
 
     except (MediaRequestValidationError, ImageProviderConfigurationError, VideoProviderConfigurationError, ProviderNotConfiguredError) as exc:
         raise HTTPException(

@@ -61,7 +61,8 @@ class MediaJobTestCase(unittest.TestCase):
 
         @event.listens_for(self.engine, "connect")
         def enable_foreign_keys(connection, record):
-            connection.execute("PRAGMA foreign_keys=ON")
+            if self.engine.dialect.name == "sqlite":
+                connection.execute("PRAGMA foreign_keys=ON")
 
         Base.metadata.create_all(self.engine)
         self.sessions = sessionmaker(bind=self.engine)

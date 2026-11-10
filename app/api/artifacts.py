@@ -1,4 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Request, Query
+from fastapi.responses import Response, JSONResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.auth.dependencies import get_db
+from app.artifacts import previews
+from app.artifacts.preview_policy import VERSION, MAX_PREVIEW_BYTES
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 from typing import Literal
@@ -8,7 +14,7 @@ from app.artifacts.service import (
     list_artifacts,
     create_uploaded_artifact,
 )
-from app.db.models import Artifact
+from app.db.models import Artifact, ArtifactPreview
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import (
     get_authenticated_tenant_context,
@@ -63,9 +69,11 @@ def validate_image_content(
 
 def artifact_to_dict(
     artifact: Artifact,
+    preview: dict | None = None,
 ) -> dict:
     return {
         "artifact_id": artifact.artifact_id,
+        "preview": preview if preview is not None else previews.preview_metadata(artifact),
         "user_id": artifact.user_id,
         "media_type": artifact.media_type,
         "mime_type": artifact.mime_type,
@@ -85,6 +93,7 @@ def artifact_to_dict(
 
 @router.get("")
 def read_artifacts(
+    db: Session = Depends(get_db),
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
@@ -94,10 +103,8 @@ def read_artifacts(
         tenant_id=context.tenant.tenant_id,
     )
 
-    return [
-        artifact_to_dict(artifact)
-        for artifact in artifacts
-    ]
+    metadata = previews.metadata_for_artifacts(db, artifacts)
+    return [artifact_to_dict(artifact, metadata[artifact.artifact_id]) for artifact in artifacts]
 
 @router.post(
     "/uploads",
@@ -179,6 +186,7 @@ async def upload_artifact(
 @router.get("/{artifact_id}")
 def read_artifact(
     artifact_id: str,
+    db: Session = Depends(get_db),
     context: TenantContext = Depends(
         get_authenticated_tenant_context
     ),
@@ -195,7 +203,7 @@ def read_artifact(
             detail="Artifact not found",
         )
 
-    return artifact_to_dict(artifact)
+    return artifact_to_dict(artifact, previews.metadata_for_artifacts(db, [artifact])[artifact.artifact_id])
 
 
 @router.get("/{artifact_id}/content")
@@ -254,3 +262,54 @@ def read_artifact_content(
             )
         },
     )
+
+@router.get("/{artifact_id}/preview")
+def read_artifact_preview(
+    artifact_id: str, request: Request,
+    v: int = Query(default=VERSION, ge=1),
+    context: TenantContext = Depends(get_authenticated_tenant_context),
+    db: Session = Depends(get_db),
+):
+    artifact = db.scalar(select(Artifact).where(
+        Artifact.artifact_id == artifact_id, Artifact.tenant_id == context.tenant.tenant_id,
+        Artifact.user_id == context.membership.user_id,
+    ))
+    if artifact is None:
+        raise HTTPException(404, detail="Artifact not found")
+    private = {"Cache-Control": "private, no-store", "Vary": "Cookie, Authorization"}
+    kind = previews.kind_for(artifact.media_type, artifact.mime_type)
+    if kind is None:
+        return JSONResponse(previews.preview_metadata(artifact), status_code=415, headers=private)
+    if v == VERSION:
+        row = previews.ensure_preview(db, artifact)
+    else:
+        # Previously generated versions remain readable after a policy upgrade.
+        # Only the current policy is allowed to start new decoding work.
+        row = db.get(ArtifactPreview, (artifact_id, kind, v))
+        if row is None or row.status != "ready":
+            return JSONResponse({"status": "unsupported", "code": "PREVIEW_VERSION_UNSUPPORTED"}, status_code=404, headers=private)
+    metadata = previews.preview_metadata(artifact, row)
+    if row is None or row.status == "processing":
+        return JSONResponse({**metadata, "status": "processing"}, status_code=202,
+                            headers={**private, "Retry-After": "3"})
+    if row.status != "ready":
+        return JSONResponse(metadata, status_code=422, headers=private)
+    etag = f'"{row.etag}"'
+    headers = {"Cache-Control": "private, no-cache", "Vary": "Cookie, Authorization", "ETag": etag}
+    validators = [value.strip().removeprefix("W/") for value in request.headers.get("if-none-match", "").split(",")]
+    if etag in validators or "*" in validators:
+        return Response(status_code=304, headers=headers)
+    locator = row.storage_uri
+    db.rollback()  # Do not hold DB transactions during storage access.
+    try:
+        chunks, total = [], 0
+        for chunk in previews.artifact_store.iter_bytes(locator):
+            total += len(chunk)
+            if total > MAX_PREVIEW_BYTES:
+                raise ValueError
+            chunks.append(chunk)
+        if not total:
+            raise ValueError
+    except Exception:
+        return JSONResponse({"status": "failed", "code": "PREVIEW_CONTENT_UNAVAILABLE"}, status_code=404, headers=private)
+    return Response(b"".join(chunks), media_type="image/webp", headers=headers)

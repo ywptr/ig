@@ -30,8 +30,8 @@ class ImageRequestPayload(BaseModel):
     prompt: str
 
 
-def image_to_dict(image: ImageRequest):
-    return {
+def image_to_dict(image: ImageRequest, *, include_artifact_id: bool = False):
+    result = {
         "request_id": image.request_id,
         "created_at": image.created_at.isoformat(),
         "prompt": image.prompt,
@@ -42,6 +42,9 @@ def image_to_dict(image: ImageRequest):
         "size_bytes": image.size_bytes,
         "generation_time_ms": image.generation_time_ms,
     }
+    if include_artifact_id:
+        result["artifact_id"] = image.artifact_id
+    return result
 
 @router.post("/images/generations", status_code=202)
 def generate_image(
@@ -87,7 +90,7 @@ def list_images(
         images = db.scalars(statement).all()
 
         return [
-            image_to_dict(image)
+            image_to_dict(image, include_artifact_id=True)
             for image in images
         ]
 
@@ -116,7 +119,7 @@ def get_image(
                 detail="Image request not found",
             )
 
-        return image_to_dict(image)
+        return image_to_dict(image, include_artifact_id=True)
 
 
 

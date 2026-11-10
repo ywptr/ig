@@ -180,6 +180,7 @@ def list_job_executions(
             select(Execution)
             .where(
                 Execution.job_id == job_id,
+                Execution.tenant_id == context.tenant.tenant_id,
                 Execution.user_id
                 == context.membership.user_id,
             )

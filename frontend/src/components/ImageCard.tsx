@@ -1,5 +1,8 @@
+import { ArtifactPreviewImage } from "./ArtifactPreviewImage";
+
 export interface Image {
     request_id: string;
+    artifact_id?: string | null;
     created_at: string;
     prompt: string;
     model: string | null;
@@ -28,18 +31,11 @@ export default function ImageCard({
 
             {image.status === "completed" ? (
 
-                <img
-                    src={imageUrl}
-                    alt={image.prompt}
-                    className="image-preview"
-                    loading="lazy"
-                    onClick={() =>
-                        window.open(
-                            imageUrl,
-                            "_blank"
-                        )
-                    }
-                />
+                image.artifact_id ? <ArtifactPreviewImage artifactId={image.artifact_id}
+                    originalUrl={imageUrl} className="image-preview" alt={image.prompt} />
+                    : <div className="image-placeholder">Preview unavailable for this legacy record.
+                        <a href={imageUrl} target="_blank" rel="noreferrer">Open original image</a>
+                    </div>
 
             ) : (
 
@@ -51,6 +47,7 @@ export default function ImageCard({
 
 
             <div className="card-info">
+                {image.status === "completed" && image.artifact_id && <a href={imageUrl} target="_blank" rel="noreferrer">Open original image</a>}
 
                 <div className="card-meta">
 

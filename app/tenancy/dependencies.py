@@ -10,6 +10,10 @@ def get_tenant_context(
     request: Request,
     db: Session = Depends(get_db),
 ) -> TenantContext:
+    from app.auth.service_access import service_principal
+    principal = service_principal(request, db)
+    if principal is not None:
+        return principal
     hostname = request.url.hostname
 
     if hostname is None:
@@ -48,6 +52,9 @@ def get_authenticated_tenant_context(
     db: Session = Depends(get_db),
     governance: TenancyGovernance = Depends(get_tenancy_governance),
 ) -> TenantContext:
+    from app.auth.principal import RequestPrincipal
+    if isinstance(tenant_context, RequestPrincipal) and tenant_context.caller_type == "service":
+        return tenant_context
     membership = governance.get_active_membership(
         db,
         tenant_context.tenant.tenant_id,
@@ -60,9 +67,9 @@ def get_authenticated_tenant_context(
             detail="User is not a member of this tenant",
         )
 
-    return TenantContext(
-        tenant=tenant_context.tenant,
-        membership=membership,
+    return RequestPrincipal(
+        tenant=tenant_context.tenant, membership=membership, actor_user=current_user,
+        actor_user_id=current_user.user_id, tenant_id=tenant_context.tenant.tenant_id,
     )
 
 def get_admin_tenant_context(

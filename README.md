@@ -1,5 +1,8 @@
 # IG — AI Media Generation Control Plane
 
+Delegated application callers use the [service-access contract](docs/service-access.md).
+Media lists use [deterministic cached previews](docs/artifact-previews.md); originals remain behind explicit Open links.
+
 **Version 4.6**
 
 IG is a multi-tenant AI media generation control plane.

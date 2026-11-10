@@ -20,6 +20,7 @@ def create_job(
     input_data: dict,
     tenant_id: str,
     user_id: str | None = None,
+    *, defer_dispatch: bool = False,
 ) -> Job:
     job = Job(
         job_id=str(uuid.uuid4()),
@@ -31,6 +32,10 @@ def create_job(
     )
 
     db.add(job)
+    if defer_dispatch:
+        # Caller atomically commits Job + client submission identity, then queues.
+        db.flush()
+        return job
     db.commit()
     db.refresh(job)
 

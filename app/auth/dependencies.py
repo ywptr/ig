@@ -1,4 +1,4 @@
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.auth.session import (
@@ -47,10 +47,16 @@ def get_optional_current_user(
     return user
 
 def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
     current_user: User | None = Depends(
         get_optional_current_user
     ),
 ) -> User:
+    from app.auth.service_access import service_principal
+    principal = service_principal(request, db)
+    if principal is not None:
+        return principal.actor_user
     if current_user is None:
         raise HTTPException(
             status_code=401,
