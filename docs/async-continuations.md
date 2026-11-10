@@ -122,3 +122,6 @@ continuations. No Redis/Vercel requests were made during verification.
 Jobs currently considers queued/running active; Executions considers only running
 active. Future UI work must include waiting/polling as non-terminal states and
 stop on completed/failed. No frontend files are changed in Task 5.
+
+Cancellation also fences waiting/polling continuations. See [job management](job-management.md)
+for cancel_requested/canceled states, dispatch races, and provider-side limitations.

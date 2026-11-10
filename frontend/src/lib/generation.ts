@@ -4,7 +4,7 @@ import type { JobDetail } from "../types/Job";
 import type { JobExecution } from "../api/executions";
 
 export const POLL_INTERVAL_MS = 3000;
-export function isActiveStatus(status: string) { return ["queued", "running", "waiting", "polling"].includes(status); }
+export function isActiveStatus(status: string) { return ["queued", "running", "waiting", "polling", "cancel_requested"].includes(status); }
 export function humanize(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string | null { return typeof value === "string" && value.length > 0 ? value : null; }

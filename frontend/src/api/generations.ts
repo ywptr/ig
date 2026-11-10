@@ -44,7 +44,7 @@ export function createGenerationLoader() {
                     const result = resultFromJob(detail, execution, artifact);
                     if (summary.status === "completed" && !artifact) result.error = "Completed Job has no linked Artifact. Refresh or inspect its Executions.";
                     results[index] = result;
-                    if (terminal && (artifact || summary.status === "failed")) completed.set(summary.job_id, result);
+                    if (terminal && (artifact || summary.status === "failed" || summary.status === "canceled")) completed.set(summary.job_id, result);
                 } catch (error) {
                     if (signal.aborted || error instanceof ApiError && error.status === 401) throw error;
                     results[index] = { ...resultFromJob(detail), error: safeMessage(error instanceof Error ? error.message : null, "Unable to load this result. Refresh to try again.") };

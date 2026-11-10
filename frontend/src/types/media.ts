@@ -1,6 +1,6 @@
 export type MediaType = "image" | "video";
 export type InterfaceLevel = "easy" | "medium" | "hard";
-export type JobStatus = "queued" | "running" | "waiting" | "polling" | "completed" | "failed";
+export type JobStatus = "queued" | "running" | "waiting" | "polling" | "cancel_requested" | "canceled" | "completed" | "failed";
 export interface Range { min: number; max: number }
 export interface GenerationCapabilities {
     text_to_media: boolean;

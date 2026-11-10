@@ -47,39 +47,38 @@ cookie. IG does not call IS end-session, and has no post-logout redirect setting
 Do not disable secure cookies for development. Non-localhost LAN HTTP origins
 need HTTPS for these cookies; localhost browser exceptions are browser-dependent.
 
-## Verified development discovery on 2026-11-07
+## Verified identity provider on 2026-11-09
 
-The API container can retrieve:
+IG development intentionally authenticates against the production IS identity
+service. Its application data remains local PostgreSQL `ig_dev`; queue execution
+remains host Redis/RQ and artifacts remain local filesystem. Selecting a production
+identity provider does not authorize use of production IG database credentials.
 
-`http://host.docker.internal:5180/api/auth/.well-known/openid-configuration`
+Discovery:
 
-The same document is served on the VM at:
+`https://sandcastle-auth.vercel.app/api/auth/.well-known/openid-configuration`
 
-`http://localhost:5180/api/auth/.well-known/openid-configuration`
+Verified advertised endpoints:
 
-It currently advertises:
+- Issuer: `https://sandcastle-auth.vercel.app/api/auth`
+- Authorization: `https://sandcastle-auth.vercel.app/api/auth/oauth2/authorize`
+- Token: `https://sandcastle-auth.vercel.app/api/auth/oauth2/token`
+- JWKS: `https://sandcastle-auth.vercel.app/api/auth/jwks`
+- Userinfo: `https://sandcastle-auth.vercel.app/api/auth/oauth2/userinfo`
 
-- Issuer: `https://5480-deb13.lan.com:5180/api/auth`
-- Authorization: `http://5480-deb13.lan.com:5180/api/auth/oauth2/authorize`
-- Token: `http://5480-deb13.lan.com:5180/api/auth/oauth2/token`
-- JWKS: `http://5480-deb13.lan.com:5180/api/auth/jwks`
-- Userinfo: `http://5480-deb13.lan.com:5180/api/auth/oauth2/userinfo`
-- End-session: `http://5480-deb13.lan.com:5180/api/auth/oauth2/end-session`
-- Signing algorithm: EdDSA; PKCE S256; client_secret_basic supported.
+Discovery and JWKS fetches pass from the API container. The registered client now
+reaches IS `/sign-in`, rather than `invalid_client`. Local `.env` uses HTTPS
+directly for discovery; no initial HTTP redirect is required.
 
-The API development Compose configuration now maps `5480-deb13.lan.com` to the
-configured persistent host gateway. Discovery and JWKS fetches succeed from the
-API container. Host hosts-file entries are not inherited by containers; browsers
-also need resolution of the exact advertised name (without an extra dot between
-`deb` and `13`). Before acceptance, establish a browser-reachable development IS
-origin. IS must
-confirm that the advertised HTTPS issuer is intentional and exactly matches token
-`iss`, or correct its development metadata. Do not override token validation to
-hide a mismatch. No IS files or registrations were changed from IG.
+The old development IS listener on port 5180 is not used by the current flow. IG
+browser clients still need DNS/hosts-file resolution for `5480-deb13.lan.com` to
+`192.168.0.99`, and must trust the existing development CA. Host hosts-file entries
+are not automatically inherited by containers.
 
 ## Required IS-side registration
 
-Perform this in the dedicated IS project conversation:
+Manage the client in the dedicated IS conversation on the configured identity
+provider. Its required IG development contract is:
 
 | Setting | Required value |
 | --- | --- |
@@ -93,23 +92,26 @@ Perform this in the dedicated IS project conversation:
 | Allowed origin, if IS requires it | https://5480-deb13.lan.com:5181 |
 | Post-logout redirect URI | None required by IG; IG logout is local |
 
-Return the development client ID and secret securely, and confirm the canonical
-IS origin/issuer and hostname resolution. Do not invent a client ID or borrow the
-cloud registration. The verified development discovery URL is configured in local `.env`. Supplied
-client credentials have been loaded by recreating only the API; IG login now
-returns HTTP 302 instead of a missing-configuration error. Development IS rejects
-the supplied client with `invalid_client` / `client not found`. Register the client
-in the actual development IS instance and supply its resulting credentials.
+Client credentials remain only in ignored `.env` and the API environment; they
+are not passed to the frontend or worker. The registered HTTPS callback is
+preserved and matches the trusted Vite origin. Its tenant-domain mapping resolves
+to the local development tenant. Secure-cookie and token validation remain
+unchanged; no IS registration or account was changed from this repository.
 
-The registered HTTPS callback is preserved in `.env` and IG now serves trusted
-HTTPS on that hostname/port. Its tenant-domain mapping resolves to the local
-development tenant. Browser API calls retain the existing HTTP internal proxy;
-secure-cookie and token validation are unchanged. The previous callback protocol
-mismatch is resolved. The separate `invalid_client` registration issue remains.
-Token exchange, authenticated session, and logout acceptance remain pending.
+Verification performed on 2026-11-09:
 
-After IS supplies the real credentials and reachable metadata, update only local
-`.env`, then recreate the API:
+- Browser clicked `Continue with IS` and reached production IS sign-in over HTTPS.
+- Authorization code flow, exact registered callback, requested scopes and S256
+  challenge were checked without displaying client credentials or flow values.
+- Browser state/nonce matched their Secure/HttpOnly/SameSite=Lax cookies.
+- Read-only local checks found a production-IS identity, active tenant membership,
+  and active local session. JIT admission is enabled for this development tenant.
+- A fresh authenticated callback, session refresh and logout acceptance require
+  the developer's interactive account; the automated browser did not submit human
+  credentials or reuse another browser's cookies.
+
+After changing the client/provider settings, update only local `.env`, then
+recreate the API:
 
 ```sh
 docker compose -f compose.yaml -f compose.dev.yaml up -d --no-build --no-deps --force-recreate ig

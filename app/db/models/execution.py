@@ -2,7 +2,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
-    DateTime,
     ForeignKey,
     JSON,
     String,
@@ -11,6 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 # Execution represents an execution of a job, which may have multiple attempts.
 class Execution(Base):
@@ -59,12 +59,12 @@ class Execution(Base):
     )
 
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=True,
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=True,
     )
 
@@ -79,6 +79,6 @@ class Execution(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        UTCDateTime(),
+        default=utc_now,
     )

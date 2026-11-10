@@ -9,3 +9,7 @@ export function getJob(id: string, signal?: AbortSignal): Promise<JobDetail> {
 export function getJobExecutions(id: string, signal?: AbortSignal): Promise<JobExecution[]> {
   return requestJSON(`/v2/jobs/${encodeURIComponent(id)}/executions`, { signal });
 }
+
+export function cancelJob(id: string): Promise<JobDetail> {
+  return requestJSON(`/v2/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+}

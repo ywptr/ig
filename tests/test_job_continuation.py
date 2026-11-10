@@ -140,6 +140,7 @@ class ContinuationTests(MediaJobTestCase):
     def assert_concurrent_claims_poll_once(self, token):
         barrier, lock = Barrier(2), Lock()
         rowcounts = []
+        arrived = set()
 
         def is_claim(statement):
             return (
@@ -149,8 +150,14 @@ class ContinuationTests(MediaJobTestCase):
             )
 
         def before(connection, cursor, statement, parameters, context, executemany):
-            if is_claim(statement):
-                barrier.wait(timeout=10)
+            # Claiming now consistently locks Job before Execution. Synchronize
+            # before either transaction takes that first lock, not while holding it.
+            if statement.startswith("UPDATE jobs SET"):
+                with lock:
+                    first = get_ident() not in arrived
+                    arrived.add(get_ident())
+                if first:
+                    barrier.wait(timeout=10)
 
         def after(connection, cursor, statement, parameters, context, executemany):
             if is_claim(statement):
@@ -167,7 +174,8 @@ class ContinuationTests(MediaJobTestCase):
         finally:
             event.remove(self.engine, "before_cursor_execute", before)
             event.remove(self.engine, "after_cursor_execute", after)
-        self.assertEqual(sorted(rowcounts), [0, 1])
+        self.assertEqual(rowcounts.count(1), 1)
+        self.assertTrue(all(value in (0, 1) for value in rowcounts))
         self.poll.assert_called_once()
         self.assertEqual(self.state()["executions"], 1)
 

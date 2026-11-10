@@ -2,7 +2,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
-    DateTime,
     ForeignKey,
     JSON,
     String,
@@ -11,6 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class Job(Base):
@@ -61,16 +61,19 @@ class Job(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        UTCDateTime(),
+        default=utc_now,
     )
 
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=True,
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=True,
     )
+
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

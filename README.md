@@ -4,6 +4,9 @@
 
 IG is a multi-tenant AI media generation control plane.
 
+Jobs support tenant/user-scoped cooperative cancellation and explicit UTC timestamps;
+see [job management](docs/job-management.md) for API semantics and provider limitations.
+
 The [Generation Lab](docs/generation-lab.md) provides a capability-driven frontend
 for image and video generation, optional hard-mode model selection, active Job
 recovery, and IG Artifact previews. Existing Jobs, Executions and legacy image

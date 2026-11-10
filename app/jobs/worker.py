@@ -1,93 +1,65 @@
-from datetime import datetime
-
+from copy import deepcopy
+import logging
 from sqlalchemy import select, update
 
+from app.core.time import utc_now
 from app.db.database import SessionLocal
-from app.db.models import Job
+from app.db.models import Job, Execution
 from app.jobs.handlers import get_handler
 from app.jobs.result import Pending
+from app.jobs.cancellation import (
+    JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
+)
 from app.jobs.continuation import schedule_continuation
 from app.executions.service import (
-    apply_execution_result,
-    complete_execution,
-    create_execution,
-    fail_execution,
-    wait_execution,
+    apply_execution_result, complete_execution, create_execution, fail_execution, wait_execution,
 )
-
-import logging
 from app.core.logging import configure_logging
 
 configure_logging()
-
 logger = logging.getLogger(__name__)
 
+
+def _own_running(db, job_id):
+    return db.execute(update(Job).where(
+        Job.job_id == job_id, Job.status == "running",
+    ).values(status="running").execution_options(synchronize_session=False)).rowcount == 1
+
+
 def execute_job(job_id: str) -> None:
-    """Dispatch only a queued job, once per committed claim.
-
-    Running/waiting/terminal jobs are not reclaimed on redelivery. This prevents
-    repeat provider calls but leaves crash recovery to a separate design.
-    """
-    logger.info(
-        "job.worker.start job_id=%s",
-        job_id,
-    )
+    """Claim once, execute cooperatively, and fence completion against cancellation."""
+    logger.info("job.worker.start job_id=%s", job_id)
     db = SessionLocal()
-    job = None
-    execution = None
     claimed = False
-
+    result = None
     try:
-        # A single conditional write decides ownership. Concurrent deliveries
-        # must not dispatch based on a separate read of the queued status.
-        claim = db.execute(
-            update(Job)
-            .where(Job.job_id == job_id, Job.status == "queued")
-            .values(status="running", started_at=datetime.utcnow())
-        )
-
+        claim = db.execute(update(Job).where(
+            Job.job_id == job_id, Job.status == "queued",
+        ).values(status="running", started_at=utc_now()))
         if claim.rowcount != 1:
             db.rollback()
             if db.scalar(select(Job.job_id).where(Job.job_id == job_id)) is None:
                 raise RuntimeError(f"Job not found: {job_id}")
-            # Running, waiting and terminal jobs are never implicitly retried.
-            # A crashed executor can leave running state needing recovery.
-            logger.info("job.worker.skip job_id=%s reason=not_queued", job_id)
             db.rollback()
             schedule_continuation(job_id)
             return
-
         job = db.scalar(select(Job).where(Job.job_id == job_id))
-
-        execution = create_execution(
-            db,
-            job_id=job.job_id,
-            tenant_id=job.tenant_id,
-            user_id=job.user_id,
-            metadata={
-                "capability": job.capability,
-            },
-        )
-        # Commit the claim and attempt together before any provider side effect.
-        # If this transaction fails, no handler has run and the claim rolls back.
+        execution = create_execution(db, job_id=job_id, tenant_id=job.tenant_id,
+            user_id=job.user_id, metadata={"capability": job.capability})
+        capability, tenant_id, user_id = job.capability, job.tenant_id, job.user_id
+        input_data, execution_id = deepcopy(job.input_json), execution.execution_id
         db.commit()
         claimed = True
-
-        handler = get_handler(job.capability)
-
-        # Ownership comes from persisted Job columns, never from input_json.
-        result = handler(
-            job.input_json,
-            tenant_id=job.tenant_id,
-            user_id=job.user_id,
-        )
-
-        # Reject implicit/invalid outcomes before any completion transition.
-        apply_execution_result(
-            execution,
-            result,
-        )
-
+        with cancellation_scope(job_id, SessionLocal):
+            check_cancellation()
+            result = get_handler(capability)(input_data, tenant_id=tenant_id, user_id=user_id)
+        if not _own_running(db, job_id):
+            acknowledge_cancellation(db, job_id, result)
+            db.commit()
+            return
+        job = db.scalar(select(Job).where(Job.job_id == job_id).execution_options(populate_existing=True))
+        execution = db.get(Execution, execution_id, populate_existing=True)
+        apply_execution_result(execution, result)
         if isinstance(result, Pending):
             wait_execution(db, execution)
             job.status = "waiting"
@@ -95,30 +67,31 @@ def execute_job(job_id: str) -> None:
         else:
             complete_execution(db, execution)
             job.status = "completed"
-            job.completed_at = datetime.utcnow()
-
-        # The operation checkpoint and both waiting statuses commit together.
+            job.completed_at = utc_now()
         db.commit()
-
+    except JobCancelled:
+        db.rollback()
+        acknowledge_cancellation(db, job_id)
+        db.commit()
+        return
     except Exception as exc:
         db.rollback()
-        # Only the worker with a committed claim can finalize this attempt.
         if claimed:
-            fail_execution(
-                db,
-                execution,
-                error_message=str(exc),
-            )
-            job.status = "failed"
-            job.error_message = str(exc)
-            job.completed_at = datetime.utcnow()
-
-            db.commit()
-
+            if not _own_running(db, job_id):
+                canceled = acknowledge_cancellation(db, job_id)
+                db.commit()
+                if canceled:
+                    return
+            else:
+                job = db.scalar(select(Job).where(Job.job_id == job_id).execution_options(populate_existing=True))
+                execution = db.get(Execution, execution_id, populate_existing=True)
+                fail_execution(db, execution, error_message=str(exc))
+                job.status = "failed"
+                job.error_message = str(exc)
+                job.completed_at = utc_now()
+                db.commit()
         raise
-
     finally:
         db.close()
-
     if isinstance(result, Pending):
         schedule_continuation(job_id)

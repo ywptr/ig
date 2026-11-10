@@ -18,7 +18,7 @@ export const MediaResultCard = memo(function MediaResultCard({ result }: { resul
             : <video className="media-preview" src={url} controls preload="metadata" aria-label={result.prompt}
                 onError={() => setPreviewError(true)}>Your browser cannot play this video. <a href={url}>Open video</a></video>
             : <div className="media-placeholder">{previewError ? "Preview could not load. Check your session or open the output." : result.status === "completed"
-                ? "Output is not available yet." : result.status === "failed" ? "Generation failed" : "Generation in progress"}</div>}
+                ? "Output is not available yet." : result.status === "failed" ? "Generation failed" : result.status === "canceled" ? "Generation canceled" : result.status === "cancel_requested" ? "Cancellation requested" : "Generation in progress"}</div>}
         <p className="result-prompt">{result.prompt}</p>
         <dl className="result-meta">
             <div><dt>Provider</dt><dd>{result.provider ?? "Auto · awaiting resolution"}</dd></div>

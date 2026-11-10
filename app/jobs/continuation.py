@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from app.core.time import utc_now
 
 from sqlalchemy import and_, or_, select, update
 
@@ -15,6 +16,9 @@ from app.db.database import SessionLocal
 from app.db.models import Execution, Job
 from app.executions.service import apply_execution_result, complete_execution, wait_execution, fail_execution
 from app.artifacts.service import stage_media_result, persist_media_result
+from app.jobs.cancellation import (
+    JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
+)
 from app.jobs.handlers import get_resume_handler
 from app.jobs.provider import get_job_queue
 from app.jobs.result import Completed, HandlerResult, Pending, ProviderOperation, TerminalOperationError
@@ -115,6 +119,14 @@ def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
         # The read only supplies a snapshot. This conditional write atomically
         # claims waiting work OR reclaims an expired lease. The claim-ID guard
         # rejects a competing owner even when the checkpoint token is unchanged.
+        job_claimed = db.execute(update(Job).where(
+            Job.job_id == job_id, Job.status == execution.status,
+            Job.tenant_id == job.tenant_id, Job.user_id == job.user_id,
+            Job.capability == job.capability,
+        ).values(status="polling").execution_options(synchronize_session=False))
+        if job_claimed.rowcount != 1:
+            db.rollback()
+            return None
         claimed = db.execute(update(Execution).where(
             Execution.execution_id == execution.execution_id,
             Execution.tenant_id == job.tenant_id, Execution.user_id == job.user_id,
@@ -135,14 +147,6 @@ def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
         if claimed.rowcount != 1:
             db.rollback()
             return None
-        job_claimed = db.execute(update(Job).where(
-            Job.job_id == job_id, Job.status == execution.status,
-            Job.tenant_id == job.tenant_id, Job.user_id == job.user_id,
-            Job.capability == job.capability,
-        ).values(status="polling").execution_options(synchronize_session=False))
-        if job_claimed.rowcount != 1:
-            db.rollback()
-            return None
 
         # Capture plain data BEFORE commit expires ORM attributes. Do not return
         # ORM objects that could lazily open another transaction during polling.
@@ -155,6 +159,10 @@ def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
 
 
 def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperationError) -> bool:
+    with SessionLocal() as db:
+        if acknowledge_cancellation(db, claim.job_id):
+            db.commit()
+            return False
     operation = claim.operation
     if isinstance(result, Pending):
         if (result.provider, result.model, result.operation_id) != (
@@ -173,6 +181,10 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
         # Avoid uploading already-stale results; repeat the atomic fence below
         # after upload. No DB transaction spans storage network I/O either.
         with SessionLocal() as db:
+            if db.scalar(select(Job.status).where(Job.job_id == claim.job_id)) != "polling":
+                acknowledge_cancellation(db, claim.job_id)
+                db.commit()
+                return False
             execution = db.get(Execution, claim.execution_id)
             if (
                 not execution or execution.status != "polling"
@@ -185,6 +197,15 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
         # A conditional no-op update both fences stale workers and locks the row
         # for this short finalization transaction. Lease expiry alone does not
         # invalidate an owner; a replacement claim does.
+        job_owned = db.execute(update(Job).where(
+            Job.job_id == claim.job_id, Job.status == "polling",
+            Job.tenant_id == claim.tenant_id, Job.user_id == claim.user_id,
+            Job.capability == claim.capability,
+        ).values(status="polling").execution_options(synchronize_session=False))
+        if job_owned.rowcount != 1:
+            acknowledge_cancellation(db, claim.job_id)
+            db.commit()
+            return False
         owned = db.execute(update(Execution).where(
             Execution.execution_id == claim.execution_id,
             Execution.job_id == claim.job_id, Execution.status == "polling",
@@ -195,14 +216,6 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
             Execution.metadata_json["provider_operation"]["operation_id"].as_string() == operation.operation_id,
         ).values(status="polling").execution_options(synchronize_session=False))
         if owned.rowcount != 1:
-            db.rollback()
-            return False
-        job_owned = db.execute(update(Job).where(
-            Job.job_id == claim.job_id, Job.status == "polling",
-            Job.tenant_id == claim.tenant_id, Job.user_id == claim.user_id,
-            Job.capability == claim.capability,
-        ).values(status="polling").execution_options(synchronize_session=False))
-        if job_owned.rowcount != 1:
             db.rollback()
             return False
 
@@ -217,7 +230,7 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
             fail_execution(db, execution, error_message=str(result))
             job.status = "failed"
             job.error_message = str(result)
-            job.completed_at = datetime.utcnow()
+            job.completed_at = utc_now()
             db.commit()
             return True
         if staged is not None:
@@ -243,7 +256,7 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
             }
             complete_execution(db, execution)
             job.status = "completed"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = utc_now()
         db.commit()
         return True
 
@@ -261,11 +274,23 @@ def continue_job(job_id: str, continuation_id: str) -> None:
 
     handler = get_resume_handler(claim.capability)
     try:
-        result = handler(
-            claim.operation, tenant_id=claim.tenant_id, user_id=claim.user_id,
-        )
+        with cancellation_scope(job_id, SessionLocal):
+            check_cancellation()
+            result = handler(claim.operation, tenant_id=claim.tenant_id, user_id=claim.user_id)
     except TerminalOperationError as exc:
         result = exc
+    except JobCancelled:
+        with SessionLocal() as db:
+            acknowledge_cancellation(db, job_id)
+            db.commit()
+        return
+    except Exception:
+        with SessionLocal() as db:
+            canceled = acknowledge_cancellation(db, job_id)
+            db.commit()
+        if canceled:
+            return
+        raise
     if not _finalize_claim(claim, result):
         return  # A newer owner/checkpoint superseded this worker.
     if isinstance(result, Pending):

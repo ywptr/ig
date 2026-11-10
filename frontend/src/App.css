@@ -316,3 +316,5 @@
 
     font-size: 0.82rem;
 }
+.job-status.canceled, .execution-status.canceled { color: #64748b; }
+.job-status.cancel_requested, .execution-status.cancel_requested { color: #b45309; }

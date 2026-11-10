@@ -50,6 +50,8 @@ services:
     # RQ CLI uses RQ_REDIS_URL; application jobs use the same REDIS_URL.
     command: ["rq", "worker", "ig"]
     environment:
+      # Prefer bind-mounted source over the image-installed application package.
+      PYTHONPATH: /app
       DATABASE_URL: ${IG_DEV_DATABASE_URL:?Set the local IG development database URL in ignored .env}
       TENANT_SECRET_ENCRYPTION_KEY: ${TENANT_SECRET_ENCRYPTION_KEY:?Set the local encryption key in ignored .env}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

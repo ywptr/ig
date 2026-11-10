@@ -1,4 +1,6 @@
 from typing import Any
+from dataclasses import asdict
+from app.core.time import utc_iso
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
@@ -9,7 +11,7 @@ from sqlalchemy import select
 from app.db.models import Job, Execution
 from app.auth.dependencies import get_db
 from app.jobs.handlers import is_publicly_submittable, is_supported
-from app.jobs.service import create_job, get_job
+from app.jobs.service import create_job, get_job, cancel_job, CancellationConflict
 from app.tenancy.context import TenantContext
 from app.tenancy.dependencies import (
     get_authenticated_tenant_context,
@@ -32,14 +34,16 @@ def job_to_dict(job):
         "status": job.status,
         "input": job.input_json,
         "error_message": job.error_message,
-        "created_at": job.created_at.isoformat(),
+        "cancel_requested_at": utc_iso(job.cancel_requested_at),
+        "canceled_at": utc_iso(job.canceled_at),
+        "created_at": utc_iso(job.created_at),
         "started_at": (
-            job.started_at.isoformat()
+            utc_iso(job.started_at)
             if job.started_at
             else None
         ),
         "completed_at": (
-            job.completed_at.isoformat()
+            utc_iso(job.completed_at)
             if job.completed_at
             else None
         ),
@@ -127,18 +131,26 @@ def list_jobs(
 
     jobs = db.scalars(statement).all()
 
-    return [
-        {
-            "job_id": job.job_id,
-            "capability": job.capability,
-            "status": job.status,
-            "error_message": job.error_message,
-            "created_at": job.created_at,
-            "started_at": job.started_at,
-            "completed_at": job.completed_at,
-        }
-        for job in jobs
-    ]
+    return [{key: value for key, value in job_to_dict(job).items() if key != "input"} for job in jobs]
+
+
+@router.post("/jobs/{job_id}/cancel")
+def request_job_cancellation(
+    job_id: str,
+    context: TenantContext = Depends(get_authenticated_tenant_context),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = cancel_job(db, job_id=job_id, tenant_id=context.tenant.tenant_id,
+                            user_id=context.membership.user_id)
+    except CancellationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    if result is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job, transport = result
+    return {**job_to_dict(job), "cancellation": {
+        "queue": asdict(transport), "provider_cancel_supported": False,
+    }}
 
 @router.get("/jobs/{job_id}/executions")
 def list_job_executions(
@@ -195,11 +207,11 @@ def list_job_executions(
                 "metadata":
                     execution.metadata_json,
                 "started_at":
-                    execution.started_at.isoformat()
+                    utc_iso(execution.started_at)
                     if execution.started_at
                     else None,
                 "completed_at":
-                    execution.completed_at.isoformat()
+                    utc_iso(execution.completed_at)
                     if execution.completed_at
                     else None,
                 "error_message":

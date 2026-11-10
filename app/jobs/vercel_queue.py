@@ -6,7 +6,7 @@ from uuid import uuid4
 from vercel.queue import (
     QueueClient,
 )
-from app.jobs.queue import JobKind, validate_delivery
+from app.jobs.queue import JobKind, validate_delivery, QueueCancellation
 
 TOPIC = "ig-jobs"
 
@@ -46,6 +46,10 @@ async def _enqueue(
 
 
 class VercelJobQueue:
+    def cancel(self, job_id: str) -> QueueCancellation:
+        return QueueCancellation(False, 0,
+            "Vercel delivery retraction is unsupported; IG state prevents canceled work from executing. No provider call was canceled.")
+
     def enqueue(
         self,
         job_id: str,

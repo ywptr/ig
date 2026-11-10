@@ -142,7 +142,8 @@ docker compose -f compose.yaml -f compose.dev.yaml exec ig alembic current
 
 No production data is copied. The migrations create a default tenant, but a usable
 tenant still needs a `TenantDomain` for `localhost`, admission settings and IS client
-configuration. See the main README for bootstrap. IS development login uses the
+configuration. See the main README for bootstrap. IG development uses the production IS identity service, while the IG database,
+queue, and artifacts stay local. Login uses the
 registered callback `https://5480-deb13.lan.com:5181/v2/auth/is/callback`; do not use production
 IS client credentials. Health alone does not verify database access or login.
 
@@ -230,8 +231,9 @@ provider calls or production database access were used.
 Shared-library packages for the temporary browser check were unpacked under `/tmp`
 without system package installation. Privileged firewall/pg_hba file inspection
 was unavailable in this session; actual authenticated private-network access was
-verified instead. Full IS login still requires a configured development IS client;
-provider generation additionally requires tenant-specific local provider setup.
+verified instead. The configured IS client now reaches production IS sign-in; a fresh full
+login/refresh/logout acceptance still requires interactive account verification.
+Provider generation additionally requires tenant-specific local provider setup.
 
 For the complete IG OIDC contract, verified development discovery, and pending IS
 client registration, see [IS/OIDC bootstrap](is-oidc-development.md).
@@ -241,3 +243,7 @@ localhost, the LAN IP and the registered hostname. A Chromium browser with the
 existing public CA trusted verified HTTPS rendering, API proxy, and visible WSS
 HMR update/revert without page navigation or container recreation. Browser DNS was
 explicitly mapped for that test; real client machines still need hostname resolution.
+
+Job timestamps and cooperative cancellation are documented in [job management](job-management.md).
+The worker explicitly prefers bind-mounted application source using `PYTHONPATH=/app`;
+restart it while idle after worker code changes so it loads the new cancellation fences.

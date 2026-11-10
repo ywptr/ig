@@ -9,6 +9,7 @@ from app.artifacts.storage.provider import (
 )
 from app.db.database import SessionLocal
 from app.jobs.result import Completed
+from app.jobs.cancellation import check_cancellation, JobCancelled
 from app.media.routing import MediaSelection
 from app.media.providers.registry import (
     create_image_provider,
@@ -227,6 +228,7 @@ def generate_image(
         config=provider_settings,
     )
 
+    check_cancellation()
     return provider.generate(
         provider_request
     )
@@ -254,6 +256,7 @@ def persist_image_result(
         )
     )
 
+    check_cancellation()
     output = input_data.get(
         "output"
     ) or {}
@@ -455,6 +458,7 @@ def execute_image_generation(
                 model_is_resolved="selection" in normalized_input,
             )
 
+            check_cancellation()
             artifact = persist_image_result(
                 db,
                 image_record=image_record,
@@ -482,6 +486,9 @@ def execute_image_generation(
                 result=result,
             )
 
+        except JobCancelled:
+            db.rollback()
+            raise
         except Exception:
             db.rollback()
 

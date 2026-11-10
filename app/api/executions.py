@@ -1,3 +1,4 @@
+from app.core.time import utc_iso
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -30,17 +31,17 @@ def execution_to_dict(
         "model": execution.model,
         "metadata": execution.metadata_json,
         "started_at": (
-            execution.started_at.isoformat()
+            utc_iso(execution.started_at)
             if execution.started_at
             else None
         ),
         "completed_at": (
-            execution.completed_at.isoformat()
+            utc_iso(execution.completed_at)
             if execution.completed_at
             else None
         ),
         "error_message": execution.error_message,
-        "created_at": execution.created_at.isoformat(),
+        "created_at": utc_iso(execution.created_at),
     }
 
 

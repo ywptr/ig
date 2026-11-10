@@ -1,7 +1,10 @@
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from app.core.time import utc_now
+from app.jobs.cancellation import cancel_executions
+from app.jobs.queue import QueueCancellation
 from sqlalchemy.orm import Session
 
 from app.db.models import Job
@@ -64,10 +67,9 @@ def create_job(
             job.job_id,
         )
 
-        job.status = "failed"
-        job.error_message = (
-            f"Failed to enqueue job: {exc}"
-        )
+        # A reservation/cancellation may already have won while enqueue returned.
+        db.execute(update(Job).where(Job.job_id == job.job_id, Job.status == "queued")
+            .values(status="failed", completed_at=utc_now(), error_message=f"Failed to enqueue job: {exc}"))
 
         db.commit()
         raise
@@ -97,3 +99,47 @@ def get_job(
         )
 
     return db.scalar(statement)
+
+class CancellationConflict(RuntimeError):
+    pass
+
+
+def cancel_job(db: Session, *, job_id: str, tenant_id: str, user_id: str):
+    for _ in range(4):
+        db.expire_all()
+        job = get_job(db, job_id=job_id, tenant_id=tenant_id, user_id=user_id)
+        if job is None:
+            return None
+        status = job.status
+        if status in {"completed", "failed", "canceled"}:
+            raise CancellationConflict(f"Job is already {status}")
+        if status == "cancel_requested":
+            db.rollback()
+            break  # Repeated in-flight requests are idempotent.
+        if status not in {"queued", "running", "waiting", "polling"}:
+            raise CancellationConflict("Job cannot be canceled in its current state")
+        now = utc_now()
+        values = {"status": "cancel_requested", "cancel_requested_at": now}
+        if status in {"queued", "waiting"}:
+            values.update(status="canceled", canceled_at=now, completed_at=now)
+        changed = db.execute(update(Job).where(
+            Job.job_id == job_id, Job.tenant_id == tenant_id, Job.user_id == user_id,
+            Job.status == status,
+        ).values(**values).execution_options(synchronize_session=False))
+        if changed.rowcount != 1:
+            db.rollback()
+            continue
+        if values["status"] == "canceled":
+            cancel_executions(db, job_id, now)
+        db.commit()  # This database fence is authoritative before touching transport.
+        break
+    else:
+        raise CancellationConflict("Job state changed concurrently; retry cancellation")
+    try:
+        transport = get_job_queue().cancel(job_id)
+    except Exception as exc:
+        logger.warning("job.cancel.transport_failed job_id=%s error_type=%s", job_id, type(exc).__name__)
+        transport = QueueCancellation(False, 0,
+            "Queue retraction unavailable; committed IG state still fences delivery. No provider call was canceled.")
+    db.expire_all()
+    return get_job(db, job_id=job_id, tenant_id=tenant_id, user_id=user_id), transport

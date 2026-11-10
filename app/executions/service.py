@@ -1,5 +1,5 @@
-from datetime import datetime
 from uuid import uuid4
+from app.core.time import utc_now
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ def create_execution(
         attempt=attempt + 1,
         provider=provider,
         model=model,
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
         metadata_json=metadata,
     )
 
@@ -46,7 +46,7 @@ def complete_execution(
     execution: Execution,
 ) -> None:
     execution.status = "completed"
-    execution.completed_at = datetime.utcnow()
+    execution.completed_at = utc_now()
 
 
 def fail_execution(
@@ -57,7 +57,7 @@ def fail_execution(
 ) -> None:
     execution.status = "failed"
     execution.error_message = error_message
-    execution.completed_at = datetime.utcnow()
+    execution.completed_at = utc_now()
 
 
 def wait_execution(

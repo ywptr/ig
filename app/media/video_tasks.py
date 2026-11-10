@@ -1,6 +1,7 @@
 """Generic video orchestration; provider protocol details stay in adapters."""
 from app.artifacts.types import ArtifactPayload
 from app.db.database import SessionLocal
+from app.jobs.cancellation import check_cancellation
 from app.jobs.result import Completed, Pending, ProviderOperation, TerminalOperationError
 from app.media.providers.video import (
     ResolvedVideoRequest, VideoProviderCompleted, VideoProviderPending, VideoProviderTerminalError,
@@ -26,6 +27,7 @@ def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str |
             db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=True,
         )
     # No database transaction spans provider submission.
+    check_cancellation()
     result = adapter.submit(ResolvedVideoRequest(
         description=request.intent.description, provider=selection["provider"], model=selection["model"],
         duration_seconds=request.output.duration_seconds, aspect_ratio=request.output.aspect_ratio,
@@ -44,6 +46,7 @@ def resume_video_generation(operation: ProviderOperation, *, tenant_id: str, use
             db, tenant_id=tenant_id, provider=operation.provider, model=operation.model,
         )
     try:
+        check_cancellation()
         result = adapter.poll(operation.operation_id, operation.metadata.get("provider_metadata", {}))
     except VideoProviderTerminalError as exc:
         raise TerminalOperationError(str(exc)) from None

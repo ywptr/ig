@@ -534,7 +534,7 @@ class JobIdempotencyTests(ImageExecutionTestCase):
         lock = Lock()
 
         def is_claim(statement):
-            return statement.startswith("UPDATE jobs SET") and "AND jobs.status =" in statement
+            return statement.startswith("UPDATE jobs SET") and "started_at=" in statement.partition(" WHERE ")[0] and "AND jobs.status =" in statement
 
         def before_claim(connection, cursor, statement, parameters, context, executemany):
             if is_claim(statement):
