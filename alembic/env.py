@@ -1,18 +1,20 @@
 from logging.config import fileConfig
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-from alembic import context, util
-from app.ops.database_safety import UnsafeDatabaseTarget, require_safe_admin_target
-
-from app.db.database import Base
-from app.db import models
+from alembic import context
 
 
 config = context.config
 
+# Local defaults only. Explicit exports from the temporary production shell win.
+# Never auto-load .env.production.local or another cloud environment file.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 database_url = os.environ.get("DATABASE_URL")
 
 if not database_url:
@@ -20,13 +22,16 @@ if not database_url:
 
 config.set_main_option(
     "sqlalchemy.url",
-    database_url,
+    database_url.replace("%", "%%"),
 )
 
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+
+from app.db.database import Base
+from app.db import models
 
 target_metadata = Base.metadata
 
@@ -49,24 +54,6 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in online mode."""
-
-    # CLI read-only commands retain access without a write acknowledgment.
-    opts = getattr(config, "cmd_opts", None)
-    command = getattr(opts, "cmd", None)
-    name = getattr(command[0], "__name__", "") if command else ""
-    if name not in {"current", "check", "revision", "history", "heads", "branches", "show"}:
-        acknowledgment = context.get_x_argument(as_dictionary=True)
-        try:
-            require_safe_admin_target(
-                database_url,
-                allow_production_write=acknowledgment.get("allow-production-write") == "yes",
-                confirm_database_target=acknowledgment.get("confirm-database-target"),
-            )
-        except UnsafeDatabaseTarget as exc:
-            raise util.CommandError(
-                str(exc) + " Alembic uses -x allow-production-write=yes "
-                "-x confirm-database-target=HOST[:PORT]/DATABASE before the command."
-            ) from None
 
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),

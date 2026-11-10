@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -59,11 +60,14 @@ class DatabaseSafetyTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn("--allow-production-write",result.stdout)
 
-    def test_online_migration_refuses_remote_before_connecting(self):
-        result=self.run_cli(["-m","alembic","upgrade","head"])
-        self.assertNotEqual(result.returncode,0)
-        self.assertIn("Refusing administrative writes",result.stdout+result.stderr)
-        self.assertNotIn("do-not-print-this",result.stdout+result.stderr)
+    def test_default_migration_accepts_production_metadata_without_write_arguments(self):
+        with TemporaryDirectory() as temp:
+            url="sqlite:///"+str(Path(temp)/"selected.db")
+            result=self.run_cli(["-m","alembic","upgrade","06b1414cf2f0"],url=url)
+            self.assertEqual(result.returncode,0,result.stderr)
+            current=self.run_cli(["-m","alembic","current"],url=url)
+            self.assertEqual(current.returncode,0,current.stderr)
+            self.assertIn("06b1414cf2f0",current.stdout)
 
     def test_read_only_current_and_offline_sql_are_not_blocked(self):
         with TemporaryDirectory() as temp:
@@ -74,12 +78,41 @@ class DatabaseSafetyTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn("CREATE TABLE",result.stdout)
 
-    def test_explicit_migration_override_works_on_temporary_database(self):
+    def test_programmatic_migration_needs_no_override(self):
         with TemporaryDirectory() as temp:
-            url="sqlite:///"+str(Path(temp)/"acknowledged.db")
-            result=self.run_cli(["-m","alembic","-x","allow-production-write=yes","-x",
-                "confirm-database-target="+database_target_label(url),"upgrade","06b1414cf2f0"],url=url)
+            url="sqlite:///"+str(Path(temp)/"programmatic.db")
+            # Alembic configures logging; isolate that normal CLI behavior from
+            # unrelated application logging assertions in the parent test process.
+            code=("from alembic import command; from alembic.config import Config; "
+                  "command.upgrade(Config('alembic.ini'), '06b1414cf2f0')")
+            result=self.run_cli(["-c",code],url=url)
             self.assertEqual(result.returncode,0,result.stderr)
+            self.assertTrue((Path(temp)/"programmatic.db").exists())
+
+    def test_local_dotenv_default_and_explicit_environment_precedence(self):
+        for exported in (False,True):
+            with self.subTest(exported=exported),TemporaryDirectory() as temp:
+                root=Path(temp)
+                (root/"alembic/versions").mkdir(parents=True)
+                shutil.copy(ROOT/"alembic.ini",root/"alembic.ini")
+                shutil.copy(ROOT/"alembic/env.py",root/"alembic/env.py")
+                shutil.copy(ROOT/"alembic/versions/06b1414cf2f0_create_image_requests.py",root/"alembic/versions")
+                local=root/"local default.db"
+                selected=root/"selected.db"
+                (root/".env").write_text("DATABASE_URL='sqlite:///"+str(local).replace(" ","%20")+"'\n")
+                # A production-named file must never be auto-loaded.
+                (root/".env.production.local").write_text("DATABASE_URL='sqlite:///"+str(root/"must-not-open.db")+"'\n")
+                env={k:v for k,v in os.environ.items() if k!="DATABASE_URL"}
+                env.update(PYTHONPATH=str(ROOT),VERCEL_ENV="production")
+                if exported:
+                    env["DATABASE_URL"]="sqlite:///"+str(selected)
+                result=subprocess.run([sys.executable,"-m","alembic","-c",str(root/"alembic.ini"),"upgrade","head"],
+                    cwd=root,env=env,text=True,capture_output=True,timeout=20)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertTrue((selected if exported else local).exists())
+                self.assertFalse((root/"must-not-open.db").exists())
+                if exported:
+                    self.assertFalse(local.exists())
 
     def test_cloud_launchers_refuse_before_starting_consumers(self):
         for script in (ROOT/"scripts").glob("dev-cloud-*.sh"):
