@@ -6,6 +6,10 @@ internal HTTP to FastAPI. The registered callback is
 returns to the same frontend origin. Flow/session cookies stay Secure and
 HttpOnly. See [development HTTPS setup](local-development.md).
 
+Before the first login, run [tenant bootstrap](tenant-bootstrap.md) to establish
+domains/settings and explicit JIT admission. After login, use its issuer/subject
+promotion command for the first administrator. Provider setup remains separate.
+
 ## Environment contract
 
 `app/auth/is_oidc.py` reads these required variables:

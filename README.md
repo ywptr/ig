@@ -748,7 +748,7 @@ Admin membership is required.
 
 The current API updates an existing `TenantSettings` row.
 
-It does not currently create the first `TenantSettings` row during installation bootstrap.
+The administrative [bootstrap CLI](docs/tenant-bootstrap.md) creates missing initial settings.
 
 'allow_self_registration' primarily controls JIT tenant membership for identities already authenticated and admitted by IS.
 
@@ -1220,154 +1220,34 @@ Manual Vercel deployment may also be used when necessary.
 
 # Initial tenant bootstrap
 
-A completely fresh IG installation currently requires an administrative database bootstrap before normal tenant APIs can be used.
+Use the transactional, idempotent [tenant bootstrap CLI](docs/tenant-bootstrap.md)
+after migrations. No manual SQL is needed.
 
-This is necessary because the tenant itself is resolved from the request hostname.
-
-The required bootstrap order is:
-
-```text
-1. Tenant
-2. TenantDomain
-3. TenantSettings
-4. First IS login
-5. Promote initial membership to admin
-6. Configure tenant model provider credentials
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml exec ig \
+  python scripts/bootstrap-tenant.py \
+  --slug default --name Default \
+  --domain localhost --domain 5480-deb13.lan.com \
+  --allow-self-registration
 ```
 
-The first `TenantDomain.hostname` must match the hostname through which the deployment is accessed.
+Migrations seed `default` with name `Default`; use that exact name. New slugs can
+use another name. Domains must match the actual browser and IS callback hostnames.
+Configure IS, log in, then promote the intended active member by exact IS identity:
 
-IG resolves the current tenant from the incoming request hostname before
-authentication completes. Without a matching tenant_domains row,
-tenant-aware requests — including the IS OIDC callback — fail with:
-
-```json
-{ "detail": "Tenant not found" }
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml exec ig \
+  python scripts/bootstrap-tenant.py --slug default --promote-admin \
+  --is-issuer '<exact-discovery-issuer>' --is-subject '<verified-user-subject>'
 ```
 
-For example, if the deployment is accessed through:
+JIT login grants only `member`. Email matching and arbitrary first-login admin
+assignment are never used. Provider configuration remains a separate next step.
+The baseline creates Tenant, TenantDomain and TenantSettings as needed; it preserves
+existing settings except explicitly requested admission changes. No Nexus mapping
+is fabricated. Use `--dry-run` to validate and roll back the operation.
 
-```text
-ig.example.com
-```
-
-then a corresponding tenant-domain record must exist for:
-
-```text
-ig.example.com
-```
-
-before tenant-aware APIs can resolve the tenant.
-
-## Configure the initial tenant domain
-
-After creating the initial tenant, insert at least one hostname mapping
-into `tenant_domains`.
-
-First identify the tenant:
-
-```sql
-SELECT
-    tenant_id,
-    slug,
-    name,
-    status
-FROM tenants;
-```
-
-Then insert the hostname actually used to access IG:
-
-```sql
-INSERT INTO tenant_domains (
-    hostname,
-    tenant_id,
-    is_primary
-)
-VALUES (
-    'ig.example.com',
-    '<tenant-id>',
-    true
-);
-```
-
-Verify:
-
-```sql
-SELECT
-    hostname,
-    tenant_id,
-    is_primary
-FROM tenant_domains;
-```
-
-Do not assume a Vercel-generated hostname. Use the real hostname through
-which the deployment is accessed, whether that is:
-
-```text
-*.vercel.app
-```
-
-or a custom domain.
-
-Automatic initial-domain/bootstrap provisioning is planned for a future release.
-
----
-
-## Configure initial tenant admission policy
-
-V4 uses IS for authentication.
-
-`allow_self_registration` therefore means:
-
-> Allow a valid IS-authenticated identity to receive a tenant membership
-> automatically when no membership already exists.
-
-For the primary IG tenant, a typical configuration is:
-
-```text
-allow_self_registration = true
-allow_password_authentication = false
-allow_google_authentication = false
-```
-
-With this configuration:
-
-```text
-IS authentication
-    ↓
-new external identity
-    ↓
-create local IG User
-    ↓
-create UserIdentity
-    ↓
-create TenantMembership(role=member)
-```
-
-Tenant administrators may disable automatic membership for restricted
-tenants while continuing to use IS authentication.
-
----
-
-## Initial bootstrap API availability
-
-The following first-installation capabilities are **not currently exposed as complete bootstrap APIs**:
-
-| Required object | Creation API available for initial bootstrap? | Notes |
-|---|---:|---|
-| `Tenant` | No | Must currently be created administratively |
-| `TenantDomain` | No | Must exist before hostname-based tenant resolution works |
-| Initial `User` | Yes, via IS JIT provisioning | Created automatically on first valid IS login when tenant admission permits |
-| Initial `UserIdentity` | Yes, via IS JIT provisioning | Maps IS `issuer + subject` to the local IG user |
-| Initial `TenantMembership` | Partially | JIT login creates a `member`; the first administrator must currently be promoted administratively |
- 
-| Initial `TenantSettings` | No | Existing settings API updates an existing row |
-
-Therefore a fresh installation still requires administrative bootstrap for the Tenant, TenantDomain, TenantSettings, and initial admin promotion.
-
-Once these objects exist, normal tenant administration can proceed through application APIs.
-
----
+See the linked procedure for required arguments, safety, conflicts, and reruns.
 
 ## Verify initial tenant resolution
 
@@ -1664,7 +1544,8 @@ These are not identity-service responsibilities. IG continues to own application
 - Tenant lifecycle administration
 - Tenant management UI
 
-These should eventually remove the need for direct database manipulation during first deployment.
+The bootstrap CLI already removes the need for direct database manipulation during
+first deployment; APIs/UI for these operations remain future work.
 
 ---
 

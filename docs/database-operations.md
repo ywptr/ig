@@ -25,6 +25,9 @@ Do not use a production/cloud URL for a development operation. Do not print a ra
 
 ## Canonical development administration
 
+For fresh installs, first run the [tenant bootstrap and first-admin commands](tenant-bootstrap.md).
+Both modes use the same safeguards described below, including `--dry-run`.
+
 Keep the default interactive TTY for credential prompts:
 
 ```sh

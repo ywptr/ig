@@ -142,7 +142,7 @@ docker compose -f compose.yaml -f compose.dev.yaml exec ig alembic current
 
 No production data is copied. The migrations create a default tenant, but a usable
 tenant still needs a `TenantDomain` for `localhost`, admission settings and IS client
-configuration. See the main README for bootstrap. IG development uses the production IS identity service, while the IG database,
+configuration. Run the [tenant bootstrap CLI and first-admin procedure](tenant-bootstrap.md); no manual SQL is needed. IG development uses the production IS identity service, while the IG database,
 queue, and artifacts stay local. Login uses the
 registered callback `https://5480-deb13.lan.com:5181/v2/auth/is/callback`; do not use production
 IS client credentials. Health alone does not verify database access or login.
