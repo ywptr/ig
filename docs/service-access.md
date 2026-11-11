@@ -341,3 +341,10 @@ existing deployment connection strings or Redis instances.
 | Operations | `app/ops/service_credentials.py`, `scripts/configure-service-credential.py`, `scripts/issue-service-token.py` |
 | Tests | `tests/test_service_access.py`, `tests/service_integration_check.py`, `tests/test_media_job_contracts.py` |
 | Documentation | `docs/service-access.md`, `README.md` |
+
+### Paginated artifact browsing (IG#0003)
+
+`GET /v2/artifacts/page` requires `artifacts:read` and uses the same delegated
+actor/tenant ownership as metadata, preview and content routes. See the
+[listing contract](artifact-library-foundations.md#listing-search-and-pagination).
+The legacy `GET /v2/artifacts` array remains supported.

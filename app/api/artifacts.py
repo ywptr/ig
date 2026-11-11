@@ -1,3 +1,7 @@
+from datetime import datetime
+from app.artifacts.schemas import ArtifactProvenance
+from app.artifacts.lineage import generations_for, inputs_for
+from app.artifacts.library import artifact_page, InvalidCursor
 from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Request, Query
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy import select
@@ -70,15 +74,18 @@ def validate_image_content(
 def artifact_to_dict(
     artifact: Artifact,
     preview: dict | None = None,
+    generation: dict | None = None,
 ) -> dict:
     return {
         "artifact_id": artifact.artifact_id,
+        "provenance": artifact.provenance,
+        "media_properties": {key: getattr(artifact, key) for key in ("width", "height", "duration_seconds", "fps")},
+        "sha256": artifact.sha256,
+        "generation": generation,
         "preview": preview if preview is not None else previews.preview_metadata(artifact),
         "user_id": artifact.user_id,
         "media_type": artifact.media_type,
         "mime_type": artifact.mime_type,
-# Removed the storage_uri from the response for security reasons - we should not expose the storage URI to clients.
-#        "storage_uri": artifact.storage_uri,
         "filename": artifact.filename,
         "size_bytes": artifact.size_bytes,
         "metadata": artifact.metadata_json,
@@ -104,7 +111,29 @@ def read_artifacts(
     )
 
     metadata = previews.metadata_for_artifacts(db, artifacts)
-    return [artifact_to_dict(artifact, metadata[artifact.artifact_id]) for artifact in artifacts]
+    generation = generations_for(db, artifacts)
+    return [artifact_to_dict(artifact, metadata[artifact.artifact_id], generation.get(artifact.artifact_id)) for artifact in artifacts]
+
+@router.get("/page")
+def read_artifact_page(
+    page_size: int = Query(30, ge=1, le=100), cursor: str | None = Query(None, max_length=1024),
+    media_type: Literal["image", "video", "audio", "text"] | None = None,
+    provenance: ArtifactProvenance | None = None, q: str | None = Query(None, max_length=256),
+    created_after: datetime | None = None, created_before: datetime | None = None,
+    order: Literal["asc", "desc"] = "desc", db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_authenticated_tenant_context),
+):
+    try:
+        artifacts, cursor, has_more = artifact_page(db, tenant_id=context.tenant.tenant_id,
+            user_id=context.membership.user_id, page_size=page_size, cursor=cursor,
+            media_type=media_type, provenance=provenance, q=q, created_after=created_after,
+            created_before=created_before, order=order)
+    except InvalidCursor:
+        raise HTTPException(400, detail="Invalid artifact cursor") from None
+    metadata, generation = previews.metadata_for_artifacts(db, artifacts), generations_for(db, artifacts)
+    return {"items": [artifact_to_dict(row, metadata[row.artifact_id], generation.get(row.artifact_id)) for row in artifacts],
+            "next_cursor": cursor, "has_more": has_more}
+
 
 @router.post(
     "/uploads",
@@ -203,7 +232,9 @@ def read_artifact(
             detail="Artifact not found",
         )
 
-    return artifact_to_dict(artifact, previews.metadata_for_artifacts(db, [artifact])[artifact.artifact_id])
+    return {**artifact_to_dict(artifact, previews.metadata_for_artifacts(db, [artifact])[artifact.artifact_id],
+                              generations_for(db, [artifact]).get(artifact.artifact_id)),
+            "inputs": inputs_for(db, artifact)}
 
 
 @router.get("/{artifact_id}/content")

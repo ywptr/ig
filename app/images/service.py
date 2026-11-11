@@ -33,6 +33,9 @@ def submit_image_generation(
     })
     validate_media_request(request)
     selection = resolve_image_selection(db, request, tenant_id=tenant_id)
+    from app.artifacts.references import reference_slots, resolve_references
+    resolve_references(db, request.references, slots=reference_slots(selection.provider, selection.model, "image"),
+                       tenant_id=tenant_id, user_id=user_id)
     request_id = str(uuid.uuid4())
     job_input = {**job_input, "request_id": request_id, "selection": selection.model_dump()}
 

@@ -75,3 +75,10 @@ Run dedicated isolation tests with:
 ```sh
 .venv/bin/python -B -m unittest tests.test_artifact_storage -v
 ```
+
+## Library metadata and lineage
+
+[Artifact library foundations](artifact-library-foundations.md) defines explicit
+provenance, normalized producer/input relationships, private cursor pagination,
+and ingest-time media metadata. These fields do not change object identity,
+storage isolation, or authorization. SHA-256 equality never grants shared access.

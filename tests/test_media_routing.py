@@ -141,6 +141,11 @@ class MediaRoutingTests(ImageExecutionTestCase):
 
     def test_incompatible_reference_count_does_not_choose_specialist(self):
         self.configure()
+        with self.sessions() as db:
+            for identity in ("ref-one", "ref-two"):
+                db.add(Artifact(artifact_id=identity, tenant_id="tenant-one", user_id="user-one",
+                    media_type="image", mime_type="image/png", size_bytes=3, storage_uri="file:///unused"))
+            db.commit()
         response = self.submit_image(output={"purpose": "thumbnail"}, references=[
             {"artifact_id": "ref-one"}, {"artifact_id": "ref-two"},
         ])

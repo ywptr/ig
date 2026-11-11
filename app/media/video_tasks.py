@@ -25,6 +25,7 @@ def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str |
         )
         references = resolve_video_references(
             db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=True,
+            provider=selection["provider"], model=selection["model"],
         )
     # No database transaction spans provider submission.
     check_cancellation()

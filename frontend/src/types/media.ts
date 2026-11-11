@@ -2,6 +2,16 @@ export type MediaKind = "text" | "image" | "video" | "audio";
 export type GenerationOperation = "text_to_image" | "image_to_image" | "reference_image_conditioning"
     | "multi_reference_conditioning" | "text_to_video" | "image_to_video" | "image_editing"
     | "inpainting" | "variation" | "upscale";
+export interface ReferenceInputSlot {
+    name: string;
+    media_types: MediaKind[];
+    mime_types: string[];
+    roles: string[];
+    min_count: number;
+    max_count: number;
+    max_bytes: number;
+    strengths: ("loose" | "normal" | "strong")[];
+}
 export interface TechnicalCapabilities {
     version: 1;
     input_media: MediaKind[];
@@ -14,6 +24,7 @@ export interface TechnicalCapabilities {
         cancellation: "none" | "queue_only" | "cooperative";
         provider_cancellation_supported: boolean;
     };
+    reference_inputs?: ReferenceInputSlot[];
     reference_mime_types: string[];
     output_mime_types: string[];
     max_prompt_characters: number | null;
@@ -113,8 +124,26 @@ export interface ArtifactPreview {
     positions: number[];
     error_code: string | null;
 }
+export type ArtifactProvenance = "unknown" | "generated" | "uploaded";
+export interface ArtifactInput {
+    artifact_id: string;
+    position: number;
+    relation: "reference";
+    role: string;
+    strength: string | null;
+}
+export interface ArtifactPage {
+    items: Artifact[];
+    next_cursor: string | null;
+    has_more: boolean;
+}
 export interface Artifact {
     preview?: ArtifactPreview;
+    provenance?: ArtifactProvenance;
+    media_properties?: { width: number | null; height: number | null; duration_seconds: number | null; fps: number | null };
+    sha256?: string | null;
+    generation?: { job_id: string; execution_id: string } | null;
+    inputs?: ArtifactInput[];
     artifact_id: string;
     media_type: MediaType;
     mime_type: string | null;

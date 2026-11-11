@@ -15,6 +15,7 @@ from sqlalchemy import and_, or_, select, update
 from app.db.database import SessionLocal
 from app.db.models import Execution, Job
 from app.executions.service import apply_execution_result, complete_execution, wait_execution, fail_execution
+from app.artifacts.media_metadata import inspect_media
 from app.artifacts.service import stage_media_result, persist_media_result
 from app.jobs.cancellation import (
     JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
@@ -177,6 +178,7 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
         raise TypeError("Handler must return Completed or Pending")
 
     staged = None
+    media_properties = None
     if isinstance(result, Completed) and result.artifact is not None:
         # Avoid uploading already-stale results; repeat the atomic fence below
         # after upload. No DB transaction spans storage network I/O either.
@@ -192,6 +194,7 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
             ):
                 return False
         staged = stage_media_result(result.artifact)
+        media_properties = inspect_media(result.artifact.data, result.artifact.media_type)
 
     with SessionLocal() as db:
         # A conditional no-op update both fences stale workers and locks the row
@@ -239,6 +242,9 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
                 db, payload=result.artifact, storage_uri=storage_uri, filename=filename,
                 tenant_id=claim.tenant_id, user_id=claim.user_id,
                 provider=operation.provider, model=operation.model,
+                job_id=job.job_id, execution_id=execution.execution_id,
+                inputs=(job.input_json.get("request") or job.input_json).get("references") or [],
+                media_properties=media_properties,
             )
             result = replace(result, metadata={**result.metadata, "artifact_id": artifact.artifact_id})
         apply_execution_result(execution, result)

@@ -2,6 +2,10 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Enum,
+    Float,
+    Integer,
+    Index,
     DateTime,
     ForeignKey,
     JSON,
@@ -11,11 +15,22 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
+from app.artifacts.schemas import ArtifactProvenance
 
 
 # Artifact represents a media artifact (e.g., image, video, audio) associated with a user.
 class Artifact(Base):
     __tablename__ = "artifacts"
+    __table_args__ = (Index("ix_artifacts_library_order", "tenant_id", "user_id", "created_at", "artifact_id"),)
+
+    provenance: Mapped[ArtifactProvenance] = mapped_column(
+        Enum(ArtifactProvenance, native_enum=False, values_callable=lambda enum: [value.value for value in enum],
+             validate_strings=True), default=ArtifactProvenance.UNKNOWN, server_default="unknown")
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    fps: Mapped[float | None] = mapped_column(Float)
+    sha256: Mapped[str | None] = mapped_column(String(64))
 
     artifact_id: Mapped[str] = mapped_column(
         String(36),

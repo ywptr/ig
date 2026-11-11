@@ -11,6 +11,7 @@ from app.jobs.cancellation import (
     JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
 )
 from app.jobs.continuation import schedule_continuation
+from app.executions.context import execution_scope
 from app.executions.service import (
     apply_execution_result, complete_execution, create_execution, fail_execution, wait_execution,
 )
@@ -50,7 +51,7 @@ def execute_job(job_id: str) -> None:
         input_data, execution_id = deepcopy(job.input_json), execution.execution_id
         db.commit()
         claimed = True
-        with cancellation_scope(job_id, SessionLocal):
+        with cancellation_scope(job_id, SessionLocal), execution_scope(job_id, execution_id):
             check_cancellation()
             result = get_handler(capability)(input_data, tenant_id=tenant_id, user_id=user_id)
         if not _own_running(db, job_id):

@@ -4,7 +4,7 @@ from io import BytesIO
 from typing import get_args
 
 from openai import OpenAI
-from app.media.technical import TechnicalCapabilities, ExecutionBehavior
+from app.media.technical import TechnicalCapabilities, ExecutionBehavior, ReferenceInputSlot
 from app.media.capability_schemas import GenerationControls, IntegerRange, ModelMetadata, ProviderMetadata
 from app.media.constraints import IMAGE_ASPECT_RATIOS, MAX_IMAGE_REFERENCES
 from app.media.schemas import ReferenceRole, GridArrangement, MediaReference
@@ -185,6 +185,7 @@ class OpenAIImageProvider(
             input_media=("text", "image"), output_media=("image",),
             operations=("text_to_image", "image_to_image", "reference_image_conditioning", "multi_reference_conditioning",),
             execution=ExecutionBehavior(mode="synchronous", polling_required=False),
+            reference_inputs=(ReferenceInputSlot(name="references", media_types=("image",), mime_types=("image/png", "image/jpeg", "image/webp", "image/jpg"), roles=get_args(ReferenceRole), max_count=8, max_bytes=32 * 1024 * 1024, strengths=("loose", "normal", "strong")),),
             reference_mime_types=("image/png", "image/jpeg", "image/webp", "image/jpg"),
             output_mime_types=("image/png",),
         ),

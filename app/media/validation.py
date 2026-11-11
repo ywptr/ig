@@ -135,13 +135,15 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
         operation = {"image": "text_to_image", "video": "text_to_video"}.get(request.media_type)
         if operation is None or operation not in technical.operations:
             raise MediaRequestValidationError("Model does not support text generation for requested media")
+    from app.artifacts.references import validate_reference_shape
+    validate_reference_shape(request.references, technical.reference_inputs)
     controls = metadata.capabilities
     if request.references and (
         "image" not in technical.input_media
         or "reference_image_conditioning" not in technical.operations
     ):
         raise MediaRequestValidationError("Model does not support reference images")
-    if len(request.references) > controls.max_references:
+    if not technical.reference_inputs and len(request.references) > controls.max_references:
         raise MediaRequestValidationError("Too many reference images for model")
     if len(request.references) > 1 and "multi_reference_conditioning" not in technical.operations:
         raise MediaRequestValidationError("Model does not support multiple references")

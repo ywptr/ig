@@ -8,6 +8,9 @@ from app.db.database import SessionLocal
 from app.db.models import Artifact
 from app.artifacts.storage.provider import artifact_store
 from app.artifacts.types import ArtifactPayload
+from app.artifacts.media_metadata import inspect_media
+from app.artifacts.schemas import ArtifactProvenance
+from app.artifacts.lineage import record_generation
 
 
 def stage_media_result(payload: ArtifactPayload) -> tuple[str, str]:
@@ -21,14 +24,19 @@ def stage_media_result(payload: ArtifactPayload) -> tuple[str, str]:
 def persist_media_result(
     db: Session, *, payload: ArtifactPayload, storage_uri: str, filename: str,
     tenant_id: str, user_id: str, provider: str, model: str,
+    job_id: str | None = None, execution_id: str | None = None, inputs=(), media_properties: dict | None = None,
 ) -> Artifact:
     """Persist a staged result in the caller's fenced completion transaction."""
-    return create_artifact(
+    artifact = create_artifact(
         db, tenant_id=tenant_id, user_id=user_id, media_type=payload.media_type,
         mime_type=payload.mime_type, storage_uri=storage_uri, filename=filename,
         size_bytes=len(payload.data),
         metadata={**payload.metadata, "provider": provider, "model": model},
+        provenance=ArtifactProvenance.GENERATED, media_properties=media_properties,
     )
+    record_generation(db, artifact, inputs=inputs, job_id=job_id, execution_id=execution_id)
+    return artifact
+
 
 def create_artifact(
     db: Session,
@@ -42,6 +50,8 @@ def create_artifact(
     size_bytes: int | None = None,
     metadata: dict | None = None,
     parent_artifact_id: str | None = None,
+    provenance: ArtifactProvenance = ArtifactProvenance.UNKNOWN,
+    media_properties: dict | None = None,
 ) -> Artifact:
     artifact = Artifact(
         artifact_id=str(uuid4()),
@@ -54,6 +64,9 @@ def create_artifact(
         size_bytes=size_bytes,
         metadata_json=metadata,
         parent_artifact_id=parent_artifact_id,
+        provenance=provenance,
+        **{key: value for key, value in (media_properties or {}).items()
+           if key in {"width", "height", "duration_seconds", "fps", "sha256"}},
     )
 
     db.add(artifact)
@@ -98,7 +111,7 @@ def list_artifacts(
                 Artifact.user_id == user_id,
                 Artifact.tenant_id == tenant_id
             )
-            .order_by(Artifact.created_at.desc())
+            .order_by(Artifact.created_at.desc(), Artifact.artifact_id.desc())
             .limit(limit)
         )
 
@@ -130,6 +143,8 @@ def create_uploaded_artifact(
             tenant_id=tenant_id,
             user_id=user_id,
             media_type="image",
+            provenance=ArtifactProvenance.UPLOADED,
+            media_properties=inspect_media(data, "image"),
             storage_uri=storage_uri,
             mime_type=mime_type,
             filename=filename,

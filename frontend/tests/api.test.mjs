@@ -98,3 +98,23 @@ test("invalid capability data is isolated from the independently usable Jobs API
     await assert.rejects(getMediaCapabilities(), /invalid capability document/);
     assert.deepEqual(await getJobs(), []);
 });
+
+test("artifact page client carries cursor, filters and cancellation without requesting media bytes", async t => {
+    const { listArtifactPage } = await import(sourceURL("api/artifacts.ts"));
+    const signal = new AbortController().signal;
+    fakeFetch(t, (url, options) => {
+        const query = new URL(url, "http://ig.test");
+        assert.equal(query.pathname, "/v2/artifacts/page");
+        assert.equal(query.searchParams.get("cursor"), "opaque+/=");
+        assert.equal(query.searchParams.get("q"), "blue_100%");
+        assert.equal(query.searchParams.get("provenance"), "uploaded");
+        assert.equal(query.searchParams.get("page_size"), "20");
+        assert.equal(options.signal, signal);
+        assert.equal(options.credentials, "same-origin");
+        return json({ items: [{ artifact_id: "a", provenance: "uploaded", preview: { status: "missing", url: "/v2/artifacts/a/preview?v=1" } }],
+            next_cursor: null, has_more: false });
+    });
+    const page = await listArtifactPage({ cursor: "opaque+/=", q: "blue_100%", provenance: "uploaded", page_size: 20 }, signal);
+    assert.equal(page.items[0].artifact_id, "a");
+    assert.equal(page.has_more, false);
+});

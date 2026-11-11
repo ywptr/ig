@@ -1,5 +1,5 @@
 """Alibaba Model Studio Wan API translation. No job/control-plane dependency."""
-from app.media.technical import TechnicalCapabilities, ExecutionBehavior
+from app.media.technical import TechnicalCapabilities, ExecutionBehavior, ReferenceInputSlot
 
 import base64
 import re
@@ -38,6 +38,7 @@ class AlibabaWanVideoProvider(VideoProviderAdapter):
             input_media=("text", "image"), output_media=("video",),
             operations=("text_to_video", "image_to_video", "reference_image_conditioning",),
             execution=ExecutionBehavior(mode="asynchronous", polling_required=True),
+            reference_inputs=(ReferenceInputSlot(name="first_frame", media_types=("image",), mime_types=("image/png", "image/jpeg", "image/webp"), roles=("first_frame",), max_count=1, max_bytes=10 * 1024 * 1024),),
             reference_mime_types=("image/png", "image/jpeg", "image/webp"),
             output_mime_types=("video/mp4",),
             max_prompt_characters=20000),

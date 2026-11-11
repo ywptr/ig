@@ -24,6 +24,7 @@ ROUTE_SCOPES = {
     ("GET", "app.api.jobs.list_job_executions"): ("jobs:read", "/v2/jobs/{job_id}/executions"),
     ("GET", "app.api.executions.list_executions"): ("jobs:read", "/v2/executions"),
     ("GET", "app.api.executions.get_execution"): ("jobs:read", "/v2/executions/{execution_id}"),
+    ("GET", "app.api.artifacts.read_artifact_page"): ("artifacts:read", "/v2/artifacts/page"),
     ("GET", "app.api.artifacts.read_artifacts"): ("artifacts:read", "/v2/artifacts"),
     ("GET", "app.api.artifacts.read_artifact"): ("artifacts:read", "/v2/artifacts/{artifact_id}"),
     ("GET", "app.api.artifacts.read_artifact_preview"): ("artifacts:read", "/v2/artifacts/{artifact_id}/preview"),

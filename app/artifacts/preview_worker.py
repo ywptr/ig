@@ -78,6 +78,20 @@ def video_preview(source, destination):
     return {"width": sheet.width, "height": sheet.height, "frame_count": len(frames), "positions": positions}
 
 
+def video_metadata(source):
+    import av
+    av.logging.set_level(av.logging.ERROR)
+    with av.open(str(source), format="mov", options={"protocol_whitelist": "file,pipe", "enable_drefs": "0"}) as container:
+        stream = container.streams.video[0]
+        width, height = stream.codec_context.width, stream.codec_context.height
+        dimensions(width, height)
+        duration = float(stream.duration * stream.time_base) if stream.duration is not None else float(container.duration / av.time_base)
+        fps = float(stream.average_rate)
+        if not math.isfinite(duration) or not 0 < duration <= MAX_VIDEO_SECONDS or not math.isfinite(fps) or not 0 < fps <= 1000:
+            raise ValueError("Unsupported media timing")
+        return {"width": width, "height": height, "duration_seconds": duration, "fps": fps}
+
+
 def main():
     # Apply limits before loading native codecs. The parent additionally enforces
     # a wall-clock deadline and kills the entire subprocess group on timeout.
@@ -88,7 +102,10 @@ def main():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     try:
         kind, source, destination = sys.argv[1:]
-        result = image_preview(Path(source), Path(destination)) if kind == "thumbnail" else video_preview(Path(source), Path(destination))
+        if kind == "metadata":
+            result = video_metadata(Path(source))
+        else:
+            result = image_preview(Path(source), Path(destination)) if kind == "thumbnail" else video_preview(Path(source), Path(destination))
         print(json.dumps(result, allow_nan=False))
     except Exception:
         # Never serialize decoder diagnostics, filesystem paths or source data.

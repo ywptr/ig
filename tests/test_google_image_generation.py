@@ -162,28 +162,26 @@ class GoogleImageGenerationTests(MediaJobTestCase):
     def test_other_user_reference_rejected_before_bytes_or_http(self):
         artifact_id = self.reference(user="user-two")
         response = self.submit(references=[{"artifact_id": artifact_id}])
-        with self.assertRaisesRegex(RuntimeError, "not accessible"):
-            self.execute(response)
+        self.assertEqual(response.status_code, 400, response.text)
         self.http.assert_not_called()
         self.store.iter_bytes.assert_not_called()
         with self.sessions() as db:
-            self.assertEqual(db.scalar(select(Job)).status, "failed")
-            # Existing image projection gap, documented rather than refactored here.
-            self.assertEqual(db.scalar(select(ImageRequest)).status, "generating")
+            self.assertIsNone(db.scalar(select(Job)))
+            self.assertIsNone(db.scalar(select(ImageRequest)))
 
     def test_other_tenant_reference_rejected_before_bytes_or_http(self):
         artifact_id = self.reference(tenant="tenant-two")
         response = self.submit(references=[{"artifact_id": artifact_id}])
-        with self.assertRaisesRegex(RuntimeError, "not accessible"):
-            self.execute(response)
+        self.assertEqual(response.status_code, 400, response.text)
         self.http.assert_not_called()
         self.store.iter_bytes.assert_not_called()
 
     def test_unsupported_reference_mime_rejected_before_provider_http(self):
         artifact_id = self.reference(mime_type="image/svg+xml")
-        with self.assertRaisesRegex(ValueError, "Unsupported image reference"):
-            self.execute(self.submit(references=[{"artifact_id": artifact_id}]))
+        response = self.submit(references=[{"artifact_id": artifact_id}])
+        self.assertEqual(response.status_code, 400, response.text)
         self.http.assert_not_called()
+        self.store.iter_bytes.assert_not_called()
 
     def test_non_png_artifact_filename_matches_mime(self):
         for data, mime_type, extension in ((JPEG, "image/jpeg", ".jpg"), (WEBP, "image/webp", ".webp")):

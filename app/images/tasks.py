@@ -3,6 +3,9 @@ from dataclasses import replace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.artifacts.media_metadata import inspect_media
+from app.artifacts.lineage import record_generation
+from app.executions.context import current_execution
 from app.artifacts.service import create_artifact
 from app.artifacts.storage.provider import (
     artifact_store,
@@ -17,7 +20,6 @@ from app.media.providers.registry import (
     resolve_image_model,
 )
 from app.db.models import (
-    Artifact,
     ImageRequest,
 )
 from app.media.providers.base import (
@@ -269,7 +271,9 @@ def persist_image_result(
         storage_uri=storage_uri,
         mime_type=result.mime_type,
         filename=filename,
-        size_bytes=result.size_bytes,
+        size_bytes=len(result.data),
+        provenance="generated",
+        media_properties=inspect_media(result.data, "image"),
         metadata={
             **selection_metadata(input_data),
             "provider": result.provider,
@@ -303,6 +307,9 @@ def persist_image_result(
         },
     )
 
+    identity = current_execution()
+    record_generation(db, artifact, inputs=input_data.get("references") or [],
+        job_id=identity.job_id if identity else None, execution_id=identity.execution_id if identity else None)
     return artifact
 
 
@@ -515,87 +522,13 @@ def resolve_image_references(
     input_data: dict,
     image_record: ImageRequest,
 ) -> list[ResolvedImageReference]:
-    references = (
-        input_data.get("references")
-        or []
-    )
-
-    resolved_references: list[
-        ResolvedImageReference
-    ] = []
-
-    for reference in references:
-        artifact_id = reference.get(
-            "artifact_id"
-        )
-
-        if not artifact_id:
-            raise RuntimeError(
-                "Reference artifact_id is required"
-            )
-
-        statement = select(
-            Artifact
-        ).where(
-            Artifact.artifact_id
-            == artifact_id,
-            Artifact.tenant_id
-            == image_record.tenant_id,
-            Artifact.user_id
-            == image_record.user_id,
-        )
-
-        artifact = db.scalar(
-            statement
-        )
-
-        if artifact is None:
-            raise RuntimeError(
-                "Reference artifact not found "
-                f"or not accessible: "
-                f"{artifact_id}"
-            )
-
-        if artifact.media_type != "image":
-            raise RuntimeError(
-                "Image generation references "
-                "must be image artifacts"
-            )
-
-        if not artifact_store.exists(
-            artifact.storage_uri
-        ):
-            raise RuntimeError(
-                "Reference artifact content "
-                f"is missing: {artifact_id}"
-            )
-
-        data = b"".join(
-            artifact_store.iter_bytes(
-                artifact.storage_uri
-            )
-        )
-
-        resolved_references.append(
-            ResolvedImageReference(
-                artifact_id=(
-                    artifact.artifact_id
-                ),
-                role=reference.get(
-                    "role",
-                    "previous_output",
-                ),
-                strength=reference.get(
-                    "strength",
-                    "normal",
-                ),
-                mime_type=(
-                    artifact.mime_type
-                    or "image/png"
-                ),
-                filename=artifact.filename,
-                data=data,
-            )
-        )
-
-    return resolved_references
+    from app.artifacts.references import reference_slots, resolve_references
+    selection = input_data.get("selection") or input_data.get("advanced") or {}
+    provider = selection.get("provider") or DEFAULT_IMAGE_PROVIDER
+    model = selection.get("model") or ""
+    rows = resolve_references(db, input_data.get("references") or [],
+        slots=reference_slots(provider, model, "image"), tenant_id=image_record.tenant_id,
+        user_id=image_record.user_id, store=artifact_store, read_bytes=True)
+    return [ResolvedImageReference(artifact_id=row.artifact_id, role=values.get("role", "previous_output"),
+        strength=values.get("strength", "normal"), mime_type=row.mime_type,
+        filename=row.filename, data=data) for row, values, data in rows]

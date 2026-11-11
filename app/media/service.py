@@ -86,7 +86,8 @@ def submit_media_generation(
 
     if request.media_type == "video":
         selection = resolve_video_selection(db, request, tenant_id=tenant_id)
-        resolve_video_references(db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=False)
+        resolve_video_references(db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=False,
+                                 provider=selection.provider, model=selection.model)
         job = create_job(
             db, capability="video.generate", tenant_id=tenant_id, user_id=user_id,
             defer_dispatch=defer_dispatch,

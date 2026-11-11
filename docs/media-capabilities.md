@@ -191,3 +191,11 @@ Execution support must be implemented and tested separately before registration;
 a declaration does not create an executable path. This milestone adds no provider,
 video execution path, selector, external model-catalog fetch, or remote health poll.
 The pre-existing Alibaba video implementation remains in the checkout.
+
+### Artifact reference slots (IG#0003)
+
+`technical.reference_inputs` now declares typed per-slot roles, media/MIME types,
+required/optional counts, strengths and per-input byte limits. Existing flat
+controls remain available for compatible consumers. See the
+[artifact-library contract](artifact-library-foundations.md#typed-reference-input-contract)
+for current model declarations and shared server-side ownership/byte validation.
