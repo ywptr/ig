@@ -743,3 +743,14 @@ textarea {
 .picker-search { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: 1rem; }
 .artifact-picker input, .artifact-picker select { max-width: 100%; }
 .artifact-picker button:focus-visible, .reference-section button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+
+.artifact-prompt-editor { position: relative; }
+.artifact-autocomplete { border: 1px solid #a1a1aa; border-radius: 8px; padding: .75rem; margin: .5rem 0; background: #fff; max-height: 360px; overflow: auto; }
+.mention-option { display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left; padding: .5rem; background: white; border: 1px solid #e4e4e7; border-radius: 6px; margin: .25rem 0; overflow-wrap: anywhere; }
+.mention-option[aria-selected="true"] { border-color: #2563eb; background: #eff6ff; }
+.mention-option small { display: block; color: #52525b; margin-top: .2rem; }
+.mention-role-choice { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.mention-role-choice p { flex-basis: 100%; }
+.prompt-mentions { display: flex; gap: .4rem; flex-wrap: wrap; margin: .5rem 0; }
+.prompt-mention { border-radius: 6px; padding: .3rem .5rem; background: #eff6ff; border: 1px solid #93c5fd; font-size: .8rem; overflow-wrap: anywhere; }
+.prompt-mention.invalid { background: #fff1f2; border-color: #fda4af; }

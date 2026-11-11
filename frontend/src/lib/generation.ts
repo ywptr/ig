@@ -1,3 +1,4 @@
+import { compilePrompt, type ArtifactMention } from "./mentions";
 import { referenceErrors, sharedReferenceSlots, structuredReferences, type Attachment } from "./references";
 import type { Artifact, GenerationCapabilities, GenerationResult, GenerationSubmission, InterfaceLevel,
     MediaCapabilities, MediaCapability, MediaGenerationRequest, MediaModel, MediaType } from "../types/media";
@@ -14,13 +15,14 @@ export function generationMediaType(capability: string): MediaType | null {
 }
 
 export interface LabForm {
+    mentions: ArtifactMention[];
     references: Attachment[];
     mode: InterfaceLevel; media: MediaType; prompt: string; purpose: string;
     provider: string; model: string; aspect: string; quality: string; style: string;
     resolution: string; duration: number | null; audio: boolean; count: number | null;
 }
 export const INITIAL_FORM: LabForm = {
-    references: [],
+    mentions: [], references: [],
     mode: "easy", media: "image", prompt: "", purpose: "general", provider: "", model: "",
     aspect: "", quality: "", style: "", resolution: "", duration: null, audio: false, count: null,
 };
@@ -94,7 +96,7 @@ export function buildMediaRequest(capabilities: MediaCapabilities, form: LabForm
     if (!values.prompt.trim()) throw new Error("Describe what you want to generate.");
     const errors = referenceErrors(form.references, referenceSlots);
     if (errors.length) throw new Error(errors[0]);
-    const base = { ...(form.references.length ? { references: structuredReferences(form.references) } : {}), interface_level: values.mode, intent: { description: values.prompt.trim() },
+    const base = { ...(form.references.length ? { references: structuredReferences(form.references) } : {}), interface_level: values.mode, intent: { description: compilePrompt(form, referenceSlots) },
         ...(values.provider ? { advanced: { provider: values.provider, ...(values.model ? { model: values.model } : {}) } } : {}) };
     const aspect = values.aspect ? { aspect_ratio: values.aspect } : {};
     if (values.media === "image") return { ...base, media_type: "image", output: {

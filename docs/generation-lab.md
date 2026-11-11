@@ -154,9 +154,9 @@ previews have a lightweight fallback and do not block compatible selection. The
 native modal dialog confines keyboard focus, supports Escape, and returns focus
 to Add reference; selection uses ordinary buttons and labeled selects.
 
-IG#0005 can reuse attachment state and structured references for `@artifact`
-mentions. Mention parsing/token reconciliation, Google Drive/Photos, preview
-retry/admin actions and storage lifecycle changes are not part of IG#0004.
+IG#0005 extends these same attachments with prompt mentions (below). Google
+Drive/Photos, preview retry/admin actions and storage lifecycle changes remain
+out of scope.
 
 Additional checks:
 
@@ -170,3 +170,65 @@ node --experimental-websocket --test tests/*.test.mjs
 search/pagination, role/strength edits, removal, model-change validation, first
 frame, upload rejection/success, focus return and preview-only network traffic.
 It skips when Chromium or WebSocket support is absent. No live generation is billed.
+
+## Prompt mentions (IG#0005)
+
+Type `@` at a word boundary in the prompt to open artifact suggestions; `@hero`
+searches filenames for `hero`. Search is debounced and uses the same private
+`/v2/artifacts/page` API, ten rows at a time, with **More artifacts** pagination.
+Suggestions show preview, filename, media, provenance and creation time. Media,
+MIME, known bytes, counts and roles use the same capability contract as Add
+reference. Incompatible choices are disabled; originals/video are never preloaded.
+
+Arrow Up/Down moves the active eligible suggestion, Enter selects it, and Escape
+closes suggestions while retaining editor focus. Choices also support ordinary
+button/Tab navigation. If multiple roles are valid, explicitly choose a role and
+press **Insert mention**. A single valid role (such as `first_frame`) needs no
+extra choice. Existing attachments reuse their already chosen role.
+
+Selection inserts a readable `@filename` marker and records a structured span:
+`mention_id`, `artifact_id`, snapshot `display_label`, and start/end offsets.
+Role and strength are read from the linked IG#0004 attachment, never duplicated
+as an independent reference system. Linked-mention badges below the textarea show
+the current role/strength and invalid state. Offsets are editing positions only;
+Artifact IDs remain authoritative. Later filename changes, search order and page
+changes do not alter the selected ID or label snapshot.
+
+Every Artifact has one attachment card in this UI. Selecting it twice creates two
+visible spans but one structured reference. Selecting an Artifact already attached
+through Add reference reuses that card. Using one Artifact under simultaneous
+different roles is not exposed: edit its card to deliberately change the shared
+role. Strength editing works through the same existing cards.
+
+Editing text around a span preserves it. Editing through a marker makes that
+marker ordinary text. Removing the final span also removes its attachment only
+if mentions originally created that attachment; independently attached cards stay.
+Removing an attachment card converts every linked marker to ordinary text and
+removes its linked badges. Copy/pasting or undoing raw marker text does not create
+new ID-backed authority; select a suggestion again to link it.
+
+Before submission, known spans compile to plain numbered reference wording in
+attachment order. Unselected `@text` is left unchanged. For example:
+
+- Image: select `hero.png` in `Use @hero.png beside a lighthouse`, choose
+  `character`, and optionally edit strength. The prompt becomes
+  `Use reference image 1 beside a lighthouse`; the request separately contains
+  `references: [{artifact_id: "<selected ID>", role: "character", strength: "normal"}]`.
+- Alibaba video: select an eligible image in `Animate @hero.png`. Its sole role is
+  `first_frame`, with no strength. The compiled prompt is
+  `Animate first frame (reference image 1)` and structured references contain
+  `{artifact_id: "<selected ID>", role: "first_frame"}`.
+
+Switching media/provider/model preserves the draft markers and cards, marks
+incompatible mentions, and blocks submission until corrected or removed. Missing
+attachments, damaged spans and unsupported references also block compilation.
+There is no backend mention route, filename resolution, or authorization based on
+prompt parsing. Existing server-side tenant/owner, capability and byte validation
+remains authoritative.
+
+The reusable `ArtifactPromptEditor`/`ArtifactAutocomplete` components accept draft,
+slots and change callbacks. `lib/mentions.ts` handles edits and compilation without
+navigation or top-level route dependencies, so an embedded Generation Lab can use
+the same components. Drafts remain in memory; cross-session draft persistence and
+a rich-text/token editor are not introduced. IG#0006 storage lifecycle/provider
+routing, Drive/Photos and video resiliency remain separate work.

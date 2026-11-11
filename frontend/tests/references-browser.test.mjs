@@ -30,7 +30,7 @@ else body=[];
 return new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}}); };
 createRoot(document.getElementById('root')).render(<GenerationLab results={[]} receipts={[]} loading={false} error={null} onRefresh={()=>{}} onAccepted={()=>{}} />);
 `;
-test("browser attachment workflow: keyboard, search, pagination, upload, model validation and preview-only browsing", {skip:!browser || typeof WebSocket!=="function",timeout:45000}, async t => {
+async function withLab(t, run) {
     const mediaRequests=[];
     const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=', 'base64');
     const server=await createServer({root:new URL('..',import.meta.url).pathname,configFile:false,server:{host:'127.0.0.1',port:0},plugins:[{name:'reference-fixture',resolveId(id){if(id==='/reference-test.tsx')return id;},load(id){if(id==='/reference-test.tsx')return fixture;},configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url==='/fixture'){res.setHeader('Content-Type','text/html');res.end('<html><body><div id="root"></div><script type="module" src="/reference-test.tsx"></script></body></html>');}else if(req.url.startsWith('/v2/artifacts/')){mediaRequests.push(req.url);res.setHeader('Content-Type','image/png');res.end(pixel);}else next();});}}]});
@@ -68,6 +68,9 @@ test("browser attachment workflow: keyboard, search, pagination, upload, model v
     const change=(selector,value)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:e instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e instanceof HTMLSelectElement?'change':'input',{bubbles:true}));})()`);
     await call('Page.navigate',{url:`http://127.0.0.1:${server.httpServer.address().port}/fixture`});
     await wait(`!!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Add reference')`);
+    await run({ evaluate, wait, click, change, call, mediaRequests });
+}
+test("browser attachment workflow: keyboard, search, pagination, upload, model validation and preview-only browsing", {skip:!browser || typeof WebSocket!=="function",timeout:45000}, async t => withLab(t, async ({ evaluate, wait, click, change, call, mediaRequests }) => {
     await click('Add reference');
     await wait(`!!document.querySelector('dialog[open] .artifact-picker-item')`);
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('.reference-thumbnail')).width`),'64px');
@@ -128,4 +131,72 @@ test("browser attachment workflow: keyboard, search, pagination, upload, model v
     assert.equal(mediaRequests.some(url=>url.includes('/content')),false);
     assert.equal(await evaluate(`document.querySelectorAll('video').length`),0);
     assert.ok((await evaluate('window.apiCalls')).some(url=>url.includes('cursor=next')));
-});
+}));
+
+test("browser @mentions: autocomplete, explicit role, keyboard, reuse, deletion, model changes and zero original requests", {skip:!browser || typeof WebSocket!=="function",timeout:45000}, async t => withLab(t, async ({ evaluate, wait, click, change, call, mediaRequests }) => {
+    const key = async (key, code, windowsVirtualKeyCode) => {
+        await call('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode});
+        await call('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode});
+    };
+    await evaluate(`document.querySelector('textarea').focus()`);
+    await change('textarea','Use @');
+    await wait(`!!document.querySelector('[aria-label="Artifact autocomplete"]')`);
+    assert.equal(await evaluate(`document.querySelector('textarea').getAttribute('aria-expanded')`),'true');
+    await change('textarea','Use @fi');
+    await wait(`document.querySelectorAll('[role=option]').length===2`);
+    assert.equal(await evaluate(`document.querySelectorAll('[role=option]:disabled').length`),1);
+    assert.ok((await evaluate('window.apiCalls')).some(url=>new URL(url,'http://ig').searchParams.get('q')==='fi'));
+    await click('More artifacts');await wait(`document.querySelectorAll('[role=option]').length===3`);
+    await evaluate(`document.querySelector('textarea').focus()`);
+    await key('ArrowDown','ArrowDown',40);await key('ArrowUp','ArrowUp',38);
+    await key('Enter','Enter',13);
+    await wait(`!!document.querySelector('.mention-role-choice')`);
+    assert.equal(await evaluate(`document.querySelector('.mention-role-choice button').disabled`),true);
+    await change('.mention-role-choice select','character');await click('Insert mention');
+    await wait(`document.querySelectorAll('.prompt-mention').length===1`);
+    assert.equal(await evaluate(`document.querySelector('textarea').value`),'Use @first.png ');
+    assert.equal(await evaluate(`document.querySelectorAll('.reference-card').length`),1);
+    await wait(`document.activeElement.tagName==='TEXTAREA'`);
+    await change('.reference-card select','style');await change('.reference-card label:nth-of-type(2) select','strong');
+    await wait(`document.querySelector('.prompt-mention').textContent.includes('style') && document.querySelector('.prompt-mention').textContent.includes('strong')`);
+    await evaluate(`document.querySelector('textarea').focus()`);
+    await change('textarea','Use @first.png and @fi');
+    await wait(`!!document.querySelector('[role=option]:not(:disabled)')`);
+    await key('Enter','Enter',13);await wait(`document.querySelectorAll('.prompt-mention').length===2`);
+    assert.equal(await evaluate(`document.querySelectorAll('.reference-card').length`),1);
+    await evaluate(`document.querySelector('.generate-button').click()`);await wait(`window.payloads.length===1`);
+    assert.deepEqual(await evaluate('window.payloads[0].references'),[{artifact_id:'first',role:'style',strength:'strong'}]);
+    assert.equal(await evaluate('window.payloads[0].intent.description'),'Use reference image 1 and reference image 1');
+    await click('Video');await wait(`!!document.querySelector('.prompt-mention.invalid')`);
+    assert.equal(await evaluate(`document.querySelector('.generate-button').disabled`),true);
+    assert.equal(await evaluate(`document.querySelector('textarea').value`),'Use @first.png and @first.png ');
+    await click('Remove');await wait(`document.querySelectorAll('.prompt-mention').length===0`);
+    assert.equal(await evaluate(`document.querySelector('textarea').value.includes('@first.png')`),true);
+    await evaluate(`document.querySelector('textarea').focus()`);await change('textarea','Animate @fi');
+    await wait(`!!document.querySelector('[role=option]:not(:disabled)')`);await key('Enter','Enter',13);
+    await wait(`document.querySelectorAll('.prompt-mention').length===1`);
+    assert.equal(await evaluate(`document.querySelector('.reference-card select').value`),'first_frame');
+    assert.equal(await evaluate(`document.querySelectorAll('.reference-card select').length`),1);
+    await evaluate(`document.querySelector('.generate-button').click()`);await wait(`window.payloads.length===2`);
+    assert.deepEqual(await evaluate('window.payloads[1].references'),[{artifact_id:'first',role:'first_frame'}]);
+    assert.equal(await evaluate('window.payloads[1].intent.description'),'Animate first frame (reference image 1)');
+    await evaluate(`document.querySelector('textarea').focus()`);await change('textarea','Animate a scene');
+    await wait(`document.querySelectorAll('.reference-card').length===0`);
+    // A manually attached reference survives deletion of its only mention.
+    await click('Add reference');await wait(`!!document.querySelector('.artifact-picker-item')`);
+    await evaluate(`document.querySelector('.artifact-picker-item').click()`);await wait(`!document.querySelector('dialog')`);
+    await evaluate(`document.querySelector('textarea').focus()`);await change('textarea','Manual @fi');
+    await wait(`!!document.querySelector('[role=option]:not(:disabled)')`);await key('Enter','Enter',13);
+    await wait(`document.querySelectorAll('.prompt-mention').length===1`);
+    await change('textarea','Manual reference stays');await wait(`document.querySelectorAll('.prompt-mention').length===0`);
+    assert.equal(await evaluate(`document.querySelectorAll('.reference-card').length`),1);
+    await evaluate(`document.querySelector('textarea').focus()`);await change('textarea','Raw @unselected');
+    await wait(`!!document.querySelector('[aria-label="Artifact autocomplete"]')`);await key('Escape','Escape',27);
+    await wait(`!document.querySelector('[aria-label="Artifact autocomplete"]')`);
+    await wait(`document.activeElement.tagName==='TEXTAREA'`);
+    await evaluate(`document.querySelector('.generate-button').click()`);await wait(`window.payloads.length===3`);
+    assert.equal(await evaluate('window.payloads[2].intent.description'),'Raw @unselected');
+    assert.ok(mediaRequests.some(url=>url.includes('/preview')));
+    assert.equal(mediaRequests.some(url=>url.includes('/content')),false);
+    assert.equal(await evaluate(`document.querySelectorAll('video').length`),0);
+}));

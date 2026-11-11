@@ -1,6 +1,6 @@
 import type { Artifact, ReferenceInputSlot } from "../types/media";
 
-export interface Attachment { artifact: Artifact; artifact_id: string; role: string; strength?: "loose" | "normal" | "strong" }
+export interface Attachment { source?: "mention"; artifact: Artifact; artifact_id: string; role: string; strength?: "loose" | "normal" | "strong" }
 export function compatible(artifact: Artifact, slot: ReferenceInputSlot) {
     return slot.media_types.includes(artifact.media_type) && slot.mime_types.includes(artifact.mime_type ?? "")
         && (artifact.size_bytes === null || (artifact.size_bytes > 0 && artifact.size_bytes <= slot.max_bytes));

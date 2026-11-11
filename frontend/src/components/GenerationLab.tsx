@@ -1,3 +1,5 @@
+import { ArtifactPromptEditor } from "./ArtifactPromptEditor";
+import { mentionErrors, updateAttachments } from "../lib/mentions";
 import { ReferenceAttachments } from "./ReferenceAttachments";
 import { referenceErrors } from "../lib/references";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -33,7 +35,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     }, [revision]);
     useEffect(() => () => submittingRequest.current?.abort(), []);
     const resolved = capabilities ? resolveLabForm(capabilities, form) : null;
-    const attachmentErrors = resolved ? referenceErrors(form.references, resolved.referenceSlots) : [];
+    const attachmentErrors = resolved ? [...referenceErrors(form.references, resolved.referenceSlots), ...mentionErrors(form, resolved.referenceSlots)] : [];
     function update(patch: Partial<LabForm>) {
         setForm(previous => ({ ...(capabilities ? resolveLabForm(capabilities, previous).values : previous), ...patch }));
     }
@@ -78,8 +80,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                 </div></fieldset>
                 <fieldset disabled={submitting} className="lab-fieldset">
                     <legend className="sr-only">Generation request</legend>
-                    <label className="lab-prompt">Prompt<textarea required rows={4} value={form.prompt}
-                        placeholder="Describe what you want to generate…" onChange={event => update({ prompt: event.target.value })} /></label>
+                    <ArtifactPromptEditor draft={form} slots={resolved.referenceSlots} onChange={update} />
                     {capabilities.interface_levels[form.mode].explicit_provider_selection ? <div className="lab-controls provider-controls">
                         <label>Provider<select value={resolved.values.provider} onChange={event => update({ provider: event.target.value, model: "" })}>
                             <option value="">Auto</option>{resolved.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.display_name}</option>)}
@@ -96,7 +97,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                     <p className="lab-help">{resolved.values.provider ? "Using the selected provider’s generic controls." : "Auto shows controls shared by available models. IG chooses the provider and model."}
                         {form.mode === "easy" && resolved.values.media === "image" ? " Medium and Hard add quality and style controls." : ""}</p>
                     <ReferenceAttachments key={JSON.stringify(resolved.referenceSlots)} references={form.references} slots={resolved.referenceSlots}
-                        onChange={references => update({ references })} />
+                        onChange={references => update(updateAttachments(form, references))} />
                     {attachmentErrors.length > 0 && <p className="error" role="alert">{attachmentErrors[0]}</p>}
                     <button className="generate-button" type="submit" disabled={!resolved.usable || !form.prompt.trim() || submitting || attachmentErrors.length > 0}>
                         {submitting ? "Submitting…" : `Generate ${resolved.values.media}`}</button>
