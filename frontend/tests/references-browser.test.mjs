@@ -1,0 +1,131 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { existsSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
+import { createServer } from "vite";
+let browser;
+try { const cache = join(homedir(), ".cache/ms-playwright"); browser = readdirSync(cache).filter(name => name.startsWith("chromium_headless_shell-")).map(name => join(cache, name, "chrome-headless-shell-linux64/chrome-headless-shell")).find(existsSync); } catch {}
+async function until(predicate) { for (let n = 0; n < 200; n++) { if (await predicate()) return; await delay(25); } throw new Error("Browser condition timed out"); }
+const fixture = `
+import React from 'react';
+import '/src/index.css';
+import { createRoot } from 'react-dom/client';
+import { GenerationLab } from '/src/components/GenerationLab.tsx';
+const slot = { name:'references', media_types:['image'], mime_types:['image/png','image/jpeg','image/webp'], roles:['character','style'], min_count:0, max_count:2, max_bytes:10485760, strengths:['loose','normal','strong'] };
+const controls = { text_to_media:true, reference_roles:slot.roles, max_references:2, aspect_ratios:['1:1'], resolutions:[], duration_seconds:null, audio:false, count:{min:1,max:1}, layout_types:['single'], quality_profiles:[], styles:[] };
+const technical = { version:1, input_media:['text','image'], output_media:['image'], operations:['text_to_image','reference_image_conditioning'], reference_inputs:[slot], reference_mime_types:slot.mime_types, output_mime_types:['image/png'], execution:{mode:'synchronous',polling_required:false,provider_cancellation_supported:false} };
+const model = (id, input) => ({id,display_name:id,available:true,usable:true,supported_interface_levels:['easy','medium','hard'],selectable_in:['hard'],capabilities:controls,technical:{...technical,reference_inputs:[input]}});
+const caps = {schema_version:1,interface_levels:Object.fromEntries(['easy','medium','hard'].map(mode=>[mode,{explicit_provider_selection:mode==='hard',explicit_model_selection:mode==='hard'}])),media_types:[{id:'image',available:true,purposes:[],providers:[{id:'test',display_name:'Test',available:true,configured:true,enabled:true,default_model:'image-model',default_model_available:true,models:[model('image-model',slot)]}]},{id:'video',available:true,purposes:[],providers:[{id:'motion',display_name:'Motion',available:true,default_model:'video-model',default_model_available:true,models:[model('video-model',{...slot,name:'first_frame',roles:['first_frame'],max_count:1,strengths:[]})]}]}]};
+const artifact = (id, mime='image/png') => ({artifact_id:id,filename:id+'.png',media_type:'image',mime_type:mime,size_bytes:10,metadata:{},preview:{status:id==='second'?'failed':'missing',url:'/v2/artifacts/'+id+'/preview'}});
+window.apiCalls=[]; window.payloads=[];
+window.fetch=async (url,options={})=> { window.apiCalls.push(String(url)); let body;
+if(url==='/v2/media/capabilities') body=caps;
+else if(String(url).startsWith('/v2/artifacts/page')) { const params=new URL(url,location.origin).searchParams; body=params.get('cursor')?{items:[artifact('second')],has_more:false,next_cursor:null}:{items:params.get('q')==='empty'?[]:[artifact('first'),artifact('bad','image/gif')],has_more:true,next_cursor:'next'}; }
+else if(url==='/v2/artifacts/uploads') { await new Promise(resolve=>setTimeout(resolve,200)); if(window.rejectUpload) return new Response(JSON.stringify({detail:'Upload rejected by IG'}),{status:413,headers:{'Content-Type':'application/json'}});body=artifact('uploaded'); }
+else if(url==='/v2/media/generations') {if(window.rejectGeneration)return new Response(JSON.stringify({detail:{message:'Reference artifact not found or not accessible'}}),{status:400,headers:{'Content-Type':'application/json'}});window.payloads.push(JSON.parse(options.body));body={media_type:window.payloads.at(-1).media_type,request_id:'request',job_id:'job',status:'queued'};}
+else body=[];
+return new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}}); };
+createRoot(document.getElementById('root')).render(<GenerationLab results={[]} receipts={[]} loading={false} error={null} onRefresh={()=>{}} onAccepted={()=>{}} />);
+`;
+test("browser attachment workflow: keyboard, search, pagination, upload, model validation and preview-only browsing", {skip:!browser || typeof WebSocket!=="function",timeout:45000}, async t => {
+    const mediaRequests=[];
+    const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=', 'base64');
+    const server=await createServer({root:new URL('..',import.meta.url).pathname,configFile:false,server:{host:'127.0.0.1',port:0},plugins:[{name:'reference-fixture',resolveId(id){if(id==='/reference-test.tsx')return id;},load(id){if(id==='/reference-test.tsx')return fixture;},configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url==='/fixture'){res.setHeader('Content-Type','text/html');res.end('<html><body><div id="root"></div><script type="module" src="/reference-test.tsx"></script></body></html>');}else if(req.url.startsWith('/v2/artifacts/')){mediaRequests.push(req.url);res.setHeader('Content-Type','image/png');res.end(pixel);}else next();});}}]});
+    await server.listen();t.after(()=>server.close());
+    const profile = mkdtempSync(join(tmpdir(), "ig-preview-browser-"));
+    const child = spawn(browser, ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
+        "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+    const exited = new Promise(resolve => child.once("exit", resolve));
+    t.after(async () => { child.kill(); await exited; rmSync(profile, { recursive: true, force: true }); });
+    let diagnostics = "";
+    child.stderr.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-16000); });
+    await until(() => diagnostics.includes("DevTools listening on") || child.exitCode !== null);
+    assert.equal(child.exitCode, null, diagnostics);
+    const port = new URL(diagnostics.match(/ws:\/\/[^\s]+/)[0]).port;
+    const target = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" }).then(response => response.json());
+    const socket = new WebSocket(target.webSocketDebuggerUrl);
+    t.after(() => socket.close());
+    await new Promise((resolve, reject) => { socket.addEventListener("open", resolve, { once: true }); socket.addEventListener("error", reject, { once: true }); });
+    let next = 0;
+    const pending = new Map();
+    socket.addEventListener("message", event => {
+        const message = JSON.parse(event.data);
+        if (pending.has(message.id)) { pending.get(message.id)(message); pending.delete(message.id); }
+    });
+    const call = (method, params = {}) => new Promise((resolve, reject) => {
+        const id = ++next;
+        pending.set(id, message => message.error ? reject(new Error(JSON.stringify(message.error))) : resolve(message.result));
+        socket.send(JSON.stringify({ id, method, params }));
+    });
+    await call("Page.enable");
+
+    const evaluate=async expression=>{const value=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(value.exceptionDetails)throw new Error(JSON.stringify(value.exceptionDetails));return value.result?.value;};
+    const wait=expression=>until(()=>evaluate(`Boolean(${expression})`));
+    const click=text=>evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)}).click()`);
+    const change=(selector,value)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:e instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e instanceof HTMLSelectElement?'change':'input',{bubbles:true}));})()`);
+    await call('Page.navigate',{url:`http://127.0.0.1:${server.httpServer.address().port}/fixture`});
+    await wait(`!!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Add reference')`);
+    await click('Add reference');
+    await wait(`!!document.querySelector('dialog[open] .artifact-picker-item')`);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('.reference-thumbnail')).width`),'64px');
+    assert.equal(await evaluate(`document.querySelector('dialog').contains(document.activeElement)`),true);
+    await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+    assert.equal(await evaluate(`document.querySelector('dialog').contains(document.activeElement)`),true);
+    assert.equal(await evaluate(`document.querySelectorAll('.artifact-picker-item:disabled').length`),1);
+    await change('input[type=search]','empty');
+    await evaluate(`document.querySelector('input[type=search]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`);
+    await wait(`document.querySelector('dialog').textContent.includes('No artifacts match')`);
+    await change('input[type=search]','first');await click('Search');
+    await wait(`!!document.querySelector('.artifact-picker-item')`);
+    await click('Load more');await wait(`document.querySelectorAll('.artifact-picker-item').length===3`);
+    assert.equal(await evaluate(`!!document.querySelector('.reference-fallback')`),true);
+    await evaluate(`document.querySelectorAll('.artifact-picker-item')[2].click()`);
+    await wait(`!document.querySelector('dialog') && !!document.querySelector('.reference-card')`);
+    assert.equal(await evaluate(`document.activeElement.textContent`),'Add reference');
+    await change('.reference-card select','style');
+    await change('.reference-card label:nth-of-type(2) select','strong');
+    await change('textarea','A plain prompt');
+    await evaluate(`document.querySelector('.generate-button').click()`);
+    await wait(`window.payloads.length===1`);
+    assert.deepEqual(await evaluate('window.payloads[0].references'),[{artifact_id:'second',role:'style',strength:'strong'}]);
+    assert.equal(await evaluate('window.payloads[0].intent.description'),'A plain prompt');
+    await click('Video');
+    await wait(`document.querySelector('.generate-button').disabled && document.querySelector('.reference-error')`);
+    await click('Remove');
+    await click('Add reference');await wait(`!!document.querySelector('dialog[open] .artifact-picker-item')`);
+    await evaluate(`document.querySelector('.artifact-picker-item').click()`);
+    await wait(`!document.querySelector('dialog')`);
+    assert.equal(await evaluate(`document.querySelector('.reference-card select').value`),'first_frame');
+    assert.equal(await evaluate(`document.querySelectorAll('.reference-card select').length`),1);
+    assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Add reference').disabled`),true);
+    await evaluate(`document.querySelector('.generate-button').click()`);await wait(`window.payloads.length===2`);
+    assert.deepEqual(await evaluate('window.payloads[1].references'),[{artifact_id:'first',role:'first_frame'}]);
+    await click('Remove');await click('Add reference');await wait(`!!document.querySelector('input[type=file]')`);
+    const fileChange=(type,size)=>evaluate(`(()=>{const e=document.querySelector('input[type=file]');const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(${size})],'upload.png',{type:${JSON.stringify(type)}}));e.files=transfer.files;e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await fileChange('image/gif',10);await wait(`document.querySelector('dialog [role=alert]')?.textContent.includes('supported')`);
+    await fileChange('image/png',10485761);await wait(`document.querySelector('dialog [role=alert]')?.textContent.includes('limit')`);
+    assert.equal(await evaluate(`window.apiCalls.filter(url=>url==='/v2/artifacts/uploads').length`),0);
+    await evaluate('window.rejectUpload=true');
+    await fileChange('image/png',10);await wait(`document.querySelector('dialog [role=status]')?.textContent.includes('Uploading')`);
+    await wait(`document.querySelector('dialog [role=alert]')?.textContent.includes('Upload rejected')`);
+    await evaluate('window.rejectUpload=false');
+    await fileChange('image/png',10);await wait(`!document.querySelector('dialog') && document.querySelector('.reference-card')?.textContent.includes('uploaded.png')`);
+    assert.equal(await evaluate(`window.apiCalls.filter(url=>url==='/v2/artifacts/uploads').length`),2);
+    await evaluate('window.rejectGeneration=true');
+    await evaluate(`document.querySelector('.generate-button').click()`);
+    await wait(`Array.from(document.querySelectorAll('[role=alert]')).some(e=>e.textContent.includes('not accessible'))`);
+    assert.equal(await evaluate(`document.querySelector('.reference-card')?.textContent.includes('uploaded.png')`),true);
+    await click('Remove');await click('Add reference');await wait(`!!document.querySelector('dialog[open]')`);
+    await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await wait(`!document.querySelector('dialog')`);
+    assert.equal(await evaluate(`document.activeElement.textContent`),'Add reference');
+    assert.ok(mediaRequests.some(url=>url.includes('/preview')));
+    assert.equal(mediaRequests.some(url=>url.includes('/content')),false);
+    assert.equal(await evaluate(`document.querySelectorAll('video').length`),0);
+    assert.ok((await evaluate('window.apiCalls')).some(url=>url.includes('cursor=next')));
+});

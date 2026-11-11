@@ -37,10 +37,9 @@ match the exact `Job.input.request_id`; video uses the explicit Job ID. Prompt o
 timestamp matching is never used.
 
 Completed Jobs resolve their latest Execution's explicit `metadata.artifact_id`,
-then fetch that Artifact. Image and video previews use only
-`/v2/artifacts/{artifact_id}/content`. No provider temporary URL or physical storage
-URI is used. Video uses native browser controls. Missing links and failed preview
-loads show useful errors/manual refresh rather than guessing an Artifact.
+then fetch that Artifact. Image and video browsing uses IG#0009 previews; original
+content is opened only by an explicit user action. No provider temporary URL or
+physical storage URI is used. Missing links and failed previews show fallbacks.
 
 Jobs in `queued`, `running`, `waiting` or `polling` are active. A shared Job feed
 refreshes about every three seconds after the previous request completes. It stops
@@ -59,8 +58,8 @@ Accepted image receipts missing from the recent list stop automatic recovery aft
 - Collapsed **Legacy image history** retains V1 records, including compatibility
   records for new images. It loads/refreshes manually and may duplicate recent Lab
   images. It has no separate active-image polling loop.
-- No reference/first-frame selector, Artifact ID input, panel-layout UI, request
-  replay, raw JSON inspector, pricing or provider-health checks are included.
+- No panel-layout UI, request replay, raw JSON inspector, pricing or provider-health
+  checks are included.
 - Auto uses conservative shared controls. Provider/model routing stays entirely
   with the backend, including its existing configuration and compatibility limits.
 - Existing Artifact delivery has no byte-range support; playback/seeking of larger
@@ -107,3 +106,67 @@ steps are a manual procedure, not an automated smoke test:
    failed-Job messages without exposing raw JSON, HTML or credentials.
 
 No live provider generation was executed during implementation.
+
+
+## Reference attachments (IG#0004)
+
+In Generation Lab, choose **Add reference** and either select a previous Artifact
+or upload a new image. Choose its role in the picker; after attachment, compact
+cards let you edit the role, choose a supported strength, or remove it:
+
+```text
+previous Artifact or image upload → role / strength → structured generation reference
+```
+
+The picker browses `GET /v2/artifacts/page`, newest first, 20 rows at a time.
+Search filename explicitly with Search or Enter; filter by generated, uploaded,
+or legacy/unknown provenance. Load more continues the cursor with the same
+filters. Incompatible media/MIME/known sizes and already attached IDs are disabled.
+An empty eligible page can still have more pages. Browsing does not poll.
+
+Eligibility, input counts, roles, strengths and byte limits come from
+`technical.reference_inputs`. Explicit model selection uses that model; an
+explicit provider with Auto model uses its default. Fully automatic selection
+uses conservative shared reference constraints across eligible models. A model
+without a declared reference contract disables attachments in that shared view;
+choose a model in Hard mode for its full supported inputs.
+
+Uploads use multipart `POST /v2/artifacts/uploads`: PNG, JPEG, or WebP only, up to
+10 MiB and no larger than the selected input allows. The picker shows uploading
+state and safe inline errors. Successful upload immediately attaches the returned
+Artifact, without another list lookup. Closing during upload cancels the client
+request; a server-completed upload may remain in the private library.
+
+Cards keep stable Artifact IDs plus display/preview metadata. Submission sends
+`references: [{artifact_id, role, strength?}]` separately from `intent.description`.
+Filenames and preview URLs never act as identities. Slots without strength support
+omit strength; a one-image `first_frame` slot naturally exposes only that role.
+
+Changing media/provider/model revalidates the retained cards. Invalid roles,
+strengths, media, sizes or counts show messages and block Generate until corrected
+or removed. Roles are never silently translated. The backend remains authoritative
+for ownership/access, actual byte limits and current capabilities; an Artifact
+that becomes inaccessible is rejected with the existing inline submission error.
+
+Picker/cards load only the authenticated preview endpoint, including video contact
+sheets. They never render original content or preload video. Processing/failed
+previews have a lightweight fallback and do not block compatible selection. The
+native modal dialog confines keyboard focus, supports Escape, and returns focus
+to Add reference; selection uses ordinary buttons and labeled selects.
+
+IG#0005 can reuse attachment state and structured references for `@artifact`
+mentions. Mention parsing/token reconciliation, Google Drive/Photos, preview
+retry/admin actions and storage lifecycle changes are not part of IG#0004.
+
+Additional checks:
+
+```bash
+node --test tests/*.test.mjs
+# With Chromium and its system libraries installed (Node 20):
+node --experimental-websocket --test tests/*.test.mjs
+```
+
+`references-browser.test.mjs` drives the real Lab with mocked APIs: selection,
+search/pagination, role/strength edits, removal, model-change validation, first
+frame, upload rejection/success, focus return and preview-only network traffic.
+It skips when Chromium or WebSocket support is absent. No live generation is billed.

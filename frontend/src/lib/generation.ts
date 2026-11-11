@@ -1,3 +1,4 @@
+import { referenceErrors, sharedReferenceSlots, structuredReferences, type Attachment } from "./references";
 import type { Artifact, GenerationCapabilities, GenerationResult, GenerationSubmission, InterfaceLevel,
     MediaCapabilities, MediaCapability, MediaGenerationRequest, MediaModel, MediaType } from "../types/media";
 import type { JobDetail } from "../types/Job";
@@ -13,11 +14,13 @@ export function generationMediaType(capability: string): MediaType | null {
 }
 
 export interface LabForm {
+    references: Attachment[];
     mode: InterfaceLevel; media: MediaType; prompt: string; purpose: string;
     provider: string; model: string; aspect: string; quality: string; style: string;
     resolution: string; duration: number | null; audio: boolean; count: number | null;
 }
 export const INITIAL_FORM: LabForm = {
+    references: [],
     mode: "easy", media: "image", prompt: "", purpose: "general", provider: "", model: "",
     aspect: "", quality: "", style: "", resolution: "", duration: null, audio: false, count: null,
 };
@@ -68,6 +71,8 @@ export function resolveLabForm(capabilities: MediaCapabilities, form: LabForm) {
     const selectedModel = rules.explicit_model_selection ? models.find(model => model.id === form.model) : undefined;
     // Auto never predicts IG routing: show only controls shared by eligible models.
     const controls = sharedControls(selectedModel ? [selectedModel] : provider ? models : media ? eligibleModels(media, form.mode) : []);
+    const referenceModels = selectedModel ? [selectedModel] : provider ? models.filter(model => model.id === provider.default_model) : media ? eligibleModels(media, form.mode) : [];
+    const referenceSlots = sharedReferenceSlots(referenceModels.map(model => model.technical?.reference_inputs ?? []));
     const validDefault = !provider || !!(provider.default_model_available && models.some(model => model.id === provider.default_model));
     const values = { ...form, media: (media?.id ?? form.media) as MediaType,
         provider: provider?.id ?? "", model: selectedModel?.id ?? "",
@@ -79,15 +84,17 @@ export function resolveLabForm(capabilities: MediaCapabilities, form: LabForm) {
         duration: bounded(form.duration, controls?.duration_seconds ?? null),
         count: bounded(form.count, controls?.count ?? null), audio: !!controls?.audio && form.audio,
     };
-    return { mediaOptions, media, providers, provider, models, controls, values,
+    return { mediaOptions, media, providers, provider, models, controls, values, referenceSlots,
         usable: !!media && !!controls && (!!selectedModel || validDefault) };
 }
 
 export function buildMediaRequest(capabilities: MediaCapabilities, form: LabForm): MediaGenerationRequest {
-    const { values, usable, controls } = resolveLabForm(capabilities, form);
+    const { values, usable, controls, referenceSlots } = resolveLabForm(capabilities, form);
     if (!usable) throw new Error("Choose an available media type and a supported model or default.");
     if (!values.prompt.trim()) throw new Error("Describe what you want to generate.");
-    const base = { interface_level: values.mode, intent: { description: values.prompt.trim() },
+    const errors = referenceErrors(form.references, referenceSlots);
+    if (errors.length) throw new Error(errors[0]);
+    const base = { ...(form.references.length ? { references: structuredReferences(form.references) } : {}), interface_level: values.mode, intent: { description: values.prompt.trim() },
         ...(values.provider ? { advanced: { provider: values.provider, ...(values.model ? { model: values.model } : {}) } } : {}) };
     const aspect = values.aspect ? { aspect_ratio: values.aspect } : {};
     if (values.media === "image") return { ...base, media_type: "image", output: {

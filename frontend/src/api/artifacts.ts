@@ -24,3 +24,10 @@ export function listArtifactPage(query: ArtifactQuery = {}, signal?: AbortSignal
     }
     return requestJSON<ArtifactPage>(`/v2/artifacts/page?${params}`, { signal });
 }
+
+export function uploadArtifact(file: File, signal?: AbortSignal) {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("origin", "reference");
+    return requestJSON<Artifact>("/v2/artifacts/uploads", { method: "POST", body, signal });
+}

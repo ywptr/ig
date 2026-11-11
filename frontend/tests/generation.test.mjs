@@ -1,13 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import ts from "typescript";
-
-// Use the project's existing compiler and Node test runner; no test dependencies.
-const source = readFileSync(new URL("../src/lib/generation.ts", import.meta.url), "utf8");
-const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } }).outputText;
+import { sourceURL } from "./import-source.mjs";
 const { INITIAL_FORM, buildMediaRequest, resolveLabForm, isActiveStatus, executionArtifactId, latestExecution,
-    matchesSubmission, pendingReceipt, resultFromJob } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
+    matchesSubmission, pendingReceipt, resultFromJob } = await import(sourceURL("lib/generation.ts"));
 
 const controls = { text_to_media: true, reference_roles: [], max_references: 0, aspect_ratios: ["1:1", "16:9"],
     resolutions: [], duration_seconds: null, audio: false, count: { min: 1, max: 1 }, layout_types: ["single"],

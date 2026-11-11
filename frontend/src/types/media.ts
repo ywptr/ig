@@ -99,6 +99,7 @@ export type MediaGenerationRequest = {
     interface_level: InterfaceLevel;
     intent: { description: string };
     advanced?: { provider: string; model?: string };
+    references?: { artifact_id: string; role: string; strength?: "loose" | "normal" | "strong" }[];
 } & ({ media_type: "image"; output: ImageOutput } | { media_type: "video"; output: VideoOutput });
 export interface MediaSubmission {
     media_type: MediaType;
@@ -145,7 +146,7 @@ export interface Artifact {
     generation?: { job_id: string; execution_id: string } | null;
     inputs?: ArtifactInput[];
     artifact_id: string;
-    media_type: MediaType;
+    media_type: MediaKind;
     mime_type: string | null;
     filename: string | null;
     size_bytes: number | null;

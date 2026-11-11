@@ -12,6 +12,12 @@ export async function getMediaCapabilities(signal?: AbortSignal): Promise<MediaC
     const value = await requestJSON<MediaCapabilities>("/v2/media/capabilities", { signal });
     try {
         const strings = (values: unknown) => Array.isArray(values) && values.every(value => typeof value === "string");
+        const validSlots = (slots: unknown) => slots === undefined || (Array.isArray(slots) && slots.every(slot =>
+            slot && typeof slot.name === "string" && strings(slot.media_types) && slot.media_types.length > 0
+            && strings(slot.mime_types) && slot.mime_types.length > 0 && strings(slot.roles) && slot.roles.length > 0
+            && strings(slot.strengths) && slot.strengths.every((strength: string) => ["loose", "normal", "strong"].includes(strength))
+            && Number.isInteger(slot.min_count) && slot.min_count >= 0 && Number.isInteger(slot.max_count)
+            && slot.max_count >= Math.max(1, slot.min_count) && Number.isInteger(slot.max_bytes) && slot.max_bytes > 0));
         const valid = value.schema_version === 1 && ["easy", "medium", "hard"].every(level => {
             const rules = value.interface_levels[level as keyof typeof value.interface_levels];
             return typeof rules.explicit_provider_selection === "boolean" && typeof rules.explicit_model_selection === "boolean";
@@ -23,7 +29,7 @@ export async function getMediaCapabilities(signal?: AbortSignal): Promise<MediaC
                     const controls = model.capabilities;
                     const technical = model.technical;
                     return typeof model.usable === "boolean" && (technical === null || (
-                        technical.version === 1 && strings(technical.input_media) && strings(technical.output_media)
+                        technical.version === 1 && validSlots(technical.reference_inputs) && strings(technical.input_media) && strings(technical.output_media)
                         && strings(technical.operations) && strings(technical.reference_mime_types)
                         && strings(technical.output_mime_types)
                         && ["synchronous", "asynchronous"].includes(technical.execution.mode)

@@ -1,3 +1,5 @@
+import { ReferenceAttachments } from "./ReferenceAttachments";
+import { referenceErrors } from "../lib/references";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getMediaCapabilities, submitMedia } from "../api/media";
 import { ApiError, safeMessage } from "../api/client";
@@ -31,6 +33,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     }, [revision]);
     useEffect(() => () => submittingRequest.current?.abort(), []);
     const resolved = capabilities ? resolveLabForm(capabilities, form) : null;
+    const attachmentErrors = resolved ? referenceErrors(form.references, resolved.referenceSlots) : [];
     function update(patch: Partial<LabForm>) {
         setForm(previous => ({ ...(capabilities ? resolveLabForm(capabilities, previous).values : previous), ...patch }));
     }
@@ -92,7 +95,10 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                     {!resolved.usable && <p className="error">No usable shared controls or provider default. Choose an available model in Hard mode.</p>}
                     <p className="lab-help">{resolved.values.provider ? "Using the selected provider’s generic controls." : "Auto shows controls shared by available models. IG chooses the provider and model."}
                         {form.mode === "easy" && resolved.values.media === "image" ? " Medium and Hard add quality and style controls." : ""}</p>
-                    <button className="generate-button" type="submit" disabled={!resolved.usable || !form.prompt.trim() || submitting}>
+                    <ReferenceAttachments key={JSON.stringify(resolved.referenceSlots)} references={form.references} slots={resolved.referenceSlots}
+                        onChange={references => update({ references })} />
+                    {attachmentErrors.length > 0 && <p className="error" role="alert">{attachmentErrors[0]}</p>}
+                    <button className="generate-button" type="submit" disabled={!resolved.usable || !form.prompt.trim() || submitting || attachmentErrors.length > 0}>
                         {submitting ? "Submitting…" : `Generate ${resolved.values.media}`}</button>
                 </fieldset>
             </>}
