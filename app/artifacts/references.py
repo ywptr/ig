@@ -45,6 +45,8 @@ def resolve_references(db, references, *, slots, tenant_id, user_id, store=None,
         row = rows.get(values.get("artifact_id"))
         if row is None:
             raise MediaRequestValidationError("Reference artifact not found or not accessible")
+        if row.cleanup_started_at is not None or row.content_removed_at is not None:
+            raise MediaRequestValidationError("Reference artifact content was removed")
         if row.media_type not in slot.media_types or row.mime_type not in slot.mime_types:
             raise MediaRequestValidationError("Unsupported reference media or MIME type")
         if row.size_bytes is not None and not 0 < row.size_bytes <= slot.max_bytes:

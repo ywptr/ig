@@ -1,5 +1,6 @@
 """Eager, bounded and durably cached mechanical Artifact derivatives."""
 from datetime import timedelta
+from app.artifacts.orphans import track_write
 from hashlib import sha256
 import json
 import logging
@@ -55,11 +56,12 @@ def diagnostic(artifact_id, media_type, stage, outcome, exc=None):
 
 def preview_metadata(artifact: Artifact, row: ArtifactPreview | None = None) -> dict:
     kind = kind_for(artifact.media_type, artifact.mime_type)
+    removed = artifact.cleanup_started_at is not None or artifact.content_removed_at is not None
     version = row.version if row is not None else VERSION
     return {
-        "status": row.status if row is not None else "missing" if kind else "unsupported",
+        "status": "deleted" if removed else row.status if row is not None else "missing" if kind else "unsupported",
         "kind": kind, "version": version,
-        "url": f"/v2/artifacts/{artifact.artifact_id}/preview?v={version}" if kind else None,
+        "url": f"/v2/artifacts/{artifact.artifact_id}/preview?v={version}" if kind and not removed else None,
         "mime_type": "image/webp" if kind else None,
         "width": row.width if row is not None else None,
         "height": row.height if row is not None else None,
@@ -137,6 +139,11 @@ def ensure_preview(db: Session, artifact: Artifact, *, wait_for_slot: bool = Fal
 
     No transaction spans media reads, decoding or derivative-storage I/O.
     """
+    # Serialize preview admission with the durable retention fence.
+    artifact = db.scalar(select(Artifact).where(Artifact.artifact_id == artifact.artifact_id)
+                         .with_for_update().execution_options(populate_existing=True))
+    if artifact is None or artifact.cleanup_started_at is not None or artifact.content_removed_at is not None:
+        return None
     kind = kind_for(artifact.media_type, artifact.mime_type)
     if kind is None:
         return None
@@ -189,6 +196,7 @@ def ensure_preview(db: Session, artifact: Artifact, *, wait_for_slot: bool = Fal
             data, metadata = process_source(kind, source_uri, size_bytes)
             stage = "store_derivative"
             uri = artifact_store.put_bytes(filename="preview.webp", data=data)
+            track_write(db, uri, artifact_store)
             values = {"status": "ready", "storage_uri": uri, "size_bytes": len(data),
                       "etag": sha256(data).hexdigest(), **metadata}
         except Exception as exc:
@@ -197,12 +205,22 @@ def ensure_preview(db: Session, artifact: Artifact, *, wait_for_slot: bool = Fal
             if code not in ERROR_CODES:
                 code = "PROCESSING_FAILED"
             values = {"status": "failed", "error_code": code}
+        # Serialize publication with original cleanup as well as admission.
+        # Without this lock an expired publisher could commit a locator after
+        # cleanup snapshots preview rows, leaving a hidden derivative orphan.
+        db.scalar(select(Artifact.artifact_id).where(Artifact.artifact_id == identity[0]).with_for_update())
         published = db.execute(update(ArtifactPreview).where(
             ArtifactPreview.artifact_id == identity[0], ArtifactPreview.kind == kind,
             ArtifactPreview.version == VERSION, ArtifactPreview.status == "processing",
             ArtifactPreview.claim_id == claim,
+            ArtifactPreview.artifact_id.in_(select(Artifact.artifact_id).where(Artifact.cleanup_started_at.is_(None))),
         ).values(**values).execution_options(synchronize_session=False))
         db.commit()
+        if published.rowcount != 1 and values.get("storage_uri"):
+            try:
+                artifact_store.delete(values["storage_uri"])
+            except Exception as exc:
+                diagnostic(identity[0], media_type, "discard_derivative", "failed", exc)
         diagnostic(identity[0], media_type, "persist_derivative", values["status"] if published.rowcount == 1 else "superseded")
         return db.get(ArtifactPreview, identity, populate_existing=True)
     finally:

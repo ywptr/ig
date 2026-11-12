@@ -1438,6 +1438,14 @@ for the standard cloud deployment.
 
 Artifacts expose storage-independent IDs to API consumers.
 
+Generated media in IG-managed/local/Vercel storage defaults to automatic cleanup
+at 28 days. Tenant admins can disable it or change the duration in Settings.
+Uploads/reference uploads are excluded. Cleanup removes bytes and all previews,
+retaining Artifact IDs and lineage; intentionally removed content returns 410.
+Future user-owned Google Drive storage defaults to retention off unless the tenant
+explicitly enables it. See [Artifact lifecycle and retention](docs/artifact-lifecycle.md)
+for dry-run commands, migration/cron rollout, authorization and orphan limitations.
+
 ---
 
 # Docker development and historical deployment
@@ -1559,7 +1567,7 @@ first deployment; APIs/UI for these operations remain future work.
 - User-owned Drive storage
 - Additional cloud object-storage adapters
 - Storage quotas and policies
-- Artifact retention policies
+- Additional retention scopes for imported/uploaded artifacts
 - Tenant/shared artifact visibility rules
 
 ---

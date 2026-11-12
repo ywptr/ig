@@ -14,6 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.time import UTCDateTime
 from app.db.database import Base
 from app.artifacts.schemas import ArtifactProvenance
 
@@ -21,7 +22,12 @@ from app.artifacts.schemas import ArtifactProvenance
 # Artifact represents a media artifact (e.g., image, video, audio) associated with a user.
 class Artifact(Base):
     __tablename__ = "artifacts"
-    __table_args__ = (Index("ix_artifacts_library_order", "tenant_id", "user_id", "created_at", "artifact_id"),)
+    __table_args__ = (Index("ix_artifacts_library_order", "tenant_id", "user_id", "created_at", "artifact_id"),
+                      Index("ix_artifacts_retention", "provenance", "content_removed_at", "created_at"))
+
+    cleanup_started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), index=True)
+    content_removed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    content_removal_reason: Mapped[str | None] = mapped_column(String(30))
 
     provenance: Mapped[ArtifactProvenance] = mapped_column(
         Enum(ArtifactProvenance, native_enum=False, values_callable=lambda enum: [value.value for value in enum],

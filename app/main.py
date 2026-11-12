@@ -143,3 +143,5 @@ def health():
             "rq",
         ),
     }
+from app.api.artifact_cleanup import router as artifact_cleanup_router
+app.include_router(artifact_cleanup_router, prefix="/v2")

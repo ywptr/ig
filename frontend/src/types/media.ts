@@ -113,7 +113,7 @@ export interface GenerationSubmission extends MediaSubmission {
     purpose?: string;
 }
 export interface ArtifactPreview {
-    status: "missing" | "processing" | "ready" | "failed" | "unsupported";
+    status: "missing" | "processing" | "ready" | "failed" | "unsupported" | "deleted";
     kind: "thumbnail" | "contact_sheet" | null;
     version: number;
     url: string | null;
@@ -139,6 +139,10 @@ export interface ArtifactPage {
     has_more: boolean;
 }
 export interface Artifact {
+    content_status?: "active" | "removing" | "removed";
+    content_available?: boolean;
+    content_removed_at?: string | null;
+    content_removal_reason?: string | null;
     preview?: ArtifactPreview;
     provenance?: ArtifactProvenance;
     media_properties?: { width: number | null; height: number | null; duration_seconds: number | null; fps: number | null };

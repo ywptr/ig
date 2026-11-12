@@ -197,77 +197,85 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
         staged = stage_media_result(result.artifact)
         media_properties = inspect_media(result.artifact.data, result.artifact.media_type)
 
-    with SessionLocal() as db:
-        # A conditional no-op update both fences stale workers and locks the row
-        # for this short finalization transaction. Lease expiry alone does not
-        # invalidate an owner; a replacement claim does.
-        job_owned = db.execute(update(Job).where(
-            Job.job_id == claim.job_id, Job.status == "polling",
-            Job.tenant_id == claim.tenant_id, Job.user_id == claim.user_id,
-            Job.capability == claim.capability,
-        ).values(status="polling").execution_options(synchronize_session=False))
-        if job_owned.rowcount != 1:
-            acknowledge_cancellation(db, claim.job_id)
-            db.commit()
-            return False
-        owned = db.execute(update(Execution).where(
-            Execution.execution_id == claim.execution_id,
-            Execution.job_id == claim.job_id, Execution.status == "polling",
-            Execution.tenant_id == claim.tenant_id, Execution.user_id == claim.user_id,
-            Execution.metadata_json["continuation"]["id"].as_string() == claim.continuation_id,
-            Execution.metadata_json["continuation"]["claim_id"].as_string() == claim.claim_id,
-            Execution.provider == operation.provider, Execution.model == operation.model,
-            Execution.metadata_json["provider_operation"]["operation_id"].as_string() == operation.operation_id,
-        ).values(status="polling").execution_options(synchronize_session=False))
-        if owned.rowcount != 1:
-            db.rollback()
-            return False
+    artifact_published = False
+    try:
+        with SessionLocal() as db:
+            # A conditional no-op update both fences stale workers and locks the row
+            # for this short finalization transaction. Lease expiry alone does not
+            # invalidate an owner; a replacement claim does.
+            job_owned = db.execute(update(Job).where(
+                Job.job_id == claim.job_id, Job.status == "polling",
+                Job.tenant_id == claim.tenant_id, Job.user_id == claim.user_id,
+                Job.capability == claim.capability,
+            ).values(status="polling").execution_options(synchronize_session=False))
+            if job_owned.rowcount != 1:
+                acknowledge_cancellation(db, claim.job_id)
+                db.commit()
+                return False
+            owned = db.execute(update(Execution).where(
+                Execution.execution_id == claim.execution_id,
+                Execution.job_id == claim.job_id, Execution.status == "polling",
+                Execution.tenant_id == claim.tenant_id, Execution.user_id == claim.user_id,
+                Execution.metadata_json["continuation"]["id"].as_string() == claim.continuation_id,
+                Execution.metadata_json["continuation"]["claim_id"].as_string() == claim.claim_id,
+                Execution.provider == operation.provider, Execution.model == operation.model,
+                Execution.metadata_json["provider_operation"]["operation_id"].as_string() == operation.operation_id,
+            ).values(status="polling").execution_options(synchronize_session=False))
+            if owned.rowcount != 1:
+                db.rollback()
+                return False
 
-        execution = db.get(Execution, claim.execution_id)
-        job = db.scalar(select(Job).where(Job.job_id == claim.job_id))
-        prior_operation = deepcopy(execution.metadata_json["provider_operation"])
-        prior_continuation = dict(execution.metadata_json["continuation"])
-        if isinstance(result, TerminalOperationError):
-            prior_continuation.pop("claim_id", None)
-            prior_continuation.pop("lease_expires_at", None)
-            execution.metadata_json = {**execution.metadata_json, "continuation": prior_continuation}
-            fail_execution(db, execution, error_message=str(result))
-            job.status = "failed"
-            job.error_message = str(result)
-            job.completed_at = utc_now()
+            execution = db.get(Execution, claim.execution_id)
+            job = db.scalar(select(Job).where(Job.job_id == claim.job_id))
+            prior_operation = deepcopy(execution.metadata_json["provider_operation"])
+            prior_continuation = dict(execution.metadata_json["continuation"])
+            if isinstance(result, TerminalOperationError):
+                prior_continuation.pop("claim_id", None)
+                prior_continuation.pop("lease_expires_at", None)
+                execution.metadata_json = {**execution.metadata_json, "continuation": prior_continuation}
+                fail_execution(db, execution, error_message=str(result))
+                job.status = "failed"
+                job.error_message = str(result)
+                job.completed_at = utc_now()
+                db.commit()
+                return True
+            if staged is not None:
+                storage_uri, filename = staged
+                artifact = persist_media_result(
+                    db, payload=result.artifact, storage_uri=storage_uri, filename=filename,
+                    tenant_id=claim.tenant_id, user_id=claim.user_id,
+                    provider=operation.provider, model=operation.model,
+                    job_id=job.job_id, execution_id=execution.execution_id,
+                    inputs=(job.input_json.get("request") or job.input_json).get("references") or [],
+                    media_properties=media_properties,
+                )
+                result = replace(result, metadata={**result.metadata, "artifact_id": artifact.artifact_id})
+            apply_execution_result(execution, result)
+            if isinstance(result, Pending):
+                # apply_execution_result rotates the token and drops the old lease.
+                wait_execution(db, execution)
+                job.status = "waiting"
+            else:
+                prior_continuation.pop("claim_id", None)
+                prior_continuation.pop("lease_expires_at", None)
+                execution.metadata_json = {
+                    **execution.metadata_json,
+                    "provider_operation": prior_operation,
+                    "continuation": prior_continuation,
+                }
+                complete_execution(db, execution)
+                job.status = "completed"
+                job.completed_at = utc_now()
             db.commit()
+            artifact_published = staged is not None
+            if staged is not None:
+                generate_preview_for_artifact(db, artifact)
             return True
-        if staged is not None:
-            storage_uri, filename = staged
-            artifact = persist_media_result(
-                db, payload=result.artifact, storage_uri=storage_uri, filename=filename,
-                tenant_id=claim.tenant_id, user_id=claim.user_id,
-                provider=operation.provider, model=operation.model,
-                job_id=job.job_id, execution_id=execution.execution_id,
-                inputs=(job.input_json.get("request") or job.input_json).get("references") or [],
-                media_properties=media_properties,
-            )
-            result = replace(result, metadata={**result.metadata, "artifact_id": artifact.artifact_id})
-        apply_execution_result(execution, result)
-        if isinstance(result, Pending):
-            # apply_execution_result rotates the token and drops the old lease.
-            wait_execution(db, execution)
-            job.status = "waiting"
-        else:
-            prior_continuation.pop("claim_id", None)
-            prior_continuation.pop("lease_expires_at", None)
-            execution.metadata_json = {
-                **execution.metadata_json,
-                "provider_operation": prior_operation,
-                "continuation": prior_continuation,
-            }
-            complete_execution(db, execution)
-            job.status = "completed"
-            job.completed_at = utc_now()
-        db.commit()
-        if staged is not None:
-            generate_preview_for_artifact(db, artifact)
-        return True
+    finally:
+        if staged is not None and not artifact_published:
+            from app.artifacts.orphans import discard_unpublished
+            from app.artifacts.service import artifact_store
+            discard_unpublished(staged[0], artifact_store, sessions=SessionLocal)
 
 
 def continue_job(job_id: str, continuation_id: str) -> None:

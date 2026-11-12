@@ -284,3 +284,6 @@ operator approval for the paid provider call; verify ready contact sheet and 200
 Neither deployment nor paid production calls are performed by these local changes.
 
 Run the new producer tests with `python -m unittest tests.test_eager_previews`.
+
+Retention deletes all derivative versions along with the original, preserving
+preview rows as deleted metadata. See [Artifact lifecycle](artifact-lifecycle.md).

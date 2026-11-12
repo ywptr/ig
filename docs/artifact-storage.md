@@ -82,3 +82,6 @@ Run dedicated isolation tests with:
 provenance, normalized producer/input relationships, private cursor pagination,
 and ingest-time media metadata. These fields do not change object identity,
 storage isolation, or authorization. SHA-256 equality never grants shared access.
+
+Artifact retention, idempotent deletion, scheme registration, tombstones and
+provider transition invariants are documented in [Artifact lifecycle](artifact-lifecycle.md).

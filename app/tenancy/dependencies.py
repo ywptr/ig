@@ -78,7 +78,8 @@ def get_admin_tenant_context(
     ),
 ) -> TenantContext:
     if (
-        context.membership is None
+        getattr(context, "caller_type", "user") == "service"
+        or context.membership is None
         or context.membership.role != "admin"
     ):
         raise HTTPException(

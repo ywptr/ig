@@ -11,6 +11,9 @@ from uuid import uuid4
 
 
 class LocalArtifactStore:
+    retention_default_enabled = True
+    retention_default_days = 28
+
     def __init__(self, base_dir: Path):
         # A configured root may itself be a development symlink. Pin its target;
         # object paths beneath that trusted root must never follow symlinks.
@@ -125,5 +128,29 @@ class LocalArtifactStore:
         finally:
             if descriptor is not None:
                 os.close(descriptor)
+            if directory is not None:
+                os.close(directory)
+
+
+    def delete(self, storage_uri: str) -> None:
+        parts = self._relative_parts(storage_uri)
+        directory = None
+        try:
+            directory = self._open_root()
+            for component in parts[:-1]:
+                child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = child
+            info = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("Invalid local artifact locator")
+            os.unlink(parts[-1], dir_fd=directory)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError("Invalid local artifact locator") from None
+            raise RuntimeError("Local artifact deletion failed") from None
+        finally:
             if directory is not None:
                 os.close(directory)

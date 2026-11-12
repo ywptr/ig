@@ -30,3 +30,7 @@ class ArtifactStore(Protocol):
         chunk_size: int = 64 * 1024,
     ) -> Iterator[bytes]:
         ...
+
+    def delete(self, storage_uri: str) -> None:
+        """Idempotently remove one object. Never include locators in errors."""
+        ...

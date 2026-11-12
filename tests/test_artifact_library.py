@@ -337,6 +337,14 @@ class ArtifactLibraryMigrationTests(contracts.MediaJobTestCase):
         return module
 
     def test_round_trip_preserves_legacy_data_and_backfills_only_evidence(self):
+        # Remove newer retention fields/indexes before testing the historical migration.
+        spec = importlib.util.spec_from_file_location("retention_migration", Path(__file__).resolve().parents[1] /
+            "alembic/versions/1a0006000006_artifact_retention.py")
+        retention = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(retention)
+        with self.engine.begin() as connection:
+            with Operations.context(MigrationContext.configure(connection)):
+                retention.downgrade()
         # Start from the exact prior schema by downgrading the new additive fields.
         migration = self.migration()
         with self.engine.begin() as connection:

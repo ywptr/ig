@@ -263,14 +263,14 @@ class ArtifactUploadTests(contracts.MediaJobTestCase):
         with self.sessions() as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(Artifact)), 0)
 
-    def test_db_failure_leaves_unpublished_orphan_only(self):
+    def test_db_failure_reclaims_unpublished_write(self):
         with patch("app.artifacts.service.create_artifact", side_effect=RuntimeError("database failed")):
             with self.assertRaises(RuntimeError):
                 service.create_uploaded_artifact(tenant_id="tenant-one", user_id="user-one", data=PNG,
                     mime_type="image/png", filename="reference.png", origin="reference")
         with self.sessions() as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(Artifact)), 0)
-        self.assertEqual(len(list(self.storage.base_dir.iterdir())), 1)
+        self.assertEqual(len(list(self.storage.base_dir.iterdir())), 0)
 
     def test_outside_root_row_cannot_expose_content_or_locator(self):
         outside = self.storage.base_dir.parent / "private-secret.png"

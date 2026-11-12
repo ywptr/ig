@@ -22,6 +22,17 @@ def create_job(
     user_id: str | None = None,
     *, defer_dispatch: bool = False,
 ) -> Job:
+    # Serialize input admission with retention fencing, including legacy image jobs.
+    from app.db.models import Tenant, Artifact
+    from app.media.validation import MediaRequestValidationError
+    db.scalar(select(Tenant).where(Tenant.tenant_id == tenant_id).with_for_update(key_share=True))
+    references = (input_data.get("request") or input_data.get("media_request") or input_data).get("references") or []
+    for reference in references:
+        artifact = db.scalar(select(Artifact).where(
+            Artifact.artifact_id == reference.get("artifact_id"), Artifact.tenant_id == tenant_id,
+            Artifact.user_id == user_id).with_for_update().execution_options(populate_existing=True))
+        if artifact is None or artifact.cleanup_started_at is not None or artifact.content_removed_at is not None:
+            raise MediaRequestValidationError("Reference artifact content is unavailable")
     job = Job(
         job_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

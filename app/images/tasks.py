@@ -1,4 +1,5 @@
 import uuid
+from app.artifacts.orphans import track_write
 from dataclasses import replace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -259,6 +260,7 @@ def persist_image_result(
         )
     )
 
+    track_write(db, storage_uri, artifact_store, sessions=SessionLocal)
     check_cancellation()
     output = input_data.get(
         "output"

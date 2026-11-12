@@ -3,8 +3,11 @@ from fastapi import (
     Depends,
     HTTPException,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from app.artifacts.retention import policy
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from app.db.models import Tenant
 
 from app.auth.dependencies import get_db
 from app.db.models import TenantSettings
@@ -124,3 +127,26 @@ def patch_tenant_settings(
     )
 
     return settings_to_response(settings)
+
+class RetentionUpdate(BaseModel):
+    generated_artifact_retention_enabled: bool = Field(strict=True)
+    generated_artifact_retention_days: int = Field(ge=1, le=3650, strict=True)
+
+
+@router.get("/retention")
+def read_retention(context: TenantContext = Depends(get_admin_tenant_context), db: Session = Depends(get_db)):
+    return policy(db.get(TenantSettings, context.tenant.tenant_id))
+
+
+@router.patch("/retention")
+def patch_retention(request: RetentionUpdate, context: TenantContext = Depends(get_admin_tenant_context),
+                    db: Session = Depends(get_db)):
+    db.scalar(select(Tenant).where(Tenant.tenant_id == context.tenant.tenant_id).with_for_update(key_share=True))
+    settings = db.get(TenantSettings, context.tenant.tenant_id)
+    if settings is None:
+        settings = TenantSettings(tenant_id=context.tenant.tenant_id)
+        db.add(settings)
+    settings.generated_artifact_retention_enabled = request.generated_artifact_retention_enabled
+    settings.generated_artifact_retention_days = request.generated_artifact_retention_days
+    db.commit()
+    return policy(settings)

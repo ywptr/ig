@@ -35,5 +35,11 @@
         "service": "frontend"
       }
     }
+  ],
+  "crons": [
+    {
+      "path": "/v2/internal/artifacts/cleanup",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

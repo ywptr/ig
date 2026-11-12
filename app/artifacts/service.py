@@ -1,4 +1,5 @@
 from uuid import uuid4
+from app.artifacts.orphans import track_write
 import re
 
 from sqlalchemy import select
@@ -139,6 +140,7 @@ def create_uploaded_artifact(
             data=data,
         )
 
+        track_write(db, storage_uri, artifact_store, sessions=SessionLocal)
         artifact = create_artifact(
             db,
             tenant_id=tenant_id,

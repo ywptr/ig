@@ -1,4 +1,6 @@
 from datetime import datetime
+from app.artifacts.retention import unavailable
+from app.core.time import utc_iso
 from app.artifacts.schemas import ArtifactProvenance
 from app.artifacts.lineage import generations_for, inputs_for
 from app.artifacts.library import artifact_page, InvalidCursor
@@ -79,6 +81,10 @@ def artifact_to_dict(
 ) -> dict:
     return {
         "artifact_id": artifact.artifact_id,
+        "content_status": "removed" if artifact.content_removed_at else "removing" if artifact.cleanup_started_at else "active",
+        "content_available": not unavailable(artifact),
+        "content_removed_at": utc_iso(artifact.content_removed_at),
+        "content_removal_reason": artifact.content_removal_reason,
         "provenance": artifact.provenance,
         "media_properties": {key: getattr(artifact, key) for key in ("width", "height", "duration_seconds", "fps")},
         "sha256": artifact.sha256,
@@ -258,6 +264,9 @@ def read_artifact_content(
             detail="Artifact not found",
         )
 
+    if unavailable(artifact):
+        raise HTTPException(410, detail={"code": "ARTIFACT_CONTENT_REMOVED", "reason": artifact.content_removal_reason},
+                            headers={"Cache-Control": "private, no-store"})
     try:
         if not artifact_store.exists(
             artifact.storage_uri
@@ -310,6 +319,8 @@ def read_artifact_preview(
     if artifact is None:
         raise HTTPException(404, detail="Artifact not found")
     private = {"Cache-Control": "private, no-store", "Vary": "Cookie, Authorization"}
+    if unavailable(artifact):
+        raise HTTPException(410, detail={"code": "ARTIFACT_CONTENT_REMOVED", "reason": artifact.content_removal_reason}, headers=private)
     kind = previews.kind_for(artifact.media_type, artifact.mime_type)
     if kind is None:
         return JSONResponse(previews.preview_metadata(artifact), status_code=415, headers=private)

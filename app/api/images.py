@@ -166,6 +166,10 @@ def get_image_content(
                     detail="Artifact not found",
                 )
 
+            from app.artifacts.retention import unavailable
+            if unavailable(artifact):
+                raise HTTPException(410, detail={"code": "ARTIFACT_CONTENT_REMOVED", "reason": artifact.content_removal_reason},
+                                    headers={"Cache-Control": "private, no-store"})
             if not artifact_store.exists(
                 artifact.storage_uri
             ):

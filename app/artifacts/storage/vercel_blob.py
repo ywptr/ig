@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from vercel.blob import (
     BlobNotFoundError,
+    delete,
     get,
     head,
     put,
@@ -14,6 +15,9 @@ SCHEME = "vercel-blob"
 
 
 class VercelBlobArtifactStore:
+    retention_default_enabled = True
+    retention_default_days = 28
+
 
     def put_bytes(
         self,
@@ -83,18 +87,19 @@ class VercelBlobArtifactStore:
         )
 
         if parsed.scheme != SCHEME:
-            raise ValueError(
-                "Unsupported storage URI "
-                "for VercelBlobArtifactStore: "
-                f"{storage_uri}"
-            )
+            raise ValueError("Invalid Blob artifact locator")
 
         pathname = parsed.path.lstrip("/")
-
-        if not pathname:
-            raise ValueError(
-                "Missing Blob pathname in "
-                f"storage URI: {storage_uri}"
-            )
+        if not pathname or parsed.netloc or parsed.query or parsed.fragment or ".." in pathname.split("/"):
+            raise ValueError("Invalid Blob artifact locator")
 
         return pathname
+
+    def delete(self, storage_uri: str) -> None:
+        pathname = self._to_pathname(storage_uri)
+        try:
+            delete(pathname)
+        except BlobNotFoundError:
+            pass
+        except Exception:
+            raise RuntimeError("Blob artifact deletion failed") from None

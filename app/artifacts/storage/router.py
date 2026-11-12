@@ -15,6 +15,7 @@ class RoutingArtifactStore:
         local_store: ArtifactStore,
         vercel_blob_store: ArtifactStore,
     ):
+        self.providers = {"file": local_store, "vercel-blob": vercel_blob_store}
         self.write_store = write_store
         self.local_store = local_store
         self.vercel_blob_store = (
@@ -67,13 +68,14 @@ class RoutingArtifactStore:
             storage_uri
         ).scheme
 
-        if scheme == "file":
-            return self.local_store
+        if scheme not in self.providers:
+            raise ValueError("Unsupported artifact storage provider")
+        return self.providers[scheme]
 
-        if scheme == "vercel-blob":
-            return self.vercel_blob_store
+    def register(self, scheme: str, store: ArtifactStore) -> None:
+        if scheme in self.providers:
+            raise ValueError("Storage provider already registered")
+        self.providers[scheme] = store
 
-        raise ValueError(
-            "Unsupported artifact "
-            f"storage URI: {storage_uri}"
-        )
+    def delete(self, storage_uri: str) -> None:
+        self._store_for_uri(storage_uri).delete(storage_uri)
