@@ -27,11 +27,6 @@ async def process_job(
     message: dict[str, Any],
 ) -> None:
 
-    logger.info(
-        "queue.message.received message=%s",
-        message,
-    )
-
     job_id = str(message["job_id"])
 
     logger.info(

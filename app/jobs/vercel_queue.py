@@ -35,6 +35,9 @@ async def _enqueue(
     client = get_queue_client()
     payload = {"job_id": job_id}
     identity = job_id
+    if kind == "recover":
+        payload["kind"] = kind
+        identity = f"{job_id}:recover:{uuid4()}"
     if kind == "continue":
         payload.update(kind=kind, continuation_id=continuation_id)
         # Republish is permitted after lost/failed scheduling; DB checkpoint

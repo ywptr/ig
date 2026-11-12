@@ -101,3 +101,14 @@ or stale completion cannot create a second Artifact row.
 - Initial provider submission before checkpoint commit remains ambiguous after a
   crash. Lost/exhausted continuation deliveries may require internal republish.
   Never reset a Job blindly or submit a replacement to recover a status read.
+
+
+## IG#0002 resiliency and capability validation
+
+[Video resiliency](video-resiliency.md) supersedes the earlier manual-only recovery
+limitations: it documents prepared/submitting/checkpointed phases, the remaining
+paid-submission ambiguity, two-hour captured deadlines, earliest-poll gating,
+five-minute bounded recovery, cancellation, error codes and rollout requirements.
+Validation now consumes the selected model declaration at submission, worker and
+adapter boundaries. Existing Artifact lineage, eager previews and retention remain
+shared with image generation.

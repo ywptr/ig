@@ -1,5 +1,11 @@
 # Asynchronous operation continuations (V4.1 Task 5)
 
+> IG#0002 adds automatic **video** recovery, durable submission intent, an absolute
+> deadline and earliest-poll gating. See [video resiliency](video-resiliency.md).
+> The generic continuation/transport contract below remains applicable to other
+> capabilities; the historical manual-only recovery limitations are superseded
+> for `video.generate`.
+
 Initial handlers remain in `HANDLERS`. A capability supporting asynchronous work
 registers a separate `ResumeHandler` in `RESUME_HANDLERS`. The video capability
 uses this lifecycle; the deterministic fake remains only in tests.

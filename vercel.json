@@ -40,6 +40,10 @@
     {
       "path": "/v2/internal/artifacts/cleanup",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/v2/internal/video/recover",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

@@ -145,3 +145,6 @@ def health():
     }
 from app.api.artifact_cleanup import router as artifact_cleanup_router
 app.include_router(artifact_cleanup_router, prefix="/v2")
+
+from app.api.video_recovery import router as video_recovery_router
+app.include_router(video_recovery_router, prefix="/v2")

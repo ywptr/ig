@@ -1,3 +1,4 @@
+from app.jobs.video_lifecycle import error_code
 from app.core.time import utc_iso
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -41,6 +42,7 @@ def execution_to_dict(
             else None
         ),
         "error_message": execution.error_message,
+        "error_code": error_code(execution.error_message),
         "created_at": utc_iso(execution.created_at),
     }
 

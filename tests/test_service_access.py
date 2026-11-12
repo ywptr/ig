@@ -113,8 +113,9 @@ class ServiceAccessTests(contracts.ImageExecutionTestCase):
         self.assertEqual(self.discover().status_code, 401)
 
     def test_service_identity_algorithm_type_and_lifetime_are_bound(self):
+        now = int(time.time())
         for claims in ({"iss": "other"}, {"sub": "other"}, {"kid": "unknown"},
-                       {"headers": {"typ": "JWT"}}, {"exp": int(time.time())+301},
+                       {"headers": {"typ": "JWT"}}, {"iat": now, "exp": now+301},
                        {"iat": int(time.time())+20}, {"scope": "tenant:admin"}):
             with self.subTest(claims=claims):
                 self.assertEqual(self.discover(**claims).status_code, 401)

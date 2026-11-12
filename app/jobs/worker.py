@@ -21,9 +21,11 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
-def _own_running(db, job_id):
+def _own_running(db, job_id, execution_id):
     return db.execute(update(Job).where(
         Job.job_id == job_id, Job.status == "running",
+        select(Execution.execution_id).where(Execution.execution_id == execution_id,
+            Execution.job_id == job_id, Execution.status == "running").exists(),
     ).values(status="running").execution_options(synchronize_session=False)).rowcount == 1
 
 
@@ -49,12 +51,26 @@ def execute_job(job_id: str) -> None:
             user_id=job.user_id, metadata={"capability": job.capability})
         capability, tenant_id, user_id = job.capability, job.tenant_id, job.user_id
         input_data, execution_id = deepcopy(job.input_json), execution.execution_id
+        if capability == "video.generate":
+            from app.jobs.video_lifecycle import initial_metadata, audit
+            execution.metadata_json = {**execution.metadata_json, "video_lifecycle": initial_metadata(utc_now())}
+            selection = input_data.get("selection") or {}
+            execution.provider, execution.model = selection.get("provider"), selection.get("model")
+            audit(job, execution, "prepared")
         db.commit()
         claimed = True
         with cancellation_scope(job_id, SessionLocal), execution_scope(job_id, execution_id):
             check_cancellation()
             result = get_handler(capability)(input_data, tenant_id=tenant_id, user_id=user_id)
-        if not _own_running(db, job_id):
+        if capability == "video.generate" and isinstance(result, Pending):
+            # The video handler already commits the first checkpoint immediately
+            # after submission, closing the extra worker-return crash window.
+            state = db.get(Execution, execution_id, populate_existing=True)
+            if state.status == "waiting" and (state.metadata_json or {}).get("provider_operation", {}).get("operation_id") == result.operation_id:
+                db.rollback()
+                schedule_continuation(job_id)
+                return
+        if not _own_running(db, job_id, execution_id):
             acknowledge_cancellation(db, job_id, result)
             db.commit()
             return
@@ -78,7 +94,7 @@ def execute_job(job_id: str) -> None:
     except Exception as exc:
         db.rollback()
         if claimed:
-            if not _own_running(db, job_id):
+            if not _own_running(db, job_id, execution_id):
                 canceled = acknowledge_cancellation(db, job_id)
                 db.commit()
                 if canceled:
@@ -86,10 +102,18 @@ def execute_job(job_id: str) -> None:
             else:
                 job = db.scalar(select(Job).where(Job.job_id == job_id).execution_options(populate_existing=True))
                 execution = db.get(Execution, execution_id, populate_existing=True)
-                fail_execution(db, execution, error_message=str(exc))
-                job.status = "failed"
-                job.error_message = str(exc)
-                job.completed_at = utc_now()
+                if capability == "video.generate":
+                    from app.jobs.video_lifecycle import terminal_failure
+                    phase = (execution.metadata_json or {}).get("video_lifecycle", {}).get("phase")
+                    from app.media.providers.video import VideoProviderTerminalError
+                    code = "VIDEO_PROVIDER_FAILED" if isinstance(exc, VideoProviderTerminalError) else (
+                        "VIDEO_SUBMISSION_UNCERTAIN" if phase == "submitting" else "VIDEO_CHECKPOINT_INVALID")
+                    terminal_failure(job, execution, code, utc_now())
+                else:
+                    fail_execution(db, execution, error_message=str(exc))
+                    job.status = "failed"
+                    job.error_message = str(exc)
+                    job.completed_at = utc_now()
                 db.commit()
         raise
     finally:

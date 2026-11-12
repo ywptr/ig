@@ -48,7 +48,7 @@ services:
     extra_hosts:
       - "host.docker.internal:${IG_DEV_HOST_GATEWAY:-host-gateway}"
     # RQ CLI uses RQ_REDIS_URL; application jobs use the same REDIS_URL.
-    command: ["rq", "worker", "ig"]
+    command: ["rq", "worker", "--with-scheduler", "ig"]
     environment:
       # Prefer bind-mounted source over the image-installed application package.
       PYTHONPATH: /app

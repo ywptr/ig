@@ -9,15 +9,15 @@ class QueueCancellation:
     detail: str
 
 
-JobKind = Literal["initial", "continue"]
+JobKind = Literal["initial", "continue", "recover"]
 
 
 def validate_delivery(kind: JobKind, continuation_id: str | None, delay_seconds: int) -> None:
-    if kind not in {"initial", "continue"}:
+    if kind not in {"initial", "continue", "recover"}:
         raise ValueError("Unknown job delivery kind")
     if kind == "continue" and not continuation_id:
         raise ValueError("Continuation delivery requires a checkpoint token")
-    if kind == "initial" and continuation_id is not None:
+    if kind in {"initial", "recover"} and continuation_id is not None:
         raise ValueError("Initial delivery cannot carry a continuation token")
     if delay_seconds < 0:
         raise ValueError("Delivery delay must be non-negative")

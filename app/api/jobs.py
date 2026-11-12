@@ -1,3 +1,4 @@
+from app.jobs.video_lifecycle import error_code
 from typing import Any
 from dataclasses import asdict
 from app.core.time import utc_iso
@@ -34,6 +35,7 @@ def job_to_dict(job):
         "status": job.status,
         "input": job.input_json,
         "error_message": job.error_message,
+        "error_code": error_code(job.error_message),
         "cancel_requested_at": utc_iso(job.cancel_requested_at),
         "canceled_at": utc_iso(job.canceled_at),
         "created_at": utc_iso(job.created_at),
@@ -217,6 +219,7 @@ def list_job_executions(
                     else None,
                 "error_message":
                     execution.error_message,
+                "error_code": error_code(execution.error_message),
             }
             for execution in executions
         ]

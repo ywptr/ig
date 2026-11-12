@@ -31,7 +31,7 @@ from capability metadata, falling back to the normal route when needed. See
 
 It provides a provider-neutral API for submitting media-generation requests, executing them asynchronously, resolving reference media, storing generated and uploaded artifacts, and managing tenant-specific provider configuration.
 
-V4.2 implements **image generation and asynchronous video generation** through the same provider-neutral control plane. Video uses Jobs, Executions, leased continuations, and Artifacts without an image-request projection. See the [generic video API](docs/video-generation.md) for the initial feature set and configuration links. Audio remains unavailable.
+V4.2 implements **image generation and asynchronous video generation** through the same provider-neutral control plane. Video uses Jobs, Executions, leased continuations, and Artifacts without an image-request projection. See [video resiliency and automatic recovery](docs/video-resiliency.md) and the [generic video API](docs/video-generation.md) for the initial feature set and configuration links. Audio remains unavailable.
 
 ---
 

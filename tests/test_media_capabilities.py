@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.auth.dependencies import get_current_user
 from app.db.models import TenantProviderConfig, TenantMembership, Job
 from app.main import app
-from app.media.constraints import IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS, VIDEO_RESOLUTIONS
+from app.media.constraints import IMAGE_ASPECT_RATIOS
 from app.media.providers.alibaba.video import AlibabaWanVideoProvider
 from app.media.providers.openai.image import OpenAIImageProvider, resolve_openai_model
 from app.media.providers.registry import IMAGE_PROVIDERS, VIDEO_PROVIDERS, create_image_provider
@@ -151,8 +151,8 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
         model = provider["models"][0]
         self.assertEqual((model["id"], model["display_name"]), ("wan3.0-video", "Wan 3.0 Video"))
         controls = model["capabilities"]
-        self.assertEqual(controls["aspect_ratios"], list(VIDEO_ASPECT_RATIOS))
-        self.assertEqual(controls["resolutions"], list(VIDEO_RESOLUTIONS))
+        self.assertEqual(controls["aspect_ratios"], ["16:9", "9:16", "1:1"])
+        self.assertEqual(controls["resolutions"], ["480p", "720p", "1080p"])
         self.assertEqual(controls["duration_seconds"], {"min": 2, "max": 30})
         self.assertEqual(controls["reference_roles"], ["first_frame"])
         self.assertEqual(controls["max_references"], 1)

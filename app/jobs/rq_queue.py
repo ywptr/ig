@@ -38,8 +38,8 @@ class RQJobQueue:
                 job_id,
                 self.queue.name,
             )
-        function = execute_job if kind == "initial" else continue_job
-        args = (job_id,) if kind == "initial" else (job_id, continuation_id)
+        function = continue_job if kind == "continue" else execute_job
+        args = (job_id, continuation_id) if kind == "continue" else (job_id,)
         options = {"job_timeout": 600}
         if kind == "continue":
             options.update(job_id=f"ig-continue-{uuid4()}", retry=Retry(max=3, interval=30))

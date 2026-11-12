@@ -42,6 +42,7 @@ def resolve_video_selection(db: Session, request: MediaGenerationRequest, *, ten
     model = video_provider_registration(provider).resolve_tenant_model(
         config.config_json or {}, advanced.model if advanced else None,
     )
+    validate_video_capabilities(request, provider, model)
     load_video_provider(db, tenant_id=tenant_id, provider=provider, model=model)
     return VideoSelection(provider, model)
 
@@ -58,4 +59,14 @@ def resolve_video_references(
     rows = resolve_references(db, request.references,
         slots=reference_slots(provider, model, "video"),
         tenant_id=tenant_id, user_id=user_id, store=artifact_store, read_bytes=read_bytes)
-    return [ResolvedVideoReference(row.artifact_id, row.mime_type, data) for row, _, data in rows] if read_bytes else []
+    return [ResolvedVideoReference(row.artifact_id, row.mime_type, data, values["role"]) for row, values, data in rows] if read_bytes else []
+
+
+def validate_video_capabilities(request, provider, model):
+    from app.media.validation import validate_model_capabilities
+    metadata = next((item for item in video_provider_registration(provider).CAPABILITIES.models if item.id == model), None)
+    if metadata is None:
+        raise VideoProviderConfigurationError("Video model capabilities are unknown")
+    validate_model_capabilities(request, metadata)
+    if metadata.technical.execution.mode != "asynchronous" or not metadata.technical.execution.polling_required:
+        raise VideoProviderConfigurationError("Video model requires unsupported execution behavior")

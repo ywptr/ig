@@ -272,3 +272,19 @@ cleanup budgets, then deploy. Rotation requires a replacement value, environment
 update and deployment, followed by checking the next cron request returns 2xx.
 See [retention operations](artifact-lifecycle.md#cron_secret-configuration-and-rotation)
 for the complete header/rotation contract and independent batch/run/time budgets.
+
+
+## Video recovery
+
+IG#0002 adds a separate bounded recovery runner. Verify the local DB target first:
+
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml exec -T -e PYTHONPATH=/app ig python scripts/recover-video-jobs.py --dry-run
+```
+
+Schedule it every five minutes for unattended local recovery. The development Compose worker now includes
+`--with-scheduler` to deliver delayed continuations. Other RQ launchers must enable it too. The HTTP equivalent is
+`GET /v2/internal/video/recover` with the same operator `CRON_SECRET` header; it is
+independent of artifact cleanup. See [video resiliency](video-resiliency.md) for
+safe retry/uncertainty semantics, policy settings, production schedule requirements
+and diagnostics. Do not reset ambiguous submissions to queued manually.

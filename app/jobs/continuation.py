@@ -4,6 +4,7 @@ No database session or transaction survives across the provider status read.
 Status reads may repeat after lease expiry; they must never submit generation.
 """
 
+import math
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -72,19 +73,44 @@ def schedule_continuation(job_id: str) -> bool:
         )
         if execution is None:
             return False
+        delay = CONTINUATION_DELAY_SECONDS
+        if job_id and (execution.metadata_json or {}).get("capability") == "video.generate":
+            from app.jobs.video_lifecycle import expired, terminal_failure, instant, poll_interval
+            job = db.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+            execution = db.get(Execution, execution.execution_id, populate_existing=True)
+            if job.status not in {"waiting", "polling"} or execution.status != job.status:
+                return False
+            lease = (execution.metadata_json or {}).get("continuation", {}).get("lease_expires_at")
+            if job.status == "polling" and lease and instant(lease) > _utc_now():
+                return False
+            if expired(execution, _utc_now()):
+                terminal_failure(job, execution, "VIDEO_PENDING_TIMEOUT", _utc_now())
+                db.commit()
+                return False
+            lifecycle = execution.metadata_json["video_lifecycle"]
+            due = lifecycle.get("next_poll_at")
+            delay = max(0, math.ceil((instant(due) - _utc_now()).total_seconds())) if due else poll_interval()
+            db.commit()
         continuation_id = (execution.metadata_json or {}).get("continuation", {}).get("id")
         if not continuation_id:
             raise RuntimeError("Execution has no continuation checkpoint token")
 
     get_job_queue().enqueue(
         job_id, kind="continue", continuation_id=continuation_id,
-        delay_seconds=CONTINUATION_DELAY_SECONDS,
+        delay_seconds=delay,
     )
     return True
 
 
 def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
     with SessionLocal() as db:
+        locked = db.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+        if locked is None:
+            return None
+        if locked.status == "cancel_requested":
+            acknowledge_cancellation(db, job_id)
+            db.commit()
+            return None
         row = db.execute(select(Execution, Job).join(Job, Job.job_id == Execution.job_id).where(
             Job.job_id == job_id, Job.status == Execution.status,
             Execution.status.in_(("waiting", "polling")),
@@ -99,7 +125,19 @@ def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
         ):
             raise RuntimeError("Continuation ownership does not match trusted Job ownership")
 
+        if job.capability == "video.generate":
+            from app.jobs.video_lifecycle import expired, terminal_failure, instant, ensure_lifecycle
+            if expired(execution, _utc_now()):
+                terminal_failure(job, execution, "VIDEO_PENDING_TIMEOUT", _utc_now())
+                db.commit()
+                return None
+            due = ensure_lifecycle(execution).get("next_poll_at")
+            if execution.status == "waiting" and due and instant(due) > _utc_now():
+                db.commit()
+                return None
         metadata = deepcopy(execution.metadata_json)
+        if job.capability == "video.generate":
+            metadata["video_lifecycle"]["poll_count"] = metadata["video_lifecycle"].get("poll_count", 0) + 1
         continuation = metadata["continuation"]
         checkpoint = metadata.get("provider_operation") or {}
         saved = Pending(
@@ -156,6 +194,11 @@ def _claim_operation(job_id: str, continuation_id: str) -> _PollClaim | None:
             job_id, execution.execution_id, continuation_id, claim_id,
             job.tenant_id, job.user_id, job.capability, operation,
         )
+        if job.capability == "video.generate":
+            from app.jobs.video_lifecycle import audit
+            db.refresh(execution)
+            db.refresh(job)
+            audit(job, execution, "poll_claimed", now)
         db.commit()
         return claim
 
@@ -165,6 +208,17 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
         if acknowledge_cancellation(db, claim.job_id):
             db.commit()
             return False
+    if claim.capability == "video.generate":
+        from app.jobs.video_lifecycle import expired, terminal_failure
+        with SessionLocal() as db:
+            job = db.scalar(select(Job).where(Job.job_id == claim.job_id).with_for_update())
+            execution = db.get(Execution, claim.execution_id)
+            if job.status in {"completed", "failed", "canceled"} or execution.status in {"completed", "failed", "canceled"}:
+                return False
+            if expired(execution, _utc_now()):
+                terminal_failure(job, execution, "VIDEO_PENDING_TIMEOUT", _utc_now())
+                db.commit()
+                return False
     operation = claim.operation
     if isinstance(result, Pending):
         if (result.provider, result.model, result.operation_id) != (
@@ -195,7 +249,13 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
             ):
                 return False
         staged = stage_media_result(result.artifact)
-        media_properties = inspect_media(result.artifact.data, result.artifact.media_type)
+        try:
+            media_properties = inspect_media(result.artifact.data, result.artifact.media_type)
+        except Exception:
+            from app.artifacts.orphans import discard_unpublished
+            from app.artifacts.service import artifact_store
+            discard_unpublished(staged[0], artifact_store, sessions=SessionLocal)
+            raise
 
     artifact_published = False
     try:
@@ -227,12 +287,23 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
 
             execution = db.get(Execution, claim.execution_id)
             job = db.scalar(select(Job).where(Job.job_id == claim.job_id))
+            if claim.capability == "video.generate":
+                from app.jobs.video_lifecycle import expired, terminal_failure
+                if expired(execution, _utc_now()):
+                    terminal_failure(job, execution, "VIDEO_PENDING_TIMEOUT", _utc_now())
+                    db.commit()
+                    return False
             prior_operation = deepcopy(execution.metadata_json["provider_operation"])
             prior_continuation = dict(execution.metadata_json["continuation"])
             if isinstance(result, TerminalOperationError):
                 prior_continuation.pop("claim_id", None)
                 prior_continuation.pop("lease_expires_at", None)
                 execution.metadata_json = {**execution.metadata_json, "continuation": prior_continuation}
+                if claim.capability == "video.generate":
+                    from app.jobs.video_lifecycle import terminal_failure
+                    terminal_failure(job, execution, "VIDEO_PROVIDER_FAILED", _utc_now())
+                    db.commit()
+                    return True
                 fail_execution(db, execution, error_message=str(result))
                 job.status = "failed"
                 job.error_message = str(result)
@@ -266,6 +337,9 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
                 complete_execution(db, execution)
                 job.status = "completed"
                 job.completed_at = utc_now()
+            if claim.capability == "video.generate":
+                from app.jobs.video_lifecycle import audit
+                audit(job, execution, "poll_finalized", _utc_now())
             db.commit()
             artifact_published = staged is not None
             if staged is not None:
@@ -303,6 +377,11 @@ def continue_job(job_id: str, continuation_id: str) -> None:
         return
     except Exception:
         with SessionLocal() as db:
+            if claim.capability == "video.generate":
+                from app.jobs.video_lifecycle import audit
+                execution = db.get(Execution, claim.execution_id)
+                job = db.scalar(select(Job).where(Job.job_id == job_id))
+                audit(job, execution, "poll_retryable_error", _utc_now())
             canceled = acknowledge_cancellation(db, job_id)
             db.commit()
         if canceled:

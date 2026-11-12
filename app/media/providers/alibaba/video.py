@@ -8,10 +8,7 @@ from urllib.parse import urlparse, quote
 
 import requests
 from app.media.capability_schemas import GenerationControls, IntegerRange, ModelMetadata, ProviderMetadata
-from app.media.constraints import (
-    VIDEO_ASPECT_RATIOS, VIDEO_RESOLUTIONS, VIDEO_DURATION_MIN, VIDEO_DURATION_MAX,
-    MAX_VIDEO_REFERENCES,
-)
+
 
 from app.media.providers.video import (
     ResolvedVideoRequest, VideoProviderAdapter, VideoProviderCompleted,
@@ -27,12 +24,11 @@ DOWNLOAD_TIMEOUT = (5, 10)
 
 class AlibabaWanVideoProvider(VideoProviderAdapter):
     DEFAULT_MODEL = "wan3.0-video"
-    MODELS = frozenset({DEFAULT_MODEL})
     CAPABILITIES = ProviderMetadata("Alibaba Model Studio", (ModelMetadata(
         DEFAULT_MODEL, "Wan 3.0 Video", GenerationControls(
-            aspect_ratios=list(VIDEO_ASPECT_RATIOS), resolutions=list(VIDEO_RESOLUTIONS),
-            duration_seconds=IntegerRange(min=VIDEO_DURATION_MIN, max=VIDEO_DURATION_MAX),
-            reference_roles=["first_frame"], max_references=MAX_VIDEO_REFERENCES,
+            aspect_ratios=["16:9", "9:16", "1:1"], resolutions=["480p", "720p", "1080p"],
+            duration_seconds=IntegerRange(min=2, max=30),
+            reference_roles=["first_frame"], max_references=1,
             audio=True, count=IntegerRange(min=1, max=1), layout_types=["single"],
         ), technical=TechnicalCapabilities(
             input_media=("text", "image"), output_media=("video",),
@@ -43,6 +39,8 @@ class AlibabaWanVideoProvider(VideoProviderAdapter):
             output_mime_types=("video/mp4",),
             max_prompt_characters=20000),
     ),))
+
+    MODELS = frozenset(model.id for model in CAPABILITIES.models)
 
     @staticmethod
     def configuration_is_valid(config: dict) -> bool:
@@ -118,18 +116,12 @@ class AlibabaWanVideoProvider(VideoProviderAdapter):
     def submit(self, request: ResolvedVideoRequest) -> VideoProviderPending:
         if request.provider != "alibaba" or self.resolve_model(request.model) != self.model:
             raise VideoProviderConfigurationError("Video request does not match selected provider/model")
-        if (
-            not VIDEO_DURATION_MIN <= request.duration_seconds <= VIDEO_DURATION_MAX
-            or request.aspect_ratio not in VIDEO_ASPECT_RATIOS
-            or request.resolution not in VIDEO_RESOLUTIONS
-            or len(request.references) > MAX_VIDEO_REFERENCES or len(request.description) > 20000
-        ):
-            raise VideoProviderConfigurationError("Unsupported video request")
+        from app.media.validation import validate_resolved_video
+        metadata = next(item for item in self.CAPABILITIES.models if item.id == self.model)
+        validate_resolved_video(request, metadata)
         inputs = {"prompt": request.description}
         if request.references:
             reference = request.references[0]
-            if reference.role != "first_frame" or reference.mime_type not in {"image/png", "image/jpeg", "image/webp"}:
-                raise VideoProviderConfigurationError("Unsupported video reference")
             inputs["media"] = [{
                 "type": "first_frame",
                 "url": f"data:{reference.mime_type};base64,{base64.b64encode(reference.data).decode('ascii')}",

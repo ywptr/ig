@@ -8,7 +8,7 @@ from app.media.providers.video import (
 )
 from app.media.schemas import MediaGenerationRequest
 from app.media.validation import validate_media_request
-from app.media.video_service import load_video_provider, resolve_video_references
+from app.media.video_service import load_video_provider, resolve_video_references, validate_video_capabilities
 
 
 def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str | None) -> Pending:
@@ -19,6 +19,7 @@ def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str |
     if request.media_type != "video":
         raise ValueError("Video handler requires a video request")
     selection = input_data["selection"]
+    validate_video_capabilities(request, selection["provider"], selection["model"])
     with SessionLocal() as db:
         adapter = load_video_provider(
             db, tenant_id=tenant_id, provider=selection["provider"], model=selection["model"],
@@ -29,6 +30,8 @@ def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str |
         )
     # No database transaction spans provider submission.
     check_cancellation()
+    from app.jobs.video_lifecycle import begin_submission, checkpoint_submission
+    begin_submission(SessionLocal)
     result = adapter.submit(ResolvedVideoRequest(
         description=request.intent.description, provider=selection["provider"], model=selection["model"],
         duration_seconds=request.output.duration_seconds, aspect_ratio=request.output.aspect_ratio,
@@ -36,9 +39,11 @@ def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str |
     ))
     if not isinstance(result, VideoProviderPending):
         raise TypeError("Video submission must return a provider operation")
-    return Pending(result.provider, result.model, result.operation_id, {
+    pending = Pending(result.provider, result.model, result.operation_id, {
         "output": request.output.model_dump(), "provider_metadata": result.metadata,
     })
+    checkpoint_submission(SessionLocal, pending)
+    return pending
 
 
 def resume_video_generation(operation: ProviderOperation, *, tenant_id: str, user_id: str):

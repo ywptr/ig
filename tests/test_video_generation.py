@@ -31,6 +31,9 @@ class VideoTestCase(MediaJobTestCase):
 
     def setUp(self):
         super().setUp()
+        # Historical lifecycle tests deliver immediately; newer timing tests
+        # explicitly restore the production interval and advance UTC.
+        self.enterContext(patch("app.jobs.video_lifecycle.poll_interval", return_value=0))
         self.enterContext(patch.dict("os.environ", {"TENANT_SECRET_ENCRYPTION_KEY": Fernet.generate_key().decode()}))
         self.configure()
         self.enterContext(patch("app.jobs.worker.SessionLocal", self.sessions))
@@ -190,14 +193,14 @@ class GenericVideoTests(VideoTestCase):
                 self.assertEqual(response.status_code, 202, response.text)
         self.http.assert_not_called()
 
-    def test_unknown_ratios_remain_schema_errors_for_both_media_types(self):
+    def test_unknown_ratios_rejected_at_schema_or_selected_video_model(self):
         for media_type in ("image", "video"):
             with self.subTest(media_type=media_type):
                 response = self.client.post("/v2/media/generations", json={
                     "media_type": media_type, "intent": {"description": "test"},
                     "output": {"aspect_ratio": "3:2"},
                 })
-                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.status_code, 400 if media_type == "video" else 422, response.text)
         self.queue.enqueue.assert_not_called()
 
     def test_image_reference_roles_are_not_expanded(self):
@@ -286,7 +289,11 @@ class VideoSelectionTests(VideoTestCase):
 
     def test_model_priority_explicit_then_video_default_then_adapter_default(self):
         self.configure(config={"base_url": BASE_URL, "default_models": {"video": "tenant-video"}, "default_model": "image-model"})
-        with patch.object(AlibabaWanVideoProvider, "MODELS", frozenset({"wan3.0-video", "tenant-video"})):
+        from dataclasses import replace
+        declaration = AlibabaWanVideoProvider.CAPABILITIES
+        declared_alias = replace(declaration.models[0], id="tenant-video")
+        with patch.object(AlibabaWanVideoProvider, "MODELS", frozenset({"wan3.0-video", "tenant-video"})), \
+             patch.object(AlibabaWanVideoProvider, "CAPABILITIES", replace(declaration, models=(*declaration.models, declared_alias))):
             explicit = self.submit_video(interface_level="hard", advanced={"model": "wan3.0-video"})
             self.assertEqual(explicit.status_code, 202, explicit.text)
             with self.sessions() as db:

@@ -7,8 +7,7 @@ from app.media.schemas import (
     MediaGenerationRequest,
 )
 from app.media.constraints import (
-    IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS, MAX_IMAGE_REFERENCES,
-    MAX_VIDEO_REFERENCES, EXPLICIT_SELECTION_LEVELS,
+    IMAGE_ASPECT_RATIOS, MAX_IMAGE_REFERENCES, EXPLICIT_SELECTION_LEVELS,
 )
 
 #### Validation logic for media generation requests
@@ -19,7 +18,6 @@ class MediaRequestValidationError(ValueError):
 
 ALLOWED_ASPECT_RATIOS = {
     "image": frozenset(IMAGE_ASPECT_RATIOS),
-    "video": frozenset(VIDEO_ASPECT_RATIOS),
 }
 
 
@@ -37,14 +35,10 @@ def validate_media_request(
     if request.media_type == "video":
         if request.strategy != "single" or layout.type != "single":
             raise MediaRequestValidationError("Video supports only single strategy and layout")
-        if len(request.references) > MAX_VIDEO_REFERENCES:
-            raise MediaRequestValidationError("Video supports at most one first_frame image")
         if request.advanced and request.advanced.parameters:
             raise MediaRequestValidationError("Video accepts generic controls, not provider parameters")
         if not request.intent.description.strip():
             raise MediaRequestValidationError("Video intent must not be blank")
-        if len(request.intent.description) > 20000:
-            raise MediaRequestValidationError("Video intent exceeds the supported length")
 
     if (
         request.media_type != "image"
@@ -111,7 +105,7 @@ def validate_media_request(
             "panel_count=4"
         )
 
-    if len(request.references) > MAX_IMAGE_REFERENCES:
+    if request.media_type == "image" and len(request.references) > MAX_IMAGE_REFERENCES:
         raise MediaRequestValidationError(
             f"A maximum of {MAX_IMAGE_REFERENCES} reference images "
             "is supported"
@@ -138,9 +132,19 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     from app.artifacts.references import validate_reference_shape
     validate_reference_shape(request.references, technical.reference_inputs)
     controls = metadata.capabilities
+    if request.media_type == "video":
+        if (not request.references and not controls.text_to_media) or len(request.references) > controls.max_references:
+            raise MediaRequestValidationError("Unsupported model generation inputs")
+        operation = "image_to_video" if request.references else "text_to_video"
+        if operation not in technical.operations:
+            raise MediaRequestValidationError("Model does not support requested video operation")
+        if request.interface_level not in metadata.supported_interface_levels:
+            raise MediaRequestValidationError("Unsupported interface level for model")
+        if not controls.count.min <= request.output.count <= controls.count.max or request.output.layout.type not in controls.layout_types:
+            raise MediaRequestValidationError("Unsupported model count/layout")
     if request.references and (
         "image" not in technical.input_media
-        or "reference_image_conditioning" not in technical.operations
+        or (request.media_type != "video" and "reference_image_conditioning" not in technical.operations)
     ):
         raise MediaRequestValidationError("Model does not support reference images")
     if not technical.reference_inputs and len(request.references) > controls.max_references:
@@ -149,7 +153,7 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
         raise MediaRequestValidationError("Model does not support multiple references")
     ratio = request.output.aspect_ratio
     if ratio is not None and ratio not in controls.aspect_ratios:
-        raise MediaRequestValidationError("Unsupported model aspect ratio")
+        raise MediaRequestValidationError(f"Unsupported video aspect ratio: {ratio}" if request.media_type == "video" else "Unsupported model aspect ratio")
     if technical.max_prompt_characters and len(request.intent.description) > technical.max_prompt_characters:
         raise MediaRequestValidationError("Prompt exceeds model limit")
     duration = getattr(request.output, "duration_seconds", None)
@@ -161,3 +165,19 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
         raise MediaRequestValidationError("Unsupported model resolution")
     if getattr(request.output, "audio", False) and not controls.audio:
         raise MediaRequestValidationError("Model does not support audio output")
+
+
+def validate_resolved_video(request, metadata):
+    """Adapter defense uses the same declaration as submission validation."""
+    normalized = MediaGenerationRequest.model_validate({"media_type": "video",
+        "intent": {"description": request.description},
+        "output": {"duration_seconds": request.duration_seconds, "aspect_ratio": request.aspect_ratio,
+                   "resolution": request.resolution, "audio": request.audio},
+        "references": [{"artifact_id": item.artifact_id, "role": item.role} for item in request.references]})
+    validate_media_request(normalized)
+    validate_model_capabilities(normalized, metadata)
+    from app.artifacts.references import validate_reference_shape
+    selected = validate_reference_shape(normalized.references, metadata.technical.reference_inputs)
+    for reference, (_, slot) in zip(request.references, selected):
+        if reference.mime_type not in slot.mime_types or not 0 < len(reference.data) <= slot.max_bytes:
+            raise MediaRequestValidationError("Unsupported reference MIME type or size")

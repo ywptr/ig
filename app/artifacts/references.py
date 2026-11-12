@@ -11,6 +11,8 @@ def reference_slots(provider: str, model: str, media_type: str):
     # Legacy tenant-specific model aliases use the adapter's implemented input
     # contract, without advertising those aliases as discovered model support.
     if metadata is None:
+        if media_type == "video":
+            raise MediaRequestValidationError("Video model capabilities are unknown")
         metadata = registration.CAPABILITIES.models[0]
     return metadata.technical.reference_inputs if metadata.technical else ()
 

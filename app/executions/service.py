@@ -98,3 +98,10 @@ def apply_execution_result(
         **existing_metadata,
         **metadata,
     }
+    if isinstance(result, Pending) and existing_metadata.get("capability") == "video.generate":
+        from app.jobs.video_lifecycle import ensure_lifecycle, poll_interval
+        from datetime import timedelta
+        from app.core.time import utc_iso
+        lifecycle = dict(ensure_lifecycle(execution))
+        lifecycle.update(phase="checkpointed", next_poll_at=utc_iso(utc_now() + timedelta(seconds=poll_interval())))
+        execution.metadata_json = {**execution.metadata_json, "video_lifecycle": lifecycle}
