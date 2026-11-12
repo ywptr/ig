@@ -13,4 +13,4 @@ def scheduled_cleanup(request: Request, db=Depends(get_db)):
     secret = os.getenv("CRON_SECRET")
     if not secret or not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
         raise HTTPException(401, detail="Unauthorized")
-    return cleanup(db, limit=50, scan_limit=1000)
+    return cleanup(db)

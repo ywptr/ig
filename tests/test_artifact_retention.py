@@ -327,3 +327,137 @@ class DelegatedRetentionTests(contracts.MediaJobTestCase):
             response = self.client.request(method, "/v2/tenant/settings/retention", headers=self.headers(), **options)
             self.assertEqual(response.status_code, 403)
             self.assertEqual(response.json()["detail"]["code"], "SERVICE_ROUTE_FORBIDDEN")
+
+
+class CleanupBatchingTests(contracts.MediaJobTestCase):
+    artifact = RetentionTests.artifact
+    run_cleanup = RetentionTests.run_cleanup
+
+    def setUp(self):
+        super().setUp()
+        self.store = install_storage(self)
+        self.now = utc_now()
+        self.enterContext(patch.dict("os.environ", {
+            "ARTIFACT_CLEANUP_BATCH_SIZE": "50", "ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN": "500",
+            "ARTIFACT_CLEANUP_SCAN_LIMIT": "1000", "ARTIFACT_CLEANUP_MAX_SECONDS": "240",
+        }))
+
+    def populate(self, count, **kwargs):
+        return [self.artifact(**kwargs) for _ in range(count)]
+
+    def test_more_than_fifty_uses_bounded_query_pages(self):
+        from sqlalchemy import event
+        from sqlalchemy.sql import Select
+        self.populate(115)
+        limits = []
+        def observe(connection, cursor, statement, parameters, context, executemany):
+            query = getattr(getattr(context, "compiled", None), "statement", None)
+            if isinstance(query, Select) and list(query.selected_columns.keys()) == ["artifact_id", "created_at"]:
+                limits.append(query._limit_clause.value)
+        event.listen(self.engine, "before_cursor_execute", observe)
+        self.addCleanup(event.remove, self.engine, "before_cursor_execute", observe)
+        result = self.run_cleanup()
+        self.assertEqual((result["deleted"], result["batches_processed"]), (115, 3))
+        self.assertEqual(result["bytes_reclaimed"], 115 * 6)
+        self.assertEqual(result["eligible_seen"], 115)
+        self.assertEqual(result["max_items_per_run"], 500)
+        self.assertEqual(limits, [50, 50, 50, 50])  # Final bounded query discovers exhaustion.
+        self.assertFalse(result["limit_reached"])
+        self.assertFalse(result["remaining_work_possible"])
+        self.assertEqual(self.run_cleanup()["deleted"], 0)
+
+    def test_configured_budget_and_second_run_continues(self):
+        self.populate(90)
+        with patch.dict("os.environ", {"ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN": "75"}):
+            result = self.run_cleanup()
+        self.assertEqual((result["processed"], result["deleted"], result["batches_processed"]), (75, 75, 2))
+        self.assertTrue(result["limit_reached"])
+        self.assertTrue(result["remaining_work_possible"])
+        self.assertEqual(result["stop_reason"], "item_limit")
+        self.assertEqual(self.run_cleanup()["deleted"], 15)
+
+    def test_failures_do_not_stop_subsequent_batches_or_repeat(self):
+        ids = self.populate(61)
+        with self.sessions() as db: failed_uri = db.get(Artifact, ids[0]).storage_uri
+        delete = self.store.delete
+        def fail_one(uri):
+            if uri == failed_uri: raise RuntimeError("private-locator-must-not-be-logged")
+            delete(uri)
+        with patch.object(self.store, "delete", side_effect=fail_one) as remove:
+            result = self.run_cleanup(batch_size=20)
+        self.assertEqual((result["processed"], result["deleted"], result["failed"]), (61, 60, 1))
+        self.assertEqual(result["batches_processed"], 4)
+        self.assertEqual(remove.call_count, 61)
+        self.assertEqual(result["bytes_reclaimed"], 60 * 6)
+        self.assertEqual(self.run_cleanup()["processed"], 0)  # Failed decision still leased.
+
+    def test_multi_batch_dry_run_is_bounded_and_mutates_nothing(self):
+        self.populate(70)
+        with patch.object(self.store, "delete", wraps=self.store.delete) as remove:
+            result = self.run_cleanup(batch_size=20, limit=55, dry_run=True)
+        self.assertEqual((result["eligible_seen"], result["processed"], result["batches_processed"]), (55, 0, 3))
+        self.assertTrue(result["limit_reached"])
+        self.assertTrue(result["remaining_work_possible"])
+        remove.assert_not_called()
+        self.assertEqual(result["bytes_reclaimed"], 0)
+        with self.sessions() as db:
+            self.assertFalse(any(unavailable(a) for a in db.scalars(select(Artifact))))
+        self.assertEqual(self.run_cleanup()["deleted"], 70)
+
+    def test_scan_budget_and_exact_item_budget_report_correctly(self):
+        self.populate(5)
+        result = self.run_cleanup(batch_size=2, scan_limit=3)
+        self.assertEqual(result["deleted"], 3)
+        self.assertEqual(result["stop_reason"], "scan_limit")
+        self.assertTrue(result["remaining_work_possible"])
+        result = self.run_cleanup(batch_size=2, limit=2)
+        self.assertTrue(result["limit_reached"])
+        self.assertFalse(result["remaining_work_possible"])
+
+    def test_time_budget_preserves_unexamined_items(self):
+        self.populate(3)
+        # Start, outer loop, first item, second item (deadline reached).
+        with patch("app.artifacts.retention.monotonic", side_effect=[0, 0, 0, 2]):
+            result = self.run_cleanup(batch_size=3, max_seconds=1)
+        self.assertEqual(result["deleted"], 1)
+        self.assertEqual(result["stop_reason"], "time_limit")
+        self.assertTrue(result["limit_reached"])
+        self.assertTrue(result["remaining_work_possible"])
+        self.assertEqual(self.run_cleanup()["deleted"], 2)
+
+    def test_global_age_order_across_tenants(self):
+        first = self.artifact(age=40, tenant="tenant-two")
+        second = self.artifact(age=30)
+        self.run_cleanup(limit=1)
+        with self.sessions() as db:
+            self.assertIsNotNone(db.get(Artifact, first).content_removed_at)
+            self.assertIsNone(db.get(Artifact, second).content_removed_at)
+        self.assertEqual(self.run_cleanup()["deleted"], 1)
+
+    def test_invalid_budgets_fail_closed(self):
+        for field, value in (("batch_size", 0), ("limit", 0), ("limit", 10001), ("scan_limit", -1),
+                             ("max_seconds", 601), ("batch_size", True)):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.run_cleanup(**{field: value})
+        with patch.dict("os.environ", {"ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN": "private-bad-value"}):
+            with self.assertRaisesRegex(ValueError, "^ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN must be"):
+                self.run_cleanup()
+
+    def test_cron_auth_and_environment_budget(self):
+        self.populate(5)
+        path = "/v2/internal/artifacts/cleanup"
+        with patch.dict("os.environ", {"CRON_SECRET": "test-only", "ARTIFACT_CLEANUP_BATCH_SIZE": "2",
+                                      "ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN": "3"}), \
+                patch("app.artifacts.retention.artifact_store", wraps=self.store) as store:
+            # The real policy registry still belongs to the configured router.
+            from app.artifacts.storage.provider import artifact_store
+            store.providers = artifact_store.providers
+            self.assertEqual(self.client.get(path).status_code, 401)
+            self.assertEqual(self.client.get(path, headers={"Authorization": "Bearer wrong"}).status_code, 401)
+            response = self.client.get(path, headers={"Authorization": "Bearer test-only"})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["deleted"], 3)
+            self.assertEqual(response.json()["batches_processed"], 2)
+            self.assertTrue(response.json()["remaining_work_possible"])
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(self.client.get(path, headers={"Authorization": "Bearer test-only"}).status_code, 401)

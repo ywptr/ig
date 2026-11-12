@@ -125,17 +125,50 @@ Manual inspection from the repository root:
 
 ```sh
 PYTHONPATH=. .venv/bin/python scripts/cleanup-artifacts.py --dry-run
-PYTHONPATH=. .venv/bin/python scripts/cleanup-artifacts.py --limit 50 --scan-limit 1000
+PYTHONPATH=. .venv/bin/python scripts/cleanup-artifacts.py --batch-size 50 --max-items 500 --scan-limit 1000
 ```
 
 Set the intended `DATABASE_URL` and storage credentials in the invoking process.
 The script does not load a production env file or print connection details.
-Limits: 1–500 processed artifacts and 1–10000 scanned candidates per invocation.
-No query materializes the whole eligible population. Policy/age/active-reference
-filtering happens in the candidate query, then is rechecked under locks.
+The scheduled route and CLI share these environment-configured defaults:
 
-Summary fields: `scanned`, `eligible`, `processed`, `deleted`, `failed`,
-`bytes_reclaimed`. Counts describe this bounded scan, not an estate-wide total.
+| Setting | Default | Allowed range | Meaning |
+| --- | ---: | ---: | --- |
+| `ARTIFACT_CLEANUP_BATCH_SIZE` | 50 | 1–500 | Candidate rows fetched per bounded page |
+| `ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN` | 500 | 1–10000 | Attempted eligible removals per invocation |
+| `ARTIFACT_CLEANUP_SCAN_LIMIT` | 1000 | 1–10000 | Candidate inspections per invocation |
+| `ARTIFACT_CLEANUP_MAX_SECONDS` | 240 | 1–600 | Stop starting new items after this many seconds |
+
+Batch size, run budget and schedule frequency are independent. The runner repeats
+small batches until exhaustion or an item/scan/time budget stops it. CLI options
+`--batch-size`, `--max-items` (`--limit` remains an alias), `--scan-limit`, and
+`--max-seconds` override environment values for that invocation. Invalid bounds
+fail before any deletion. No query materializes the whole eligible population.
+Policy/age/active-reference filtering happens in each candidate query and is
+rechecked under the existing per-object locks.
+
+Pages use a `(created_at, artifact_id)` cursor, globally oldest first across all
+tenants. Advancing past failed, skipped and dry-run rows avoids retry loops and
+OFFSET skipping when earlier rows disappear. There is no per-tenant quota: one
+tenant's older backlog can consume the run budget. This deliberately simple age
+ordering prioritizes the oldest retained bytes; it does not guarantee tenant
+round-robin fairness. Newer arrivals do not jump ahead of older work. Monitor
+sustained backlogs; tenant scheduling can be added later without changing deletion.
+
+Summary fields retain `scanned`, `eligible`, `processed`, `deleted`, `failed`, and
+`bytes_reclaimed`, and add `eligible_seen` (alias of `eligible`),
+`batches_processed`, `batch_size`, `max_items_per_run`, `limit_reached`,
+`remaining_work_possible`, and `stop_reason` (`exhausted`, `item_limit`,
+`scan_limit`, `time_limit`). The API returns these values and the runner logs the
+same safe summary, without secrets/locators. A one-row lookahead beyond the cursor
+sets `remaining_work_possible` when a budget stops the run. It is advisory under
+concurrent activity, not an exact backlog count. Hitting an exact budget with no
+more candidates yields `limit_reached=true`, `remaining_work_possible=false`.
+Batches count nonempty pages examined, including dry-run. Failures consume a
+processing slot when a removal was attempted, and later batches still run.
+
+Dry-run uses the same paging and budgets; its item budget counts eligible
+inspections, while `processed`, `deleted` and reclaimed bytes stay zero.
 Dry-run never marks rows or calls storage delete. Reclaimed bytes use recorded
 original/preview sizes, counted only for objects observed present and successfully
 removed/acknowledged. This estimates logical stored bytes, not provider billing;
@@ -154,27 +187,81 @@ locators remain internal historical metadata, even after content removal.
 `vercel.json` adds daily `0 3 * * *` (UTC) invocation of
 `GET /v2/internal/artifacts/cleanup`. It requires an exact bearer `CRON_SECRET`;
 missing configuration fails closed. This operator credential is separate from
-IS sessions and service tokens. The endpoint runs at most 50 removals per day;
-monitor backlog and increase cadence/bounded batch capacity when needed. No
-browser visit or idle polling triggers maintenance. This uses the still-supported
+IS sessions and service tokens. A daily invocation can process up to 500 artifacts
+in pages of 50 by default, subject to scan/time bounds. If cleanup repeatedly
+reaches its run limit:
+
+- Increase max items (and scan budget if needed), keeping bounded pages.
+- Increase schedule frequency in `vercel.json` and redeploy.
+- Later move the same runner to a dedicated worker for larger workloads.
+
+Do not enlarge a database transaction: object fences and acknowledgements remain
+independent commits. The 240-second default leaves headroom below a typical
+300-second Fluid Compute function duration; verify the actual deployment's
+configured duration before rollout. The time budget is checked between items,
+not an interruption of in-flight storage calls. Allow enough headroom for a slow
+object; platform termination still recovers through the existing deletion fence.
+The configured upper bound remains below the 15-minute retry lease. See
+[Vercel function duration limits](https://vercel.com/docs/functions/limitations).
+No browser visit or idle polling triggers maintenance. This uses the still-supported
 Cron configuration already compatible with this deployment; adopting the newer
 Schedules product is a separate infrastructure decision. See [Vercel cron
 configuration and security](https://vercel.com/docs/schedules/cron-jobs/manage-cron-jobs). Local installations can use
 system cron to invoke the CLI. Queue pins remain unchanged.
 
-Production rollout (not performed by this task):
+### CRON_SECRET configuration and rotation
 
-1. Review existing generated content with a dry-run; set explicit tenant policy
-   where the new default is inappropriate.
-2. Apply Alembic revision `1a0006000006` after `1a0003000003` (which follows `1a0009000009`) before starting code
-   that reads the new columns. Migration adds nullable policy overrides, removal
-   timestamps/reason, and cleanup indexes; it deletes no rows or objects.
-3. Deploy code with existing local/Blob read/delete credentials retained. Configure
-   a strong `CRON_SECRET` for the production environment and enable the configured
-   production cron. Do not set it to a service credential or provider API key.
-4. Verify unauthorized cron requests fail, an authorized bounded invocation works,
-   and cron logs/summaries expose no locators. Monitor failures/backlog and storage
-   metrics. Preview and local filesystem permissions must permit deletion.
+`CRON_SECRET` protects the operator-only scheduled cleanup endpoint, independently
+of tenant sessions, IS identities and Sandcastle service scopes. The actual
+contract is `GET /v2/internal/artifacts/cleanup` with an exact header:
+
+```text
+Authorization: Bearer <CRON_SECRET>
+```
+
+The handler compares that header with the environment value using
+`hmac.compare_digest`. Missing/empty configuration or a missing/wrong header
+returns 401 without cleanup. The schedule header or user-agent alone does not
+authorize a request. The secret and authorization header must never be logged.
+
+Generate a strong random value privately using Python already available in IG:
+
+```sh
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Store it in a secret manager. Never reuse application, user, IS or provider
+credentials. Never commit the generated value; `.env.example` contains only
+`CRON_SECRET=` and instructions. For production, set `CRON_SECRET` in the IG Vercel
+project's **Settings → Environment Variables → Production**, then deploy.
+Vercel sends the active deployment's captured value with the Bearer prefix.
+Changing project settings alone does not update an existing deployment.
+
+To rotate: generate/store a replacement, update the Production environment
+variable, redeploy and wait until that deployment is Current, then confirm the
+next scheduled request returns 2xx. Update any manual caller's secret securely at
+that switch. IG accepts one current value, with no dual-secret grace period.
+Promotions/rollbacks can restore a deployment's older captured value; account for
+that when updating manual callers. Investigate 401 via environment scope and
+deployment version, without printing values. This follows the
+[Vercel cron authentication/rotation contract](https://vercel.com/docs/schedules/cron-jobs/manage-cron-jobs).
+Local CLI execution needs no cron secret; a locally scheduled HTTP invocation
+needs a separately configured development secret and the same header.
+
+Production rollout (not performed by this follow-up):
+
+1. Review existing generated content with a dry-run and set explicit policy
+   exceptions. For initial IG#0006 rollout, apply `1a0006000006` after
+   `1a0003000003` before serving lifecycle code. This follow-up adds no migration.
+2. Configure the Production cron secret and cleanup budgets. Start with batch 50,
+   max items 500, scan 1000, 240 seconds; verify runtime duration/headroom and
+   retain all required local/Blob deletion credentials.
+3. Deploy, make the new deployment Current and enable the existing daily cron.
+   Verify missing/wrong authentication returns 401 and the scheduled request
+   returns 2xx without printing authorization headers.
+4. Inspect summary counters/stop reason/backlog and storage metrics. Increase
+   run budget/cadence when repeatedly limited; keep transactions small. Confirm
+   the first scheduled invocation after every secret rotation succeeds.
 
 ## Orphan coverage and limitations
 

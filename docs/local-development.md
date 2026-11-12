@@ -247,3 +247,28 @@ explicitly mapped for that test; real client machines still need hostname resolu
 Job timestamps and cooperative cancellation are documented in [job management](job-management.md).
 The worker explicitly prefers bind-mounted application source using `PYTHONPATH=/app`;
 restart it while idle after worker code changes so it loads the new cancellation fences.
+
+
+## Retention cleanup and scheduled authentication
+
+Manual retention cleanup runs inside the local backend container, after verifying
+its database target as described above:
+
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml exec -T -e PYTHONPATH=/app ig python scripts/cleanup-artifacts.py --dry-run
+docker compose -f compose.yaml -f compose.dev.yaml exec -T -e PYTHONPATH=/app ig python scripts/cleanup-artifacts.py --batch-size 50 --max-items 500
+```
+
+The CLI does not need `CRON_SECRET`. For local HTTP scheduling, generate a separate
+strong random secret with `python -c "import secrets; print(secrets.token_urlsafe(32))"`,
+keep it in ignored `.env`, and recreate the backend container so it reads the
+updated environment. The scheduled endpoint is
+`GET /v2/internal/artifacts/cleanup`; it requires the exact
+`Authorization: Bearer <CRON_SECRET>` header. Never print headers or commit the
+value. `.env.example` provides only an empty placeholder and budget defaults.
+
+In production, configure the IG Vercel project's Production `CRON_SECRET` and
+cleanup budgets, then deploy. Rotation requires a replacement value, environment
+update and deployment, followed by checking the next cron request returns 2xx.
+See [retention operations](artifact-lifecycle.md#cron_secret-configuration-and-rotation)
+for the complete header/rotation contract and independent batch/run/time budgets.

@@ -5,9 +5,12 @@ be admitted as a new input or decoded into another preview, even after a crash.
 """
 from datetime import timedelta
 import logging
+import json
+import os
+from time import monotonic
 from urllib.parse import urlparse
 
-from sqlalchemy import String, cast, exists, select, func, literal, text, case
+from sqlalchemy import String, cast, exists, select, func, literal, text, case, or_, and_
 from app.artifacts.schemas import ArtifactProvenance
 from app.artifacts.storage.provider import artifact_store, provider
 from app.core.time import as_utc, utc_now
@@ -78,7 +81,7 @@ def candidate_query(db, now):
                  ArtifactPreview.artifact_id == Artifact.artifact_id,
                  ArtifactPreview.status == "processing", ArtifactPreview.lease_expires_at > now)))
     return select(Artifact.artifact_id).where(Artifact.content_removed_at.is_(None), pending | fresh).order_by(
-        Artifact.cleanup_started_at.asc().nullsfirst(), Artifact.created_at, Artifact.artifact_id)
+        Artifact.created_at, Artifact.artifact_id)
 
 
 def eligible(db, artifact, now):
@@ -99,20 +102,12 @@ def eligible(db, artifact, now):
     )))
 
 
-def cleanup(db, *, limit=50, scan_limit=1000, dry_run=False, now=None, store=None):
-    """One bounded invocation. Summary counts refer to this scan, not all tenants.
-
-    Hold tenant + artifact locks only while fencing; never during storage I/O.
-    Each object is removed idempotently before its DB acknowledgement. A crash
-    can undercount reclaimed bytes, but cannot make removed content downloadable.
-    """
-    if not 1 <= limit <= 500 or not 1 <= scan_limit <= 10000:
-        raise ValueError("Invalid cleanup batch bounds")
-    now, store = now or utc_now(), store or artifact_store
+def _cleanup_batch(db, ids, *, now, store, dry_run, deadline):
+    """Existing per-object fences/commits, shared by every execution host."""
     summary = dict(scanned=0, eligible=0, processed=0, deleted=0, failed=0, bytes_reclaimed=0)
-    ids = list(db.scalars(candidate_query(db, now).limit(scan_limit)))
-    db.rollback()
     for artifact_id in ids:
+        if monotonic() >= deadline:
+            break
         summary["scanned"] += 1
         try:
             artifact = db.get(Artifact, artifact_id)
@@ -130,9 +125,6 @@ def cleanup(db, *, limit=50, scan_limit=1000, dry_run=False, now=None, store=Non
             if dry_run:
                 db.rollback()
                 continue
-            if summary["processed"] >= limit:
-                db.rollback()
-                break
             summary["processed"] += 1
             artifact.cleanup_started_at = now
             artifact.content_removal_reason = "retention"
@@ -165,4 +157,82 @@ def cleanup(db, *, limit=50, scan_limit=1000, dry_run=False, now=None, store=Non
             db.rollback()
             summary["failed"] += 1
             logger.warning("artifact_cleanup artifact_id=%s error_type=%s", artifact_id, type(exc).__name__)
+    return summary
+
+
+def _setting(value, name, default, maximum):
+    if value is None:
+        value = os.getenv(name, str(default))
+    try:
+        parsed = int(value)
+        if isinstance(value, bool) or str(parsed) != str(value) or not 1 <= parsed <= maximum:
+            raise ValueError
+        return parsed
+    except (ValueError, TypeError):
+        raise ValueError(f"{name} must be an integer from 1 to {maximum}") from None
+
+
+def _page_query(db, now, cursor):
+    query = candidate_query(db, now).add_columns(Artifact.created_at)
+    if cursor is not None:
+        created_at, artifact_id = cursor
+        query = query.where(or_(Artifact.created_at > created_at,
+            and_(Artifact.created_at == created_at, Artifact.artifact_id > artifact_id)))
+    return query
+
+
+def cleanup(db, *, limit=None, batch_size=None, scan_limit=None, max_seconds=None,
+            dry_run=False, now=None, store=None):
+    """Bounded pages with independent run/item/scan/time budgets.
+
+    ``limit`` remains the compatible Python/CLI name for max items per run.
+    Keyset traversal advances past failed/ineligible/dry-run rows as well as
+    removed rows. No growing offset, full-population load, or enormous transaction.
+    """
+    batch_size = _setting(batch_size, "ARTIFACT_CLEANUP_BATCH_SIZE", 50, 500)
+    limit = _setting(limit, "ARTIFACT_CLEANUP_MAX_ITEMS_PER_RUN", 500, 10000)
+    scan_limit = _setting(scan_limit, "ARTIFACT_CLEANUP_SCAN_LIMIT", 1000, 10000)
+    max_seconds = _setting(max_seconds, "ARTIFACT_CLEANUP_MAX_SECONDS", 240, 600)
+    now, store = now or utc_now(), store or artifact_store
+    deadline = monotonic() + max_seconds
+    summary = dict(scanned=0, eligible=0, eligible_seen=0, processed=0, deleted=0, failed=0,
+                   bytes_reclaimed=0, batches_processed=0, limit_reached=False,
+                   remaining_work_possible=False, stop_reason="exhausted",
+                   batch_size=batch_size, max_items_per_run=limit)
+    cursor = None
+    while True:
+        used = summary["eligible"] if dry_run else summary["processed"]
+        if used >= limit:
+            summary["stop_reason"] = "item_limit"
+            break
+        if summary["scanned"] >= scan_limit:
+            summary["stop_reason"] = "scan_limit"
+            break
+        if monotonic() >= deadline:
+            summary["stop_reason"] = "time_limit"
+            break
+        size = min(batch_size, limit - used, scan_limit - summary["scanned"])
+        page = list(db.execute(_page_query(db, now, cursor).limit(size)))
+        db.rollback()
+        if not page:
+            break
+        batch = _cleanup_batch(db, [row.artifact_id for row in page], now=now,
+                               store=store, dry_run=dry_run, deadline=deadline)
+        summary["batches_processed"] += 1
+        for name, count in batch.items():
+            summary[name] += count
+        if batch["scanned"]:
+            last = page[batch["scanned"] - 1]
+            cursor = (last.created_at, last.artifact_id)
+        # A partial batch means the wall-clock budget ended; the next iteration
+        # records that reason and the lookahead includes unexamined page items.
+        if batch["scanned"] < len(page):
+            summary["stop_reason"] = "time_limit"
+            break
+    summary["eligible_seen"] = summary["eligible"]  # Keep old summary field compatible.
+    summary["limit_reached"] = summary["stop_reason"] != "exhausted"
+    if summary["limit_reached"]:
+        summary["remaining_work_possible"] = db.execute(_page_query(db, now, cursor).limit(1)).first() is not None
+        db.rollback()
+    logger.info("artifact_cleanup.summary %s", json.dumps(summary, sort_keys=True))
     return summary
