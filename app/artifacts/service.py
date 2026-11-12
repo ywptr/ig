@@ -11,6 +11,7 @@ from app.artifacts.types import ArtifactPayload
 from app.artifacts.media_metadata import inspect_media
 from app.artifacts.schemas import ArtifactProvenance
 from app.artifacts.lineage import record_generation
+from app.artifacts.previews import generate_preview_for_artifact
 
 
 def stage_media_result(payload: ArtifactPayload) -> tuple[str, str]:
@@ -156,6 +157,7 @@ def create_uploaded_artifact(
         )
 
         db.commit()
+        generate_preview_for_artifact(db, artifact)
         db.refresh(artifact)
 
         return artifact

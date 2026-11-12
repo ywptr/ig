@@ -1,8 +1,7 @@
-"""Resource-limited child process. Deterministic media processing; no AI calls."""
+"""Deterministic codecs; image callable in-process, video isolated by main()."""
 import json
 import math
 from pathlib import Path
-import resource
 import sys
 import warnings
 
@@ -93,21 +92,23 @@ def video_metadata(source):
 
 
 def main():
+    import resource
     # Apply limits before loading native codecs. The parent additionally enforces
     # a wall-clock deadline and kills the entire subprocess group on timeout.
-    resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024,) * 2)
-    resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_PREVIEW_BYTES,) * 2)
-    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     try:
+        resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024,) * 2)
+        resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_PREVIEW_BYTES,) * 2)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         kind, source, destination = sys.argv[1:]
         if kind == "metadata":
             result = video_metadata(Path(source))
         else:
             result = image_preview(Path(source), Path(destination)) if kind == "thumbnail" else video_preview(Path(source), Path(destination))
         print(json.dumps(result, allow_nan=False))
-    except Exception:
+    except Exception as exc:
+        print(json.dumps({"exception_class": type(exc).__name__}))
         # Never serialize decoder diagnostics, filesystem paths or source data.
         raise SystemExit(1) from None
 

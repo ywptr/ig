@@ -60,20 +60,35 @@ sampled timestamps, and an output-content hash for ETag validation. Ownership is
 always read from the original Artifact. The additive migration is
 `1a0009000009_artifact_previews.py`; it performs no backfill or source-row rewrite.
 
-Metadata/list reads never decode or fetch original media. The first authorized
-preview-content GET lazily builds and persists a derivative. This works for old
-Artifacts and avoids delaying generation Job completion. The cold HTTP request
-waits for bounded processing in a FastAPI worker thread; this is not a background
-queue. No Job, worker, continuation, queue protocol or provider behavior is changed.
+New generated images, generated videos (including Alibaba completion), and uploaded
+images call `generate_preview_for_artifact` after committing the original. The
+producer waits for the best-effort preview attempt before returning. No provider
+or LLM is invoked by this hook. Upload processing runs in a FastAPI threadpool,
+not on the async event loop. Upload responses include the resulting preview state.
+
+The original and its generation/finalization transaction commit first: preview
+failure cannot roll back successful media. In particular the fenced video
+completion transaction commits Job/Execution completion atomically with its
+Artifact, then derives the preview before the continuation returns. There is a
+brief visibility window between that commit and the preview attempt, and process
+death in that window can leave a missing preview. This preserves existing fencing
+and avoids holding database locks during media/storage I/O.
+
+Metadata/list reads never decode or fetch original media. Ready/failed preview
+GETs only read cached state. For legacy compatibility (option A), a missing preview
+or an expired processing claim can still be derived by an authorized preview GET.
+This fallback also covers a producer crash before its eager hook. No backfill is
+performed. Authorization and public URLs remain unchanged.
 
 A unique row and conditional claim updates prevent concurrent normal processing
 of the same derivative. The claim is committed before source/storage I/O. A
 120-second lease permits recovery after a process crash; at most two attempts are
 allowed for expired claims. Claim fencing prevents a stale processor from
-publishing over a replacement. Failed derivations are cached rather than retried
-on every list render. Ready derivatives reuse the same object across requests and
-API/process restarts. Only two cold processors run concurrently per API process;
-additional requests receive a processing response and can retry later.
+publishing over a replacement. Failed derivations are cached. Ready derivatives
+reuse the same object across requests and API/process restarts. Two processors
+run concurrently per process. Producers wait at most 25 seconds for a slot; if
+unavailable, a best-effort failed row is recorded. Legacy GETs at capacity return
+202. Ordinary GETs never retry cached failures.
 
 Changing dimensions, sampling, encoding, or another material policy requires a
 version increment. Current metadata advertises the current version. Already-ready
@@ -147,11 +162,21 @@ temporary directory; display filenames and stored locators are not decoder paths
 Local filesystem and Vercel Blob work through the existing router. Future storage
 adapters can participate through the same interface without changing Artifact IDs.
 
-Both codecs run in a separate process with a stripped environment (no inherited
-service/provider/database credentials), a 25-second wall timeout, 15-second CPU
-limit, 768 MiB virtual-memory limit, 4 MiB output-file limit, no core dumps and a
-64-file-descriptor limit. Timeout kills and reaps the subprocess group. Arguments
-are passed as an array; no shell command is constructed from source names.
+Pillow thumbnails run in the current trusted application/job process. Byte,
+pixel, and dimension limits bound accepted inputs; no subprocess or process-wide
+`setrlimit` is used for image previews. There is no hard preemption of a native
+Pillow call. A local three-run 1600×1000 PNG benchmark measured 114.7–249.2 ms
+(median 125.7 ms) including local source I/O and WebP encoding;
+production storage latency and runtime sizing still require deployment validation.
+
+Video contact sheets retain a separate process with a stripped environment, a
+25-second wall timeout, 15-second CPU limit, 768 MiB virtual-memory limit, 4 MiB
+output-file limit, no core dumps and a 64-file-descriptor limit. Timeout kills and
+reaps the subprocess group. These hard limits cannot safely be applied to a shared
+application process; the decode-count bounds alone do not impose a native decoder
+wall deadline or memory ceiling. No claim is made that the deployed runtime
+supports this mechanism: validate video processing there. Video ingest metadata
+inspection also retains its existing child process and five-second timeout.
 
 Additional limits:
 
@@ -176,7 +201,7 @@ can leave an orphan object, as with existing artifact staging; bounded claims
 limit duplicate attempts. No deletion/retention/garbage-collection subsystem is
 added. Future Artifact deletion must account for derivative rows and their objects.
 A cached failure is not reset by a normal retry; correcting infrastructure requires
-an explicit operational retry policy or a new preview version.
+an explicit operational retry (below) or a new preview version.
 
 ## Frontend and reuse
 
@@ -214,3 +239,48 @@ uses only a disposable profile and loopback fixture server.
 | Tests | `tests/test_artifact_previews.py`, `frontend/tests/preview.test.mjs`, `frontend/tests/preview-network.test.mjs` |
 | Dependencies | `pyproject.toml`, `requirements.txt`, `uv.lock` |
 | Documentation | `docs/artifact-previews.md`, `docs/service-access.md`, `README.md` |
+
+
+## Diagnostics and operational retry
+
+`app.artifacts.previews` logs artifact ID, media type, policy version, stage,
+outcome, exception class, and an allowlisted/sanitized message. Video process
+failures also include the numeric decoder return code. Raw exceptions,
+tracebacks, source bytes, prompts, locators, credentials and tokens are withheld.
+Video children emit only their exception class; stderr is discarded. Stages
+identify decode, derivative storage, derivative persistence, or failure recording.
+A database outage can prevent recording failure; successful originals remain
+committed and the sanitized failure is logged.
+
+Inspect one failed current-version preview using the deployed application code
+and its existing database/storage environment (do not paste secrets into commands):
+
+```sh
+.venv/bin/python scripts/retry-artifact-preview.py --tenant-id TENANT_UUID --artifact-id ARTIFACT_UUID
+```
+
+After verifying the tenant, artifact, and intended target, retry just that row:
+
+```sh
+.venv/bin/python scripts/retry-artifact-preview.py --tenant-id TENANT_UUID --artifact-id ARTIFACT_UUID --execute --allow-production-write --confirm-database-target 'HOST[:PORT]/DATABASE'
+```
+
+Use the exact target label printed by the repository safety guard; substitute its
+actual port only if present. The guard runs before any write connection. The
+utility conditionally resets only a `failed` row for the selected artifact and
+current policy version. It refuses ready, processing, missing, or wrong-tenant
+rows. It never deletes preview records, changes originals, or calls providers.
+A repeated retry of a now-ready preview is refused. No bulk mode or public retry
+endpoint is introduced.
+
+## Deployment validation
+
+Deploy the changed code through the normal release process; no migration or
+infrastructure change is required. Existing cached failed rows remain failed.
+An operator should generate one new production image, then inspect the preview
+row before making a preview GET: it must already be ready; GET must return 200.
+Check the corresponding sanitized logs. Test one Alibaba video only with explicit
+operator approval for the paid provider call; verify ready contact sheet and 200.
+Neither deployment nor paid production calls are performed by these local changes.
+
+Run the new producer tests with `python -m unittest tests.test_eager_previews`.

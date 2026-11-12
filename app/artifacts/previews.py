@@ -1,7 +1,8 @@
-"""Lazy, bounded and durably cached mechanical derivatives of authorized Artifacts."""
+"""Eager, bounded and durably cached mechanical Artifact derivatives."""
 from datetime import timedelta
 from hashlib import sha256
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -11,7 +12,7 @@ from tempfile import TemporaryDirectory
 from threading import BoundedSemaphore
 from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import inspect, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,13 +23,34 @@ from app.artifacts.storage.provider import artifact_store
 from app.core.time import utc_now
 from app.db.models import Artifact, ArtifactPreview
 
+logger = logging.getLogger(__name__)
+
 SLOTS = BoundedSemaphore(2)
 LEASE_SECONDS = 120
 MAX_ATTEMPTS = 2  # Only expired/crashed claims can be retried; failures are cached.
+ERROR_CODES = {"SOURCE_SIZE_LIMIT", "PROCESSING_TIMEOUT", "PROCESSING_FAILED"}
 
 
 class PreviewFailure(Exception):
-    pass
+    def __init__(self, code, *, exception_class=None, returncode=None):
+        super().__init__(code)
+        self.exception_class = exception_class
+        self.returncode = returncode
+
+
+def diagnostic(artifact_id, media_type, stage, outcome, exc=None):
+    # Raw exception text can contain signed URLs, paths or credentials. Use an
+    # allowlisted message, retaining the class and stage for investigation.
+    message = "ok"
+    if exc:
+        message = str(exc) if isinstance(exc, PreviewFailure) and str(exc) in ERROR_CODES else "operation failed; details withheld"
+    if isinstance(exc, PreviewFailure) and isinstance(exc.returncode, int):
+        message += f"; decoder_returncode={exc.returncode}"
+    logger.log(logging.WARNING if exc else logging.INFO,
+        "artifact_preview artifact_id=%s media_type=%s version=%s stage=%s outcome=%s exception_class=%s message=%s",
+        artifact_id, media_type, VERSION, stage, outcome,
+        (getattr(exc, "exception_class", None) or type(exc).__name__) if exc else "none", message)
+
 
 
 def preview_metadata(artifact: Artifact, row: ArtifactPreview | None = None) -> dict:
@@ -75,22 +97,33 @@ def process_source(kind: str, storage_uri: str, size_bytes: int | None) -> tuple
                 output.write(chunk)
         if not total:
             raise PreviewFailure("PROCESSING_FAILED")
-        # The decoder inherits no service/provider/database credentials.
-        environment = {"PATH": os.defpath, "LANG": "C.UTF-8", "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
-        process = subprocess.Popen(
-            [sys.executable, "-m", "app.artifacts.preview_worker", kind, str(source), str(destination)],
-            cwd=Path(__file__).resolve().parents[2], env=environment,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
-        )
-        try:
-            stdout, _ = process.communicate(timeout=PROCESS_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
-            raise PreviewFailure("PROCESSING_TIMEOUT") from None
-        if process.returncode or len(stdout) > 4096 or not destination.is_file():
-            raise PreviewFailure("PROCESSING_FAILED")
-        metadata = json.loads(stdout)
+        if kind == "thumbnail":
+            # Pillow runs in the trusted producer process with byte, dimension
+            # and pixel limits. Do not apply process-wide resource limits here.
+            from app.artifacts.preview_worker import image_preview
+            metadata = image_preview(source, destination)
+        else:
+            # Native video decode retains hard memory/CPU/wall-clock isolation.
+            environment = {"PATH": os.defpath, "LANG": "C.UTF-8", "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
+            process = subprocess.Popen(
+                [sys.executable, "-m", "app.artifacts.preview_worker", kind, str(source), str(destination)],
+                cwd=Path(__file__).resolve().parents[2], env=environment,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+            try:
+                stdout, _ = process.communicate(timeout=PROCESS_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+                raise PreviewFailure("PROCESSING_TIMEOUT") from None
+            if len(stdout) > 4096:
+                raise PreviewFailure("PROCESSING_FAILED")
+            metadata = json.loads(stdout) if stdout else {}
+            if process.returncode or not destination.is_file():
+                error_class = metadata.get("exception_class", "DecoderProcessError")
+                if not isinstance(error_class, str) or not error_class.isidentifier() or len(error_class) > 80:
+                    error_class = "DecoderProcessError"
+                raise PreviewFailure("PROCESSING_FAILED", exception_class=error_class, returncode=process.returncode)
         data = destination.read_bytes()
         if (not 0 < len(data) <= MAX_PREVIEW_BYTES or data[:4] != b"RIFF" or data[8:12] != b"WEBP"
             or not 0 < metadata["width"] <= 768 or not 0 < metadata["height"] <= 512
@@ -99,7 +132,7 @@ def process_source(kind: str, storage_uri: str, size_bytes: int | None) -> tuple
         return data, metadata
 
 
-def ensure_preview(db: Session, artifact: Artifact) -> ArtifactPreview | None:
+def ensure_preview(db: Session, artifact: Artifact, *, wait_for_slot: bool = False) -> ArtifactPreview | None:
     """Return cached/fenced state; None means this instance is at capacity.
 
     No transaction spans media reads, decoding or derivative-storage I/O.
@@ -108,11 +141,14 @@ def ensure_preview(db: Session, artifact: Artifact) -> ArtifactPreview | None:
     if kind is None:
         return None
     identity = (artifact.artifact_id, kind, VERSION)
-    source_uri, size_bytes = artifact.storage_uri, artifact.size_bytes
+    source_uri, size_bytes, media_type = artifact.storage_uri, artifact.size_bytes, artifact.media_type
     row = db.get(ArtifactPreview, identity)
     if row is not None and row.status in {"ready", "failed"}:
         return row
-    if not SLOTS.acquire(blocking=False):
+    acquired = SLOTS.acquire(timeout=PROCESS_TIMEOUT) if wait_for_slot else SLOTS.acquire(blocking=False)
+    if not acquired:
+        if wait_for_slot:
+            raise PreviewFailure("PROCESSING_TIMEOUT")
         return None
     try:
         now, claim = utc_now(), str(uuid4())
@@ -147,22 +183,78 @@ def ensure_preview(db: Session, artifact: Artifact) -> ArtifactPreview | None:
                 return db.get(ArtifactPreview, identity, populate_existing=True)
         # commit expires ORM data; use only plain snapshots during external work.
         values = {}
+        stage = "decode"
+        diagnostic(identity[0], media_type, stage, "started")
         try:
             data, metadata = process_source(kind, source_uri, size_bytes)
+            stage = "store_derivative"
             uri = artifact_store.put_bytes(filename="preview.webp", data=data)
             values = {"status": "ready", "storage_uri": uri, "size_bytes": len(data),
                       "etag": sha256(data).hexdigest(), **metadata}
         except Exception as exc:
+            diagnostic(identity[0], media_type, stage, "failed", exc)
             code = str(exc) if isinstance(exc, PreviewFailure) else "PROCESSING_FAILED"
-            if code not in {"SOURCE_SIZE_LIMIT", "PROCESSING_TIMEOUT", "PROCESSING_FAILED"}:
+            if code not in ERROR_CODES:
                 code = "PROCESSING_FAILED"
             values = {"status": "failed", "error_code": code}
-        db.execute(update(ArtifactPreview).where(
+        published = db.execute(update(ArtifactPreview).where(
             ArtifactPreview.artifact_id == identity[0], ArtifactPreview.kind == kind,
             ArtifactPreview.version == VERSION, ArtifactPreview.status == "processing",
             ArtifactPreview.claim_id == claim,
         ).values(**values).execution_options(synchronize_session=False))
         db.commit()
+        diagnostic(identity[0], media_type, "persist_derivative", values["status"] if published.rowcount == 1 else "superseded")
         return db.get(ArtifactPreview, identity, populate_existing=True)
     finally:
         SLOTS.release()
+
+
+def generate_preview_for_artifact(db: Session, artifact: Artifact) -> ArtifactPreview | None:
+    """Best-effort producer hook. Call only AFTER committing the original.
+
+    Preview transactions may commit/rollback independently of successful media
+    creation. Cached terminal rows and fenced claims make repeated calls safe.
+    """
+    artifact_id = inspect(artifact).identity[0]
+    media_type, kind = "unknown", None
+    try:
+        media_type = artifact.media_type
+        kind = kind_for(media_type, artifact.mime_type)
+        if kind is None:
+            return None
+        return ensure_preview(db, artifact, wait_for_slot=True)
+    except Exception as exc:
+        diagnostic(artifact_id, media_type, "preview_transaction", "failed", exc)
+        db.rollback()
+        if kind is None:
+            return None
+        # Best effort even when claiming/persisting the preview itself fails.
+        # Never overwrite a concurrent owner's claim or a ready derivative.
+        try:
+            row = db.get(ArtifactPreview, (artifact_id, kind, VERSION))
+            if row is None:
+                row = ArtifactPreview(artifact_id=artifact_id, kind=kind, version=VERSION,
+                    status="failed", error_code="PROCESSING_FAILED", attempts=0,
+                    claim_id=str(uuid4()), lease_expires_at=utc_now())
+                db.add(row)
+                db.commit()
+            return row
+        except Exception as record_exc:
+            db.rollback()
+            diagnostic(artifact_id, media_type, "record_failure", "failed", record_exc)
+            return None
+
+
+def retry_failed_preview(db: Session, artifact: Artifact) -> ArtifactPreview | None:
+    """Operational retry for exactly one failed current-version derivative."""
+    identity = artifact.artifact_id, kind_for(artifact.media_type, artifact.mime_type), VERSION
+    changed = db.execute(update(ArtifactPreview).where(
+        ArtifactPreview.artifact_id == identity[0], ArtifactPreview.kind == identity[1],
+        ArtifactPreview.version == identity[2], ArtifactPreview.status == "failed",
+    ).values(status="processing", claim_id=str(uuid4()), lease_expires_at=utc_now() - timedelta(seconds=1),
+             attempts=0, error_code=None).execution_options(synchronize_session=False))
+    db.commit()
+    if changed.rowcount != 1:
+        raise ValueError("Selected preview is not failed; no preview was reset")
+    db.expire_all()
+    return generate_preview_for_artifact(db, artifact)

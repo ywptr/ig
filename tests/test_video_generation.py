@@ -38,7 +38,9 @@ class VideoTestCase(MediaJobTestCase):
         self.http = self.enterContext(patch("app.media.providers.alibaba.video.requests.request"))
         self.http.side_effect = AssertionError("HTTP must be explicitly configured by the test")
         self.download = self.enterContext(patch("app.media.providers.alibaba.video.requests.get"))
-        self.store = Mock(spec=["put_bytes"])
+        self.store = Mock(spec=["put_bytes", "iter_bytes"])
+        self.store.iter_bytes.return_value = [MP4]
+        self.enterContext(patch("app.artifacts.previews.artifact_store", self.store))
         self.store.put_bytes.return_value = "vercel-blob:///artifacts/video.mp4"
         self.enterContext(patch("app.artifacts.service.artifact_store", self.store))
         self.references = Mock(spec=["iter_bytes"])

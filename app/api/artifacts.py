@@ -3,6 +3,7 @@ from app.artifacts.schemas import ArtifactProvenance
 from app.artifacts.lineage import generations_for, inputs_for
 from app.artifacts.library import artifact_page, InvalidCursor
 from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Request, Query
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -141,6 +142,7 @@ def read_artifact_page(
 )
 async def upload_artifact(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
     origin: Literal[
         "reference",
         "external_generation",
@@ -199,7 +201,7 @@ async def upload_artifact(
             f"upload.{extension}"
         )
 
-    artifact = create_uploaded_artifact(
+    artifact = await run_in_threadpool(create_uploaded_artifact,
         tenant_id=context.tenant.tenant_id,
         user_id=context.membership.user_id,
         data=data,
@@ -209,7 +211,7 @@ async def upload_artifact(
     )
 
     return artifact_to_dict(
-        artifact
+        artifact, previews.metadata_for_artifacts(db, [artifact])[artifact.artifact_id]
     )
 
 @router.get("/{artifact_id}")
@@ -312,7 +314,11 @@ def read_artifact_preview(
     if kind is None:
         return JSONResponse(previews.preview_metadata(artifact), status_code=415, headers=private)
     if v == VERSION:
-        row = previews.ensure_preview(db, artifact)
+        row = db.get(ArtifactPreview, (artifact_id, kind, v))
+        # Compatibility for historical missing previews and expired claims only.
+        # New producers persist a terminal preview before returning to callers.
+        if row is None or row.status == "processing":
+            row = previews.ensure_preview(db, artifact)
     else:
         # Previously generated versions remain readable after a policy upgrade.
         # Only the current policy is allowed to start new decoding work.

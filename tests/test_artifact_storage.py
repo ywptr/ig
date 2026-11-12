@@ -31,6 +31,7 @@ def install_storage(test):
     store = local_store(test)
     test.enterContext(patch("app.artifacts.service.SessionLocal", test.sessions))
     test.enterContext(patch("app.artifacts.service.artifact_store", store))
+    test.enterContext(patch("app.artifacts.previews.artifact_store", store))
     test.enterContext(patch("app.api.artifacts.artifact_store", store))
     return store
 

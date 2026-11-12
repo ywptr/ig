@@ -290,6 +290,8 @@ class ImageExecutionTestCase(MediaJobTestCase):
         ))
         self.store = Mock(spec=["put_bytes", "exists", "iter_bytes"])
         self.store.put_bytes.return_value = "file:///test-output.png"
+        self.store.iter_bytes.return_value = [b"fake image bytes"]
+        self.enterContext(patch("app.artifacts.previews.artifact_store", self.store))
         self.enterContext(patch("app.images.tasks.artifact_store", self.store))
 
 

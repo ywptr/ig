@@ -267,7 +267,7 @@ class ArtifactPreviewTests(contracts.MediaJobTestCase):
         self.assertEqual(response.json()["error_code"], "SOURCE_SIZE_LIMIT")
 
     def test_process_timeout_kills_group_and_is_persisted_as_failure(self):
-        artifact_id = self.original()
+        artifact_id = self.original(b"video", "video", "video/mp4")
         process = Mock(pid=123456)
         process.communicate.side_effect = [subprocess.TimeoutExpired("decoder", 25), (b"", None)]
         with patch("app.artifacts.previews.subprocess.Popen", return_value=process) as launch, patch("app.artifacts.previews.os.killpg") as kill:

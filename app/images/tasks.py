@@ -7,6 +7,7 @@ from app.artifacts.media_metadata import inspect_media
 from app.artifacts.lineage import record_generation
 from app.executions.context import current_execution
 from app.artifacts.service import create_artifact
+from app.artifacts.previews import generate_preview_for_artifact
 from app.artifacts.storage.provider import (
     artifact_store,
 )
@@ -483,6 +484,7 @@ def execute_image_generation(
             )
 
             db.commit()
+            generate_preview_for_artifact(db, artifact)
 
             return build_handler_result(
                 artifact=artifact,

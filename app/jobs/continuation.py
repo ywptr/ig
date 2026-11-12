@@ -17,6 +17,7 @@ from app.db.models import Execution, Job
 from app.executions.service import apply_execution_result, complete_execution, wait_execution, fail_execution
 from app.artifacts.media_metadata import inspect_media
 from app.artifacts.service import stage_media_result, persist_media_result
+from app.artifacts.previews import generate_preview_for_artifact
 from app.jobs.cancellation import (
     JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
 )
@@ -264,6 +265,8 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
             job.status = "completed"
             job.completed_at = utc_now()
         db.commit()
+        if staged is not None:
+            generate_preview_for_artifact(db, artifact)
         return True
 
 
