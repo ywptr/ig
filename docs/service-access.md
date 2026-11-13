@@ -1,5 +1,8 @@
 # IG service access and delegated actors (IG#0001)
 
+For the supported internal Python client and Sandcastle adoption examples, see
+[Sandcastle integration helpers (IG#0011)](sandcastle-integration.md).
+
 IG accepts a trusted application's signed assertion of an already-established IS
 identity. The caller service, delegated human, and tenant are separate principals.
 IS remains the human identity authority; IG authorizes membership and resources.

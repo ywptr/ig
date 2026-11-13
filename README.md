@@ -1,6 +1,7 @@
 # IG — AI Media Generation Control Plane
 
 Delegated application callers use the [service-access contract](docs/service-access.md).
+Sandcastle and other trusted backends can adopt the [internal Python integration helper](docs/sandcastle-integration.md).
 Media lists use [deterministic cached previews](docs/artifact-previews.md); originals remain behind explicit Open links.
 
 **Version 4.6**
