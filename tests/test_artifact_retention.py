@@ -236,7 +236,10 @@ class RetentionTests(contracts.MediaJobTestCase):
         from alembic.config import Config
         from alembic.script import ScriptDirectory
         self.assertEqual(migration.down_revision, "1a0003000003")
-        self.assertEqual(ScriptDirectory.from_config(Config("alembic.ini")).get_heads(), [migration.revision])
+        scripts = ScriptDirectory.from_config(Config("alembic.ini"))
+        heads = scripts.get_heads()
+        self.assertEqual(len(heads), 1)
+        self.assertIn(migration.revision, {item.revision for item in scripts.iterate_revisions(heads[0], "base")})
         identity = self.artifact()
         with self.engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):

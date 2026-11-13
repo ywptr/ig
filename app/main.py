@@ -51,6 +51,20 @@ app = FastAPI(
     version="0.1.0",
 )
 
+from app.api.editor import router as editor_router
+app.include_router(editor_router)
+
+@app.middleware("http")
+async def framing_policy(request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/embed/generation/"):
+        response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.url.path.startswith("/v2/editor/") or request.headers.get("x-ig-editor-token"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 app.include_router(
     image_router,

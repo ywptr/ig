@@ -59,7 +59,13 @@ def generate_media(
         from app.auth.principal import RequestPrincipal
         from app.auth.service_access import fail
         from app.media.submissions import submit_delegated_media
-        if isinstance(context, RequestPrincipal) and context.caller_type == "service":
+        if isinstance(context, RequestPrincipal) and context.caller_type == "editor":
+            from app.editor import submit_editor_generation
+            keys = http_request.headers.getlist("idempotency-key")
+            if len(keys) != 1:
+                fail(400, "INVALID_IDEMPOTENCY_KEY")
+            submission = submit_editor_generation(db, context, http_request.state.editor_session, request, keys[0])
+        elif isinstance(context, RequestPrincipal) and context.caller_type == "service":
             keys = http_request.headers.getlist("idempotency-key")
             if len(keys) != 1:
                 fail(400, "INVALID_IDEMPOTENCY_KEY")

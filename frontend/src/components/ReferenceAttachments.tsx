@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useArtifactAsset } from "../hooks/useArtifactAsset";
+import { isEditorRequest } from "../api/editorContext";
 import { listArtifactPage, uploadArtifact, artifactPreviewUrl } from "../api/artifacts";
 import { safeMessage } from "../api/client";
 import { attachArtifact, attachmentError, canAttach, removeAttachment, validateUpload, UPLOAD_MIMES, type Attachment } from "../lib/references";
@@ -6,13 +8,14 @@ import type { Artifact, ArtifactPage, ArtifactProvenance, ReferenceInputSlot } f
 
 export function ReferenceThumbnail({ artifact }: { artifact: Artifact }) {
     const [failed, setFailed] = useState(false);
-    const unavailable = failed || artifact.preview?.status === "failed" || artifact.preview?.status === "unsupported";
+    const source = useArtifactAsset(isEditorRequest() ? artifactPreviewUrl(artifact.artifact_id) : artifact.preview?.url ?? artifactPreviewUrl(artifact.artifact_id));
+    const unavailable = failed || source === "" || artifact.preview?.status === "failed" || artifact.preview?.status === "unsupported";
     return unavailable ? <span className="reference-thumbnail reference-fallback" role="img" aria-label="Preview unavailable">◇</span>
-        : <img className="reference-thumbnail" src={artifact.preview?.url ?? artifactPreviewUrl(artifact.artifact_id)}
+        : <img className="reference-thumbnail" src={source}
             alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
 }
-interface Props { references: Attachment[]; slots: ReferenceInputSlot[]; onChange: (references: Attachment[]) => void }
-export function ReferenceAttachments({ references, slots, onChange }: Props) {
+interface Props { references: Attachment[]; slots: ReferenceInputSlot[]; onChange: (references: Attachment[]) => void; allowUpload?: boolean }
+export function ReferenceAttachments({ references, slots, onChange, allowUpload = true }: Props) {
     const [open, setOpen] = useState(false);
     return <section className="reference-section" aria-label="Generation references">
         <div className="section-heading"><strong>References</strong><button type="button" className="secondary-button"
@@ -46,11 +49,11 @@ export function ReferenceAttachments({ references, slots, onChange }: Props) {
                 {error && <p className="error reference-error" role="alert">{error}</p>}
             </div>;
         })}
-        {open && <ArtifactPicker slots={slots} references={references} onAttach={onChange} onClose={() => setOpen(false)} />}
+        {open && <ArtifactPicker slots={slots} references={references} onAttach={onChange} onClose={() => setOpen(false)} allowUpload={allowUpload} />}
     </section>;
 }
 interface PickerProps extends Omit<Props, "onChange"> { onAttach: Props["onChange"]; onClose: () => void }
-export function ArtifactPicker({ slots, references, onAttach, onClose }: PickerProps) {
+export function ArtifactPicker({ slots, references, onAttach, onClose, allowUpload = true }: PickerProps) {
     const dialog = useRef<HTMLDialogElement>(null);
     const [slotName, setSlotName] = useState(slots[0]?.name ?? "");
     const slot = slots.find(slot => slot.name === slotName) ?? slots[0];
@@ -125,10 +128,10 @@ export function ArtifactPicker({ slots, references, onAttach, onClose }: PickerP
             <label>Role<select value={selectedRole} onChange={event => setRole(event.target.value)}>
                 {slot?.roles.map(role => <option key={role} value={role}>{role.replaceAll("_", " ")}</option>)}</select></label>
             <p className="lab-help">{slot ? `${slot.min_count}–${slot.max_count} references · up to ${slot.max_bytes / 1024 / 1024} MiB each · ${slot.mime_types.join(", ")}` : "No supported inputs."}</p>
-            <label>Upload reference image<input type="file" disabled={full || !slot?.media_types.includes("image") || !slot.mime_types.some(mime => UPLOAD_MIMES.includes(mime))}
+            <label>Upload reference image<input type="file" disabled={!allowUpload || full || !slot?.media_types.includes("image") || !slot.mime_types.some(mime => UPLOAD_MIMES.includes(mime))}
                 accept={slot?.mime_types.filter(mime => UPLOAD_MIMES.includes(mime)).join(",")}
                 onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void upload(file); }} /></label>
-            <p className="lab-help">Uploads: PNG, JPEG or WebP, at most 10 MiB (or the input limit if smaller). Uploading attaches immediately.</p>
+            <p className="lab-help">{allowUpload ? "Uploads: PNG, JPEG or WebP, at most 10 MiB (or the input limit if smaller). Uploading attaches immediately." : "Uploads are disabled for this editor."}</p>
             <div className="picker-search"><label>Search filename<input type="search" value={search} onChange={event => setSearch(event.target.value)}
                     onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); reset(); setQuery(previous => ({ ...previous, q: search.trim() })); } }} /></label>
                 <button type="button" onClick={() => { reset(); setQuery(previous => ({ ...previous, q: search.trim() })); }}>Search</button>

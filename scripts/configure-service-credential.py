@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--scope", action="append", default=[])
     parser.add_argument("--tenant-id", action="append", default=[])
     parser.add_argument("--actor-issuer", action="append", default=[])
+    parser.add_argument("--editor-origin", action="append", default=[])
     add_write_confirmation_arguments(parser)
     args = parser.parse_args()
     try:
@@ -36,7 +37,7 @@ def main():
                     raise ValueError("Service ID and public key file are required")
                 register_credential(db, key_id=args.key_id, service_id=args.service_id,
                     public_key=args.public_key_file.read_bytes(), scopes=args.scope,
-                    tenant_ids=args.tenant_id, actor_issuers=args.actor_issuer)
+                    tenant_ids=args.tenant_id, actor_issuers=args.actor_issuer, editor_origins=args.editor_origin)
             db.commit()
     except Exception:
         # Do not serialize SQL/library exceptions or key material to the terminal.

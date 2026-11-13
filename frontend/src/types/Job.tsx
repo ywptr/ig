@@ -4,6 +4,8 @@ export interface Job {
   capability: string;
   status: JobStatus;
   error_message: string | null;
+  error_code?: string | null;
+  editor_attempt_id?: string;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

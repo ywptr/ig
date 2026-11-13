@@ -358,14 +358,15 @@ responses. Lower-level waiting returns them as Job values. Combined orchestratio
 raises `IGGenerationError` with categories generation_timeout, provider_uncertainty,
 generation_failure or canceled. These exceptions are never automatically retryable.
 
-## IG#0010 boundary
+## Advanced Generation Editor (IG#0010)
 
-`EditorLaunchRequest(correlation_id, artifact_ids=(), return_url=None)` and
-`client.create_editor_session(context, request)` reserve an explicit server-side
-editor launch boundary. The method raises `NotImplementedError` before signing
-or making HTTP calls. No endpoint, embed session, browser credential, launch URL
-or return-URL trust policy is implemented or promised. IG#0010 will define the
-response and backend authorization/expiry/origin rules behind this boundary.
+`create_editor_session(context, EditorLaunchRequest(...))` now calls the narrow
+`POST /v2/editor/sessions` endpoint using `editor:launch`. It returns an
+`EditorSession` containing session/correlation IDs, a one-time launch URL, launch
+and editor expiry timestamps, and draft validation messages. See the complete
+[embed integration guide](embedded-editor.md) for the parent-origin registration,
+prepared draft, iframe/popup handshake, policy, result events and deployment steps.
+The reserved pre-IG#0010 request shape has been replaced in client version 0.2.0.
 
 ## Adoption checklist and verification
 
@@ -377,7 +378,7 @@ response and backend authorization/expiry/origin rules behind this boundary.
 6. Submit using that ID, persist IG Job/request IDs, then poll from a worker.
 7. Save Execution/Artifact mappings and media type; proxy authorized bytes when needed.
 8. Implement the error table, same-key recovery and intentional user-driven regeneration.
-9. Keep embedded-editor integration disabled until IG#0010 implements the reserved boundary.
+9. For optional advanced editing, adopt the separate editor launch and strict parent-message contract.
 
 Focused tests: `python -m unittest tests.test_integration_client` from IG's checkout.
 Disposable PostgreSQL + Redis/RQ path: `python -m tests.client_integration_check`.

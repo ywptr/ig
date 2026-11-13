@@ -261,10 +261,15 @@ class ClientTests(unittest.TestCase):
             self.assertFalse(caught.exception.retryable)
             self.assertEqual(self.transport.request.call_count, 2)
 
-    def test_editor_boundary_makes_no_call(self):
-        with self.assertRaises(NotImplementedError):
-            self.client.create_editor_session(CONTEXT, EditorLaunchRequest("scene", ("artifact",)))
-        self.transport.request.assert_not_called()
+    def test_editor_launch_parses_session_and_uses_narrow_scope(self):
+        self.transport.request.return_value = response({"session_id": "session", "correlation_id": "scene",
+            "launch_url": "https://ig.example.test/embed/generation/session#launch=opaque", "launch_expires_at": "later", "expires_at": "later"}, 201)
+        session = self.client.create_editor_session(CONTEXT, EditorLaunchRequest("scene", "https://sandcastle.test", IMAGE))
+        self.assertEqual(session.correlation_id, "scene")
+        token = self.transport.request.call_args.kwargs["headers"]["Authorization"].split()[1]
+        self.assertEqual(jwt.decode(token, KEY.public_key(), algorithms=["RS256"], audience="ig-api")["scope"], "editor:launch")
+        self.assertNotIn(token, repr(session))
+        self.assertNotIn("opaque", repr(session))
 
     def test_independent_import_has_no_app_or_database_dependency(self):
         import subprocess

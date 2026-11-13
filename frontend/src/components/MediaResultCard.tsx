@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { ArtifactPreviewImage } from "./ArtifactPreviewImage";
+import { ArtifactLink } from "./ArtifactAsset";
 import { artifactContentUrl } from "../api/artifacts";
 import { safeMessage } from "../api/client";
 import { humanize } from "../lib/generation";
@@ -28,6 +29,6 @@ export const MediaResultCard = memo(function MediaResultCard({ result }: { resul
             {result.completed_at && <div><dt>Finished</dt><dd><time dateTime={result.completed_at}>{time(result.completed_at)}</time></dd></div>}
         </dl>
         {result.error && <p className="error" role="alert">{safeMessage(result.error)}</p>}
-        {url && <a href={url} target="_blank" rel="noreferrer">Open {result.media_type} output</a>}
+        {url && <ArtifactLink href={url} target="_blank" rel="noreferrer">Open {result.media_type} output</ArtifactLink>}
     </article>;
 });

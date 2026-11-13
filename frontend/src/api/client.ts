@@ -1,3 +1,5 @@
+import { authenticatedOptions, isEditorRequest } from "./editorContext";
+
 export class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -29,7 +31,7 @@ function errorDetail(body: unknown): string | undefined {
 export async function requestJSON<T>(url: string, options: RequestInit = {}): Promise<T> {
     let response: Response;
     try {
-        response = await fetch(url, { ...options, credentials: "same-origin" });
+        response = await fetch(url, authenticatedOptions(url, options));
     } catch (error) {
         if (options.signal?.aborted) throw error;
         throw new Error("Unable to reach IG. Check your connection.");
@@ -38,7 +40,7 @@ export async function requestJSON<T>(url: string, options: RequestInit = {}): Pr
         let detail: string | undefined;
         try { detail = errorDetail(await response.json()); } catch { /* Do not display HTML error bodies. */ }
         throw new ApiError(response.status, response.status === 401
-            ? "Your session has expired. Reload this page to sign in."
+            ? isEditorRequest() ? "Editor access expired or was revoked. Request a new editor launch." : "Your session has expired. Reload this page to sign in."
             : safeMessage(detail, `IG request failed (${response.status}). Please try again.`));
     }
     try { return await response.json() as T; }

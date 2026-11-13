@@ -43,7 +43,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<voi
     </div>;
 }
 
-export default function App() {
+function NormalApp() {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -63,4 +63,9 @@ export default function App() {
     if (!user) return <>{error && <p className="error" role="alert">{error}</p>}<AuthScreen onAuthenticated={setUser} /></>;
     // Remount all tenant/user data and cancel requests when the signed-in user changes.
     return <Workspace key={user.user_id} user={user} onLogout={signOut} />;
+}
+
+export default function App() {
+    if (typeof window !== "undefined" && window.parent !== window) return <p role="alert">Launch the Advanced Generation Editor to embed IG.</p>;
+    return <NormalApp />;
 }

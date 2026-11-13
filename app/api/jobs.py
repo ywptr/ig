@@ -131,9 +131,21 @@ def list_jobs(
         .limit(100)
     )
 
+    if context.caller_type == "editor":
+        from app.db.models import EditorAttempt
+        # Editor identity is scoped further than a normal actor workspace.
+        statement = statement.where(Job.job_id.in_(select(EditorAttempt.job_id).where(
+            EditorAttempt.session_id == context.editor_session_id)))
+
     jobs = db.scalars(statement).all()
 
-    return [{key: value for key, value in job_to_dict(job).items() if key != "input"} for job in jobs]
+    output = [{key: value for key, value in job_to_dict(job).items() if key != "input"} for job in jobs]
+    if context.caller_type == "editor":
+        attempts = {row.job_id: row.attempt_id for row in db.scalars(select(EditorAttempt).where(
+            EditorAttempt.session_id == context.editor_session_id))}
+        for item in output:
+            item["editor_attempt_id"] = attempts.get(item["job_id"])
+    return output
 
 
 @router.post("/jobs/{job_id}/cancel")

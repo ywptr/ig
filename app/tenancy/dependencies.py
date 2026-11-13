@@ -10,6 +10,10 @@ def get_tenant_context(
     request: Request,
     db: Session = Depends(get_db),
 ) -> TenantContext:
+    from app.editor import editor_principal
+    editor = editor_principal(request, db)
+    if editor is not None:
+        return editor
     from app.auth.service_access import service_principal
     principal = service_principal(request, db)
     if principal is not None:
@@ -53,7 +57,7 @@ def get_authenticated_tenant_context(
     governance: TenancyGovernance = Depends(get_tenancy_governance),
 ) -> TenantContext:
     from app.auth.principal import RequestPrincipal
-    if isinstance(tenant_context, RequestPrincipal) and tenant_context.caller_type == "service":
+    if isinstance(tenant_context, RequestPrincipal) and tenant_context.caller_type in {"service", "editor"}:
         return tenant_context
     membership = governance.get_active_membership(
         db,
@@ -78,7 +82,7 @@ def get_admin_tenant_context(
     ),
 ) -> TenantContext:
     if (
-        getattr(context, "caller_type", "user") == "service"
+        getattr(context, "caller_type", "user") in {"service", "editor"}
         or context.membership is None
         or context.membership.role != "admin"
     ):

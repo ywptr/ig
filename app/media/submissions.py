@@ -21,15 +21,19 @@ def digest(value) -> str:
                              ensure_ascii=True, allow_nan=False).encode()).hexdigest()
 
 
+def submission_identity(principal, idempotency_key):
+    scope = {"service": principal.service_id, "tenant": principal.tenant.tenant_id,
+             "issuer": principal.actor_issuer, "subject": principal.actor_subject,
+             "operation": "media.generate"}
+    return digest({**scope, "key": idempotency_key}), scope
+
+
 def submit_delegated_media(db: Session, request: MediaGenerationRequest, *,
-                           principal: RequestPrincipal, idempotency_key: str) -> MediaSubmission:
+                           principal: RequestPrincipal, idempotency_key: str, on_created=None) -> MediaSubmission:
     if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
         fail(400, "INVALID_IDEMPOTENCY_KEY")
     tenant_id, user_id = principal.tenant.tenant_id, principal.membership.user_id
-    scope = {"service": principal.service_id, "tenant": tenant_id,
-             "issuer": principal.actor_issuer, "subject": principal.actor_subject,
-             "operation": "media.generate"}
-    submission_id = digest({**scope, "key": idempotency_key})
+    submission_id, scope = submission_identity(principal, idempotency_key)
     try:
         fingerprint = digest({**scope, "user_id": user_id, "request": request.model_dump(mode="json")})
     except (TypeError, ValueError):
@@ -56,6 +60,8 @@ def submit_delegated_media(db: Session, request: MediaGenerationRequest, *,
                 if not result.job_id:
                     raise RuntimeError("Submission did not create a Job")
                 record.job_id, record.request_id = result.job_id, result.request_id
+                if on_created is not None:
+                    on_created(db, result)
                 db.commit()
             except Exception:
                 db.rollback()

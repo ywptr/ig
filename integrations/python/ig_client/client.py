@@ -1,5 +1,6 @@
 """Internal synchronous HTTP client; async Job semantics remain explicit."""
 from collections.abc import Mapping
+from dataclasses import asdict
 import json
 import math
 import re
@@ -12,7 +13,7 @@ from .auth import DelegatedContext, ServiceCredentials
 from .contract import ACTIVE_STATES, TERMINAL_STATES
 from .errors import (IGGenerationError, IGHTTPError, IGProtocolError, IGTransportError,
                      IGWaitCancelled, IGWaitTimeout)
-from .models import (Artifact, Capabilities, EditorLaunchRequest, Execution, Job,
+from .models import (Artifact, Capabilities, EditorLaunchRequest, EditorSession, Execution, Job,
                      JobState, MediaResult, Submission)
 from .transport import HTTPResponse, RequestsTransport, Transport
 
@@ -266,6 +267,13 @@ class IGClient:
                     seen.add(artifact_id)
         return MediaResult(submission, job, executions, tuple(artifacts))
 
-    def create_editor_session(self, context: DelegatedContext, request: EditorLaunchRequest):
-        """Reserved IG#0010 boundary. No JWT, HTTP call or session is created."""
-        raise NotImplementedError("Embedded editor sessions are reserved for IG#0010")
+    def create_editor_session(self, context: DelegatedContext, request: EditorLaunchRequest, *, timeout=None) -> EditorSession:
+        data = _object(self._json("POST", "/v2/editor/sessions", context, "editor:launch", body=asdict(request), timeout=timeout))
+        launch_url = _string(data, "launch_url")
+        parsed = urlsplit(launch_url)
+        # Only the configured IG origin can receive the one-time browser launch.
+        if (f"{parsed.scheme}://{parsed.netloc}" != self.base_url or not parsed.path.startswith("/embed/generation/")
+            or not parsed.fragment.startswith("launch=")):
+            raise IGProtocolError("IG returned an invalid editor launch URL")
+        return EditorSession(_string(data, "session_id"), _string(data, "correlation_id"), launch_url,
+            _string(data, "launch_expires_at"), _string(data, "expires_at"), tuple(data.get("draft_errors", [])))

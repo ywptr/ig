@@ -23,7 +23,9 @@ def valid_actor_issuer(issuer: str) -> bool:
 
 
 def register_credential(db: Session, *, key_id: str, service_id: str, public_key: bytes,
-                        scopes: list[str], tenant_ids: list[str], actor_issuers: list[str]):
+                        scopes: list[str], tenant_ids: list[str], actor_issuers: list[str], editor_origins: list[str] | None = None):
+    from app.editor import origin
+    origins = [origin(value) for value in (editor_origins or [])]
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", key_id) or not re.fullmatch(r"[a-z0-9_-]{1,64}", service_id):
         raise ValueError("Invalid key/service identifier")
     key = serialization.load_pem_public_key(public_key)
@@ -42,5 +44,6 @@ def register_credential(db: Session, *, key_id: str, service_id: str, public_key
         db.add(row)
     row.enabled = True
     row.scopes, row.tenant_ids, row.actor_issuers = sorted(set(scopes)), sorted(set(tenant_ids)), sorted(set(actor_issuers))
+    row.editor_origins = sorted(set(origins))
     db.flush()
     return row

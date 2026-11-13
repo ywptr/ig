@@ -17,6 +17,7 @@ class ServiceCredential(Base):
     scopes: Mapped[list] = mapped_column(JSON)
     tenant_ids: Mapped[list] = mapped_column(JSON)
     actor_issuers: Mapped[list] = mapped_column(JSON)
+    editor_origins: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
 

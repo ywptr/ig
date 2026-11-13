@@ -8,7 +8,7 @@ from app.tenancy.context import TenantContext
 
 @dataclass(frozen=True)
 class RequestPrincipal(TenantContext):
-    caller_type: Literal["browser", "service"] = "browser"
+    caller_type: Literal["browser", "service", "editor"] = "browser"
     actor_user: User | None = None
     actor_user_id: str | None = None
     tenant_id: str | None = None
@@ -18,3 +18,4 @@ class RequestPrincipal(TenantContext):
     actor_issuer: str | None = None
     actor_subject: str | None = None
     scopes: frozenset[str] = field(default_factory=frozenset)
+    editor_session_id: str | None = None

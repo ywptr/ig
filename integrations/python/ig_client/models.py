@@ -149,7 +149,19 @@ class MediaResult:
 
 @dataclass(frozen=True)
 class EditorLaunchRequest:
-    """Reserved IG#0010 input boundary; no session API exists yet."""
+    """Prepared generation draft; identity comes only from DelegatedContext."""
     correlation_id: str
-    artifact_ids: tuple[str, ...] = ()
-    return_url: str | None = None
+    parent_origin: str
+    draft: dict[str, Any]
+    policy: dict[str, Any] = field(default_factory=dict)
+    callback_context: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EditorSession:
+    session_id: str
+    correlation_id: str
+    launch_url: str = field(repr=False)
+    launch_expires_at: str
+    expires_at: str
+    draft_errors: tuple[str, ...] = ()

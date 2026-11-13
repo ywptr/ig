@@ -11,6 +11,7 @@
     }
   },
   "rewrites": [
+    { "source": "/embed/generation/(.*)", "destination": { "service": "backend" } },
     {
       "source": "/health",
       "destination": {
@@ -35,6 +36,11 @@
         "service": "frontend"
       }
     }
+  ],
+  "headers": [
+    { "source": "/((?!embed/generation/).*)", "headers": [{ "key": "Content-Security-Policy", "value": "frame-ancestors 'none'" }, { "key": "X-Frame-Options", "value": "DENY" }] },
+    { "source": "/assets/embed.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/assets/style.css", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
   ],
   "crons": [
     {

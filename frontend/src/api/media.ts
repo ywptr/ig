@@ -46,9 +46,9 @@ export async function getMediaCapabilities(signal?: AbortSignal): Promise<MediaC
     throw new Error("IG returned an invalid capability document. Please retry.");
 }
 
-export async function submitMedia(request: MediaGenerationRequest, signal?: AbortSignal): Promise<GenerationSubmission> {
+export async function submitMedia(request: MediaGenerationRequest, signal?: AbortSignal, attemptId?: string): Promise<GenerationSubmission> {
     const response = await requestJSON<MediaSubmission>("/v2/media/generations", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal,
+        method: "POST", headers: { "Content-Type": "application/json", ...(attemptId ? { "Idempotency-Key": attemptId } : {}) }, body: JSON.stringify(request), signal,
     });
     return { ...response, submitted_at: new Date().toISOString(), prompt: request.intent.description,
         purpose: request.media_type === "image" ? request.output.purpose : undefined };

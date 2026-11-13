@@ -53,6 +53,10 @@ def get_current_user(
         get_optional_current_user
     ),
 ) -> User:
+    from app.editor import editor_principal
+    editor = editor_principal(request, db)
+    if editor is not None:
+        return editor.actor_user
     from app.auth.service_access import service_principal
     principal = service_principal(request, db)
     if principal is not None:
