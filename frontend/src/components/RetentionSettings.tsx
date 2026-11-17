@@ -1,54 +1,63 @@
 import { useEffect, useState } from "react";
+import { getRetentionPolicy, saveRetentionPolicy, type RetentionPolicy, type RetentionScope } from "../api/tenantSettings";
+import { safeMessage } from "../api/client";
 
-interface Policy {
-    generated_artifact_retention_enabled: boolean;
-    generated_artifact_retention_days: number;
-}
-
-export function RetentionSettings() {
-    const [policy, setPolicy] = useState<Policy | null>(null);
-    const [days, setDays] = useState("28");
+export function RetentionSettings({ scope = "managed" }: { scope?: RetentionScope }) {
+    const [policy, setPolicy] = useState<RetentionPolicy | null>(null);
+    const [enabled, setEnabled] = useState(false);
+    const [days, setDays] = useState("");
     const [message, setMessage] = useState("");
+    const [error, setError] = useState("");
     const [saving, setSaving] = useState(false);
+    const external = scope === "external";
+    const identity = external ? "external-retention" : "retention";
     useEffect(() => {
-        let active = true;
-        void fetch("/v2/tenant/settings/retention").then(async response => {
-            if (!response.ok) throw new Error();
-            const value: Policy = await response.json();
-            if (active) { setPolicy(value); setDays(String(value.generated_artifact_retention_days)); }
-        }).catch(() => { if (active) setMessage("Unable to load retention settings."); });
-        return () => { active = false; };
-    }, []);
+        const controller = new AbortController();
+        void getRetentionPolicy(scope, controller.signal).then(value => {
+            if (!controller.signal.aborted) {
+                setPolicy(value); setEnabled(value.generated_artifact_retention_enabled);
+                setDays(String(value.generated_artifact_retention_days));
+            }
+        }).catch(error => { if (!controller.signal.aborted) setError(safeMessage(error.message, "Unable to load retention settings.")); });
+        return () => controller.abort();
+    }, [scope]);
     async function save(event: React.SubmitEvent) {
         event.preventDefault();
-        const duration = Number(days);
-        if (!Number.isInteger(duration) || duration < 1 || duration > 3650) {
-            setMessage("Enter a whole number of days from 1 to 3650."); return;
-        }
-        setSaving(true); setMessage("");
+        setSaving(true); setMessage(""); setError("");
         try {
-            const response = await fetch("/v2/tenant/settings/retention", {
-                method: "PATCH", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...policy, generated_artifact_retention_days: duration }),
-            });
-            if (!response.ok) throw new Error();
-            setPolicy(await response.json()); setMessage("Retention settings saved.");
-        } catch { setMessage("Unable to save retention settings. Check the duration and try again."); }
+            const value = await saveRetentionPolicy(scope, enabled, days);
+            setPolicy(value); setEnabled(value.generated_artifact_retention_enabled);
+            setDays(String(value.generated_artifact_retention_days));
+            setMessage("Retention settings saved.");
+        } catch (error) { setError(safeMessage(error instanceof Error ? error.message : null, "Unable to save retention settings.")); }
         finally { setSaving(false); }
     }
-    return <section aria-labelledby="retention-title">
-        <h2 id="retention-title">Generated media retention</h2>
-        <p>Automatically removes generated media and its previews. Uploads and reference uploads are excluded.
-            Historical metadata and lineage remain available. Generated media used as a reference may expire after its active jobs finish.</p>
-        <p>This policy applies to IG-managed storage. User-owned Drive storage defaults to no automatic cleanup and uses a separate external policy.</p>
-        {policy && <form onSubmit={event => void save(event)}>
-            <label><input type="checkbox" checked={policy.generated_artifact_retention_enabled}
-                onChange={event => setPolicy({ ...policy, generated_artifact_retention_enabled: event.target.checked })} />
-                Automatically delete generated media after:</label>{" "}
-            <label><input aria-label="Retention days" type="number" min="1" max="3650" step="1" required
-                value={days} onChange={event => setDays(event.target.value)} /> days</label>{" "}
-            <button type="submit" disabled={saving}>{saving ? "Saving…" : "Save retention settings"}</button>
-        </form>}
-        {message && <p role="status">{message}</p>}
+    return <section className="settings-card" aria-labelledby={`${identity}-title`}>
+        <h2 id={`${identity}-title`}>{external ? "Google Drive-backed retention" : "IG-managed retention"}</h2>
+        <p>{external ? "Generated media in users’ Google Drive defaults to no automatic cleanup. This is a separate tenant policy; enabling Drive does not enable retention."
+            : "Generated media in IG-managed local/Vercel storage defaults to automatic cleanup after 30 days, unless this tenant overrides it."}</p>
+        <p>Cleanup removes generated media and its previews. Uploads and reference uploads are excluded.
+            Artifact history and lineage remain available. Generated media used as a reference may expire after its active jobs finish.</p>
+        {!policy && !error && <p role="status">Loading retention settings…</p>}
+        {policy && <>
+            <p>Current policy: {policy.generated_artifact_retention_enabled ? `On · ${policy.generated_artifact_retention_days} days` : "Off"}
+                {policy.retention_policy_source === "tenant" ? " · Tenant override" : " · Storage default"}</p>
+            <form onSubmit={event => void save(event)} noValidate aria-label={external ? "Google Drive retention" : "IG-managed retention"}>
+                <fieldset disabled={saving} className="settings-fields">
+                    <label className="settings-check"><input type="checkbox" checked={enabled} onChange={event => { setEnabled(event.target.checked); setMessage(""); }} />
+                        {external ? "Automatically remove generated media from users’ Google Drive" : "Automatically remove generated media from IG-managed storage"}</label>
+                    <label className="settings-duration">Remove content after
+                        <span><input aria-label={external ? "Google Drive retention days" : "Retention days"} aria-describedby={`${identity}-feedback`}
+                            aria-invalid={Boolean(error)} type="number" min="1" max="3650" step="1" required
+                            value={days} onChange={event => { setDays(event.target.value); setMessage(""); }} /> days</span>
+                    </label>
+                    <button type="submit" className="secondary-button">{saving ? "Saving…" : external ? "Save Google Drive retention" : "Save retention settings"}</button>
+                </fieldset>
+            </form>
+        </>}
+        <div id={`${identity}-feedback`}>
+            {error && <p className="settings-error" role="alert">{error}</p>}
+            {message && <p role="status">{message}</p>}
+        </div>
     </section>;
 }

@@ -14,7 +14,7 @@ records are excluded. A generated artifact later used as a reference retains its
 generated provenance and can expire once active jobs finish. Historical use does
 not pin content indefinitely. This policy never cascades to downstream artifacts.
 
-Tenant admins can use Settings → Generated media retention to turn cleanup on or
+Tenant admins can use Settings → Tenant Settings → IG-managed retention to turn cleanup on or
 off and choose 1–3650 whole days. The boolean is explicit; zero never means off.
 The duration remains valid while disabled. Both settings are tenant-scoped:
 
@@ -343,3 +343,6 @@ tests never inherit the application's `DATABASE_URL`.
 IG#0007 Drive ownership and OAuth requirements are defined in the
 [per-user connection report](ig0007-report.md). Tenant capability governance
 never supplies a shared Drive connection.
+
+The [Tenant Settings page](tenant-settings.md) also exposes the existing separate
+Drive/external retention override. Personal Drive connections remain under My Settings.

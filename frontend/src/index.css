@@ -754,3 +754,30 @@ textarea {
 .prompt-mentions { display: flex; gap: .4rem; flex-wrap: wrap; margin: .5rem 0; }
 .prompt-mention { border-radius: 6px; padding: .3rem .5rem; background: #eff6ff; border: 1px solid #93c5fd; font-size: .8rem; overflow-wrap: anywhere; }
 .prompt-mention.invalid { background: #fff1f2; border-color: #fda4af; }
+
+/* Tenant administration uses the existing workspace palette and controls. */
+.settings-nav { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; }
+.settings-nav > span { font-size: .75rem; color: #71717a; margin-inline: .4rem; }
+.settings-page { max-width: 960px; margin-inline: auto; }
+.settings-heading { margin-bottom: 1.5rem; }
+.settings-heading h1 { margin-bottom: .5rem; letter-spacing: -.03em; }
+.settings-page p { line-height: 1.6; color: #52525b; }
+.settings-card { padding: 1.5rem; margin-bottom: 1.25rem; border: 1px solid #e4e4e7; border-radius: 10px; background: white; min-width: 0; }
+.settings-card h2 { margin-top: 0; font-size: 1.15rem; }
+.settings-identity { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 1rem; }
+.settings-identity dt { font-size: .8rem; color: #71717a; }
+.settings-identity dd { margin: .3rem 0 0; overflow-wrap: anywhere; }
+.settings-fields { border: 0; padding: 0; display: grid; gap: 1rem; margin: 1rem 0; min-width: 0; justify-items: start; }
+.settings-check { display: flex; align-items: baseline; gap: .5rem; }
+.settings-check input { flex-shrink: 0; }
+.settings-duration { display: grid; gap: .4rem; }
+.settings-duration input { width: 7rem; max-width: 100%; padding: .6rem; font: inherit; border: 1px solid #d4d4d8; border-radius: 6px; }
+.settings-card .settings-error { color: #b91c1c; }
+.settings-providers { list-style: none; padding: 0; display: grid; gap: 1rem; }
+.settings-providers > li { display: grid; gap: .4rem; padding-block: .7rem; border-bottom: 1px solid #e4e4e7; overflow-wrap: anywhere; }
+.settings-providers span { color: #52525b; font-size: .9rem; }
+@media (max-width: 640px) {
+    .settings-card { padding: 1rem; }
+    .settings-nav { width: 100%; }
+    .app-nav { flex-wrap: wrap; }
+}

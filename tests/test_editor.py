@@ -124,6 +124,20 @@ class EditorTests(ClientServerTests):
             db.commit()
         self.assertEqual(self.client.get("/v2/media/capabilities", headers=headers).status_code, 401)
 
+    def test_editor_sessions_cannot_administer_tenant_settings_even_for_admin_actor(self):
+        with self.sessions() as db:
+            db.get(TenantMembership, ("tenant-one", "user-one")).role = "admin"
+            db.commit()
+        headers = self.editor_headers()
+        for path in ("storage", "retention", "external-retention"):
+            for method in ("GET", "PATCH"):
+                payload = {"google_drive_enabled": True} if path == "storage" else {
+                    "generated_artifact_retention_enabled": False, "generated_artifact_retention_days": 60}
+                options = {"json": payload} if method == "PATCH" else {}
+                response = self.client.request(method, "/v2/tenant/settings/" + path, headers=headers, **options)
+                self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.client.get("/v2/tenant/providers", headers=headers).status_code, 403)
+
     def test_browser_and_service_credentials_cannot_expand_editor_routes(self):
         headers = self.editor_headers()
         self.assertEqual(self.client.get("/v2/tenant", headers=headers).status_code, 403)

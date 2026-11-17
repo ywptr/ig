@@ -67,30 +67,3 @@ export function StorageSettings() {
         </>}
     </section>;
 }
-
-export function TenantStorageSettings() {
-    const [enabled, setEnabled] = useState<boolean | null>(null);
-    const [error, setError] = useState("");
-    const [busy, setBusy] = useState(false);
-    useEffect(() => {
-        const controller = new AbortController();
-        void request<{ google_drive_enabled: boolean }>("/v2/tenant/settings/storage", "GET", undefined, controller.signal)
-            .then(value => setEnabled(value.google_drive_enabled))
-            .catch(() => { if (!controller.signal.aborted) setError("Unable to load tenant storage settings."); });
-        return () => controller.abort();
-    }, []);
-    async function toggle() {
-        setBusy(true); setError("");
-        try {
-            const result = await request<{ google_drive_enabled: boolean }>("/v2/tenant/settings/storage", "PATCH", { google_drive_enabled: !enabled });
-            setEnabled(result.google_drive_enabled);
-        } catch { setError("Unable to save tenant storage settings."); }
-        finally { setBusy(false); }
-    }
-    return <section aria-labelledby="tenant-storage-title">
-        <h2 id="tenant-storage-title">Google Drive integration</h2>
-        {error && <p role="alert">{error}</p>}
-        {enabled !== null && <label><input type="checkbox" checked={enabled} disabled={busy} onChange={() => void toggle()} /> Enable Google Drive for tenant users</label>}
-        <p>Each user connects their own account. Disabling blocks new Drive writes and preserves existing files.</p>
-    </section>;
-}

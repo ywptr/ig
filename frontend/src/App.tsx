@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { StorageSettings, TenantStorageSettings } from "./components/StorageSettings";
-import { RetentionSettings } from "./components/RetentionSettings";
+import { StorageSettings } from "./components/StorageSettings";
+import { TenantSettings } from "./components/TenantSettings";
+import { getTenantInfo } from "./api/tenantSettings";
+import { workspaceView, workspacePath, type WorkspaceView } from "./lib/settingsNavigation";
 import { AuthScreen } from "./components/AuthScreen";
 import { GenerationLab } from "./components/GenerationLab";
 import { Jobs } from "./components/Jobs";
@@ -10,25 +12,35 @@ import { safeMessage } from "./api/client";
 import { useGenerationFeed } from "./hooks/useGenerationFeed";
 
 function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<void> }) {
-    const [view, setView] = useState<"generate" | "jobs" | "executions" | "settings" | "storage">(() => new URLSearchParams(window.location.search).has("storage") ? "storage" : "generate");
+    const [view, setView] = useState<WorkspaceView>(() => workspaceView(window.location, window.history.state?.igView));
     const feed = useGenerationFeed();
     const [admin, setAdmin] = useState(false);
     useEffect(() => {
         let active = true;
-        void fetch("/v2/tenant").then(async response => {
-            if (response.ok) { const tenant = await response.json(); if (active) setAdmin(tenant.membership?.role === "admin"); }
-        }).catch(() => {});
+        void getTenantInfo().then(tenant => { if (active) setAdmin(tenant.membership?.role === "admin"); }).catch(() => {});
         return () => { active = false; };
     }, []);
+    useEffect(() => {
+        const restore = () => setView(workspaceView(window.location, window.history.state?.igView));
+        window.addEventListener("popstate", restore);
+        return () => window.removeEventListener("popstate", restore);
+    }, []);
+    function navigate(next: WorkspaceView) {
+        if (next !== view) window.history.pushState({ igView: next }, "", workspacePath(next));
+        setView(next);
+    }
     return <div className="app">
         <header className="app-header"><div className="header-inner">
             <div className="brand"><span className="brand-name">IG</span><span className="brand-subtitle">AI Media Control Plane</span></div>
             <nav className="app-nav" aria-label="Main navigation">
-                <button className={view === "generate" ? "active" : ""} aria-current={view === "generate" ? "page" : undefined} onClick={() => setView("generate")}>Generate</button>
-                <button className={view === "jobs" ? "active" : ""} aria-current={view === "jobs" ? "page" : undefined} onClick={() => { setView("jobs"); feed.refresh(); }}>Jobs</button>
-                <button className={view === "executions" ? "active" : ""} aria-current={view === "executions" ? "page" : undefined} onClick={() => setView("executions")}>Executions</button>
-                <button onClick={() => setView("storage")} aria-current={view === "storage" ? "page" : undefined}>My storage</button>
-                {admin && <button onClick={() => setView("settings")} aria-current={view === "settings" ? "page" : undefined}>Settings</button>}
+                <button className={view === "generate" ? "active" : ""} aria-current={view === "generate" ? "page" : undefined} onClick={() => navigate("generate")}>Generate</button>
+                <button className={view === "jobs" ? "active" : ""} aria-current={view === "jobs" ? "page" : undefined} onClick={() => { navigate("jobs"); feed.refresh(); }}>Jobs</button>
+                <button className={view === "executions" ? "active" : ""} aria-current={view === "executions" ? "page" : undefined} onClick={() => navigate("executions")}>Executions</button>
+                <div className="settings-nav" role="group" aria-label="Settings">
+                    <span>Settings</span>
+                    <button className={view === "storage" ? "active" : ""} onClick={() => navigate("storage")} aria-current={view === "storage" ? "page" : undefined}>My Settings</button>
+                    {admin && <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")} aria-current={view === "settings" ? "page" : undefined}>Tenant Settings</button>}
+                </div>
             </nav>
             <div className="user-menu"><div className="user-info"><strong>{user.name || user.email}</strong>{user.name && <span>{user.email}</span>}</div>
                 <button className="logout-button" onClick={() => void onLogout()}>Sign out</button></div>
@@ -40,8 +52,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<voi
             </section>
             {view === "jobs" && <Jobs jobs={feed.data.jobs} error={feed.error} loading={feed.loading} onRefresh={feed.refresh} />}
             {view === "executions" && <Executions />}
-            {view === "storage" && <StorageSettings />}
-            {admin && view === "settings" && <><TenantStorageSettings /><RetentionSettings /></>}
+            {view === "storage" && <div className="settings-page"><header className="settings-heading"><h1>My Settings</h1><p>Your personal storage and integrations.</p></header><div className="settings-card"><StorageSettings /></div></div>}
+            {view === "settings" && <TenantSettings />}
         </main>
     </div>;
 }

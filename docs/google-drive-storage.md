@@ -21,7 +21,7 @@ is not implemented; a future import source/export destination is a separate conc
    refresh credentials can expire; use explicit health checks/reconnect as needed.
 3. Apply migration `1a0007000007` to a disposable development database. Sign in to
    IG with any supported login identity. A tenant admin enables Google Drive under
-   Settings. Under My storage, connect the dedicated Drive account and consent to
+   Settings → Tenant Settings. Under My Settings → Storage / Integrations, connect the dedicated Drive account and consent to
    `https://www.googleapis.com/auth/drive.file`. No full-Drive or login scope is
    requested. The app creates an `IG Artifacts` folder and persists its ID.
 4. Select My Google Drive. Upload a PNG/JPEG/WebP reference in the Generation Lab.
@@ -32,7 +32,7 @@ is not implemented; a future import source/export destination is a separate conc
    cookie privately in `IG_DRIVE_DEV_SESSION`. Do not put its value in command-line
    arguments, logs, files or Git. The script uploads a small generated PNG, verifies
    IG content/preview, retains the test artifact, and switches to IG managed in a
-   `finally` block. If that final request fails, switch back manually in My storage.
+   `finally` block. If that final request fails, switch back manually in My Settings.
 
    ```sh
    .venv/bin/python -B scripts/test-drive-development.py --base-url http://localhost:8000
@@ -174,3 +174,6 @@ migration, deployment, commit or push is performed by this implementation task.
 
 Google API references: [resumable uploads](https://developers.google.com/workspace/drive/api/guides/manage-uploads)
 and [preallocated file IDs](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/generateIds).
+
+[Tenant Settings](tenant-settings.md) consolidates IG application governance;
+My Settings keeps personal Drive connection/preference controls separate.

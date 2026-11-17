@@ -19,7 +19,7 @@ const member=new URL(location.href).searchParams.has('member');
 window.fetch=async(url,options={})=>{
  let body=[];
  if(url==='/v2/auth/me') body={user_id:'user',name:'User',email:'user@example.test'};
- else if(url==='/v2/tenant') body={membership:{role:member?'member':'admin'}};
+ else if(url==='/v2/tenant') body={tenant_id:'tenant-one',slug:'one',name:'One',membership:{role:member?'member':'admin'}};
  else if(url==='/v2/user/storage') {
    if(options.method==='PATCH') {window.storage.artifact_storage_preference=JSON.parse(options.body).artifact_storage_preference;window.actions.push('preference');}
    body=window.storage;
@@ -28,7 +28,9 @@ window.fetch=async(url,options={})=>{
  else if(url==='/v2/tenant/settings/storage') {
    if(options.method==='PATCH') {window.storage.google_drive_enabled=JSON.parse(options.body).google_drive_enabled;window.actions.push('capability');}
    body={google_drive_enabled:window.storage.google_drive_enabled};
- }else if(url==='/v2/tenant/settings/retention') body={generated_artifact_retention_enabled:true,generated_artifact_retention_days:30};
+ }else if(url==='/v2/tenant/settings/external-retention') body={generated_artifact_retention_enabled:false,generated_artifact_retention_days:30,retention_policy_source:'storage_default'};
+ else if(url==='/v2/tenant/providers') body=[];
+ else if(url==='/v2/tenant/settings/retention') body={generated_artifact_retention_enabled:true,generated_artifact_retention_days:30};
  else if(url==='/v2/media/capabilities') body={schema_version:1,media_types:[],interface_levels:{}};
  return new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}});
 };
@@ -37,7 +39,7 @@ createRoot(document.getElementById('root')).render(<App/>);
 async function withLab(t, run) {
     const mediaRequests=[];
     const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=', 'base64');
-    const server=await createServer({root:new URL('..',import.meta.url).pathname,configFile:false,server:{host:'127.0.0.1',port:0},plugins:[{name:'reference-fixture',resolveId(id){if(id==='/reference-test.tsx')return id;},load(id){if(id==='/reference-test.tsx')return fixture;},configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url==='/fixture'){res.setHeader('Content-Type','text/html');res.end('<html><body><div id="root"></div><script type="module" src="/reference-test.tsx"></script></body></html>');}else if(req.url.startsWith('/v2/artifacts/')){mediaRequests.push(req.url);res.setHeader('Content-Type','image/png');res.end(pixel);}else next();});}}]});
+    const server=await createServer({root:new URL('..',import.meta.url).pathname,configFile:false,server:{host:'127.0.0.1',port:0},plugins:[{name:'reference-fixture',resolveId(id){if(id==='/reference-test.tsx')return id;},load(id){if(id==='/reference-test.tsx')return fixture;},configureServer(server){server.middlewares.use((req,res,next)=>{if(['/fixture','/settings/tenant','/settings/me'].includes(req.url.split('?')[0])){res.setHeader('Content-Type','text/html');res.end('<html><body><div id="root"></div><script type="module" src="/reference-test.tsx"></script></body></html>');}else if(req.url.startsWith('/v2/artifacts/')){mediaRequests.push(req.url);res.setHeader('Content-Type','image/png');res.end(pixel);}else next();});}}]});
     await server.listen();t.after(()=>server.close());
     const profile = mkdtempSync(join(tmpdir(), "ig-preview-browser-"));
     const child = spawn(browser, ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
@@ -71,7 +73,7 @@ async function withLab(t, run) {
     const click=text=>evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)}).click()`);
     const change=(selector,value)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:e instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e instanceof HTMLSelectElement?'change':'input',{bubbles:true}));})()`);
     await call('Page.navigate',{url:`http://127.0.0.1:${server.httpServer.address().port}/fixture`});
-    await wait(`!!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Settings') || document.querySelector('.brand-name')`);
+    await wait(`!!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Tenant Settings') || document.querySelector('.brand-name')`);
     await run({ evaluate, wait, click, change, call, mediaRequests });
 }
 
@@ -80,12 +82,12 @@ test("member storage preference, disconnect and disabled governance", {skip:!bro
  const origin=await evaluate('location.origin');
  await call('Page.navigate',{url:origin+'/fixture?member=1'});
  await wait(`document.querySelector('.brand-name')`);
- await click('My storage');
+ await click('My Settings');
  await wait(`document.querySelector('#storage-title') && document.querySelector('input[type=radio]')`);
- assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Settings')`),false);
+ assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Tenant Settings')`),false);
  assert.equal(await evaluate(`document.querySelectorAll('input[type=radio]')[1].disabled`),true);
  await evaluate(`window.storage.connection={status:'healthy',account_email:'drive@example.test',account_name:'Drive user',target_folder:'IG Artifacts',checked_at:null}`);
- await click('Generate'); await click('My storage');
+ await click('Generate'); await click('My Settings');
  await wait(`!document.querySelectorAll('input[type=radio]')[1].disabled`);
  await evaluate(`document.querySelectorAll('input[type=radio]')[1].click()`);
  await wait(`window.storage.artifact_storage_preference==='google_drive'`);
@@ -95,18 +97,19 @@ test("member storage preference, disconnect and disabled governance", {skip:!bro
  await evaluate(`document.querySelector('input[type=radio]').click()`);
  await wait(`window.storage.artifact_storage_preference==='ig_managed'`);
  await evaluate(`window.storage.google_drive_enabled=false`);
- await click('Generate'); await click('My storage');
+ await click('Generate'); await click('My Settings');
  await wait(`document.querySelector('#storage-title')?.closest('section').textContent.includes('New Drive writes are disabled')`);
  assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Connect Google Drive').disabled`),true);
 }));
 
 test("tenant admin sees capability without other users account details", {skip:!browser || typeof WebSocket!=="function",timeout:45000}, async t => withLab(t, async ({evaluate,wait,click})=>{
- await wait(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Settings')`);
- await click('Settings');
+ await wait(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Tenant Settings')`);
+ await click('Tenant Settings');
  await wait(`document.querySelector('#tenant-storage-title')?.closest('section').querySelector('input')`);
  const section=`document.querySelector('#tenant-storage-title').closest('section')`;
  assert.equal(await evaluate(`${section}.querySelector('input').checked`),true);
  await evaluate(`${section}.querySelector('input').click()`);
+ await click('Save Drive availability');
  await wait(`window.storage.google_drive_enabled===false`);
  assert.doesNotMatch(await evaluate(`${section}.textContent`),/drive@example.test|refresh_token|Disconnect Google Drive/);
 }));
