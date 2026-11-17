@@ -12,7 +12,7 @@ from uuid import uuid4
 
 class LocalArtifactStore:
     retention_default_enabled = True
-    retention_default_days = 28
+    retention_default_days = 30
 
     def __init__(self, base_dir: Path):
         # A configured root may itself be a development symlink. Pin its target;

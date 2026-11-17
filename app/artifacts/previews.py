@@ -149,6 +149,7 @@ def ensure_preview(db: Session, artifact: Artifact, *, wait_for_slot: bool = Fal
         return None
     identity = (artifact.artifact_id, kind, VERSION)
     source_uri, size_bytes, media_type = artifact.storage_uri, artifact.size_bytes, artifact.media_type
+    owner_tenant_id, owner_user_id = artifact.tenant_id, artifact.user_id
     row = db.get(ArtifactPreview, identity)
     if row is not None and row.status in {"ready", "failed"}:
         return row
@@ -195,7 +196,10 @@ def ensure_preview(db: Session, artifact: Artifact, *, wait_for_slot: bool = Fal
         try:
             data, metadata = process_source(kind, source_uri, size_bytes)
             stage = "store_derivative"
-            uri = artifact_store.put_bytes(filename="preview.webp", data=data)
+            from app.artifacts.storage.selection import select_write_store
+            writer = select_write_store(db, tenant_id=owner_tenant_id, user_id=owner_user_id,
+                                        managed_store=artifact_store, original_uri=source_uri)
+            uri = writer.put_bytes(filename="preview.webp", data=data)
             track_write(db, uri, artifact_store)
             values = {"status": "ready", "storage_uri": uri, "size_bytes": len(data),
                       "etag": sha256(data).hexdigest(), **metadata}

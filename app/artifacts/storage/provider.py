@@ -43,3 +43,8 @@ artifact_store = RoutingArtifactStore(
     local_store=local_store,
     vercel_blob_store=vercel_blob_store,
 )
+
+# Read/delete routing uses the persisted connection ID and does not consult new-write capability.
+from app.artifacts.storage.google_drive import GoogleDriveArtifactStore
+from app.storage_integrations.connections import resolve_connection, report_error
+artifact_store.register("gdrive", GoogleDriveArtifactStore(resolve_connection, report_error=report_error))

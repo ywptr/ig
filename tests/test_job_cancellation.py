@@ -188,7 +188,7 @@ class CancellationTests(_CancellationFixture):
 
     def test_cancel_during_storage_fences_artifact_row(self):
         job_id,token=self.waiting(); claim=_claim_operation(job_id,token)
-        def stage(payload):
+        def stage(payload, **owner):
             self.cancel(job_id)
             return 'file:///staged-result.mp4','staged-result.mp4'
         with patch('app.jobs.continuation.stage_media_result',side_effect=stage):

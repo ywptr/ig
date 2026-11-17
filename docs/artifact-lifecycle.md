@@ -2,10 +2,11 @@
 
 ## Policy and scope
 
-For IG-managed/Vercel storage: generated retention defaults ON at 28 days.
+For IG-managed/Vercel storage: generated retention defaults ON at 30 days.
 
-For future user-owned Google Drive storage: retention defaults OFF unless tenant
-policy enables it. No Drive or Photos adapter or controls are implemented here.
+User-owned Google Drive storage defaults OFF unless the separate external tenant
+policy explicitly enables it. IG#0007 implements per-user Drive connections; see
+[Google Drive storage](google-drive-storage.md). Google Photos is not implemented.
 
 Only `provenance=generated` is governed. Uploaded references, uploaded external
 generations (which have uploaded provenance), imported and unknown-provenance
@@ -30,7 +31,7 @@ The UI reads defaults for the current write policy. Cleanup resolves defaults fo
 each original's owning backend, so changing the deployment write destination does
 not accidentally change the recommendation for historical objects. Providers can
 advertise `retention_default_enabled` and `retention_default_days`; unknown/new
-providers default to disabled, 28 days. Explicit tenant choices take precedence.
+providers default to disabled, 30 days. Explicit tenant choices take precedence.
 
 ## Audit findings before implementation
 
@@ -293,19 +294,22 @@ errors and runner logs use safe messages/classes, never locator/SDK exception te
 
 `RoutingArtifactStore.providers` is the scheme registry for read/exists/delete;
 `register` adds an adapter without changing generation code or Artifact identity.
-Unregistered locators fail with a generic error. Writes still use the deployment
-writer; this release does not add tenant-specific destination configuration or
-external credentials. Existing local and Blob locators continue to route even
-when the write provider changes. Future adapters can supply retention defaults
-independently of the nullable tenant override mechanism.
+Unregistered locators fail with a generic error. IG-managed writes use the
+deployment writer. IG#0007 adds owner-aware selection above the adapter for user
+Drive preferences. Existing local and Blob locators continue to route even when
+the write preference changes. Drive reads/deletes resolve the saved connection
+without consulting tenant capability or the current write preference.
 
 Put/iter_bytes/exists/delete are sufficient for current lifecycle operations.
 A future optional stat boundary should expose only generic byte count/checksum,
 not backend metadata. Inventory should be a separate optional capability; user
 storage permissions may support ordinary reads/writes without safe listing or
-sweeping. IG#0007 still needs account-bound credential resolution, tenant write
-routing, external locator/account design, adapter stat/delete semantics and scope
-handling, and default-off metadata. No Drive-specific identity enters Artifact IDs.
+sweeping. IG#0007 supplies user-bound credentials, capability gates, delegated-actor
+write routing, private connection/file locators and default-off Drive retention.
+Existing retention override columns remain IG-managed; nullable
+`external_generated_retention_enabled/days` are separate Drive overrides, exposed
+through the admin `/v2/tenant/settings/external-retention` API. No Drive-specific
+identity enters Artifact IDs.
 
 A future backend transition can keep the same Artifact ID and replace its private
 locator after copying. Required invariants: verify byte count and checksum before
@@ -335,3 +339,7 @@ IG_TEST_RETENTION_POSTGRES_URL=postgresql+psycopg://user@127.0.0.1:port/testdb \
 These repeat lifecycle/migration tests on PostgreSQL and exercise concurrent input
 admission versus cleanup fencing. The URL must explicitly target localhost; the
 tests never inherit the application's `DATABASE_URL`.
+
+IG#0007 Drive ownership and OAuth requirements are defined in the
+[per-user connection report](ig0007-report.md). Tenant capability governance
+never supplies a shared Drive connection.

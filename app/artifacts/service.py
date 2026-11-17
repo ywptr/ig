@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.db.models import Artifact
 from app.artifacts.storage.provider import artifact_store
+from app.artifacts.storage.base import ArtifactStore
 from app.artifacts.types import ArtifactPayload
 from app.artifacts.media_metadata import inspect_media
 from app.artifacts.schemas import ArtifactProvenance
@@ -15,12 +16,12 @@ from app.artifacts.lineage import record_generation
 from app.artifacts.previews import generate_preview_for_artifact
 
 
-def stage_media_result(payload: ArtifactPayload) -> tuple[str, str]:
+def stage_media_result(payload: ArtifactPayload, *, writer: ArtifactStore) -> tuple[str, str]:
     """Upload bounded output outside a database transaction."""
     if not re.fullmatch(r"[a-z0-9]{1,10}", payload.extension) or not payload.data:
         raise ValueError("Invalid artifact output")
     filename = f"{uuid4()}.{payload.extension}"
-    return artifact_store.put_bytes(filename=filename, data=payload.data), filename
+    return writer.put_bytes(filename=filename, data=payload.data), filename
 
 
 def persist_media_result(
@@ -135,7 +136,9 @@ def create_uploaded_artifact(
 
     try:
         # The store allocates an immutable key; filename remains display metadata.
-        storage_uri = artifact_store.put_bytes(
+        from app.artifacts.storage.selection import select_write_store
+        writer = select_write_store(db, tenant_id=tenant_id, user_id=user_id, managed_store=artifact_store)
+        storage_uri = writer.put_bytes(
             filename=filename,
             data=data,
         )

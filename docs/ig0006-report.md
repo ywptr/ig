@@ -1,7 +1,11 @@
 # IG#0006 completion report
 
+Historical IG#0006 report. IG#0007 now adds per-user Drive integration and changes
+the IG-managed default from 28 to 30 days; explicit tenant overrides are preserved.
+See [IG#0007 report](ig0007-report.md) for current implementation and verification.
+
 1. **Lifecycle model:** Active → eligible (computed policy) → removing (durable fence) → removed. Artifact rows remain as tombstones; metadata identity is separate from physical content.
-2. **Default policy:** Generated media in local/Vercel storage defaults ON at 28 days. Uploaded references, uploaded external generations, and unknown provenance are excluded.
+2. **Default policy:** Generated media in local/Vercel storage defaults ON at 30 days. Uploaded references, uploaded external generations, and unknown provenance are excluded.
 3. **Tenant settings:** Nullable `generated_artifact_retention_enabled` and `generated_artifact_retention_days` distinguish inherited defaults from explicit tenant choices. Days must be 1–3650.
 4. **Admin API:** GET/PATCH `/v2/tenant/settings/retention`. PATCH requires both strict typed values and returns effective policy/source.
 5. **Admin UI:** Settings navigation for admins, retention checkbox/duration, save confirmation, client/server errors and explicit upload/external-storage wording.
@@ -21,7 +25,7 @@
 19. **Files changed:** Complete inventory below.
 20. **Verification:** Full backend: 421 tests, OK (24 skipped). Explicit disposable PostgreSQL: 20 tests, OK; additional final graph/migration round-trip: OK. Full frontend: 60 passed, including Chromium admin/member flows. Build/TypeScript, lint and `git diff --check` pass. Lint retains the pre-existing AuthScreen set-state-in-effect warning. Local storage and mocked pinned Vercel Blob adapter tests are included; no live Blob deletion was performed.
 21. **Production rollout:** Inspect old generated content with dry-run and set explicit exceptions; migrate before serving new code; configure production `CRON_SECRET`; deploy/enable cron; verify secret protection and monitor failures/backlog. Existing NULL-policy tenants inherit the new default too. Default execution budget is 240 seconds, below the 15-minute retry lease; verify deployed duration/headroom. Generate CRON_SECRET privately with Python secrets, set Vercel Production, deploy, and verify the next cron invocation; repeat on rotation. No production infrastructure, secrets or content were changed.
-22. **IG#0007 foundation:** Stable Artifact IDs, opaque registry-routed locators, provider defaults separate from tenant policy, deletion/tombstones, preview coordination, input admission fences, and documented copy/verify/atomic-swap migration invariants. Drive still needs account-bound credential resolution, tenant destination configuration, adapter/scopes and stat/inventory design. No Drive/Photos adapter or video resiliency work was implemented.
+22. **IG#0007 foundation:** Stable Artifact IDs, opaque registry-routed locators, provider defaults separate from tenant policy, deletion/tombstones, preview coordination, input admission fences, and documented copy/verify/atomic-swap migration invariants. At IG#0006 completion Drive still needed user-bound credentials, capability governance, per-user routing and an adapter. These Drive pieces are now implemented in IG#0007; general inventory and Photos remain deferred. No Drive/Photos adapter or video resiliency work was implemented by IG#0006.
 23. **Remaining concerns:** No general orphan inventory or durable write journal; independent batch/run/schedule capacity needs backlog monitoring; globally oldest-first ordering has no per-tenant quota; byte counts estimate recorded logical sizes rather than billing; SQLite is single-worker development only; backend migration/preview movement is specified but not implemented. Disabling retention does not undo already committed removal decisions.
 
 See [Artifact lifecycle operations and design](artifact-lifecycle.md) for the audit, exact semantics, CLI examples and rollout instructions.
@@ -41,7 +45,7 @@ See [Artifact lifecycle operations and design](artifact-lifecycle.md) for the au
 11. **Production/rotation:** Set Vercel project Settings → Environment Variables → Production, then deploy. For rotation, replace the value, redeploy, wait for Current and verify the next cron invocation returns 2xx. Manual callers must switch securely; rollback/promotion can restore deployment-captured values.
 12. **Changed files:** `.env.example`, `app/artifacts/retention.py`, `app/api/artifact_cleanup.py`, `scripts/cleanup-artifacts.py`, `tests/test_artifact_retention.py`, `docs/artifact-lifecycle.md`, `docs/local-development.md`, and this report.
 13. **Verification:** Focused cleanup suite: 32 passed, including >50 items, bounded queries, run/scan/time stops, continuation, failures, dry-run, idempotency, policy regressions and cron authentication. Full backend: 430 tests, OK (24 skipped). CLI help and `git diff --check` pass.
-14. **Schema/UI:** No schema migration or UI change. No additional migration checks or frontend run needed; existing migration tests remain part of the full backend suite. IG#0007 was not started.
+14. **Schema/UI:** No schema migration or UI change. No additional migration checks or frontend run needed; existing migration tests remain part of the full backend suite. IG#0007 was not started at that historical checkpoint; see its separate current report.
 15. **Rollout:** Review policy/dry-run → configure secret and budgets → verify deployed runtime/headroom → deploy/enable daily schedule → verify unauthenticated denial and authorized 2xx → monitor stop reasons/backlog. If repeatedly limited, raise max items/scan budget, increase cadence, or later move the same runner to a worker; keep transactions small.
 
 ## Changed files

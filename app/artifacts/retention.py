@@ -24,13 +24,15 @@ def storage_defaults(storage_policy: str) -> tuple[bool, int]:
     # Unknown/new user-owned backends must opt into automatic destruction.
     scheme = {"local": "file", "vercel": "vercel-blob"}.get(storage_policy, storage_policy)
     backend = artifact_store.providers.get(scheme)
-    return getattr(backend, "retention_default_enabled", False), getattr(backend, "retention_default_days", 28)
+    return getattr(backend, "retention_default_enabled", False), getattr(backend, "retention_default_days", 30)
 
 
 def policy(settings: TenantSettings | None, storage_policy: str | None = None) -> dict:
     enabled, days = storage_defaults(storage_policy or provider)
-    explicit_enabled = getattr(settings, "generated_artifact_retention_enabled", None)
-    explicit_days = getattr(settings, "generated_artifact_retention_days", None)
+    scheme = {"local": "file", "vercel": "vercel-blob"}.get(storage_policy or provider, storage_policy or provider)
+    external = getattr(artifact_store.providers.get(scheme), "retention_policy_scope", "ig_managed") == "external"
+    explicit_enabled = getattr(settings, "external_generated_retention_enabled" if external else "generated_artifact_retention_enabled", None)
+    explicit_days = getattr(settings, "external_generated_retention_days" if external else "generated_artifact_retention_days", None)
     return {
         "generated_artifact_retention_enabled": enabled if explicit_enabled is None else explicit_enabled,
         "generated_artifact_retention_days": days if explicit_days is None else explicit_days,
@@ -58,11 +60,18 @@ def candidate_query(db, now):
                       getattr(store, "retention_default_enabled", False))
                      for scheme, store in artifact_store.providers.items()], else_=False)
     days = case(*[(Artifact.storage_uri.startswith(scheme + ":"),
-                   getattr(store, "retention_default_days", 28))
-                  for scheme, store in artifact_store.providers.items()], else_=28)
-    settings = select(TenantSettings.generated_artifact_retention_enabled).where(
+                   getattr(store, "retention_default_days", 30))
+                  for scheme, store in artifact_store.providers.items()], else_=30)
+    external = case(*[(Artifact.storage_uri.startswith(scheme + ":"),
+                       getattr(store, "retention_policy_scope", "ig_managed") == "external")
+                      for scheme, store in artifact_store.providers.items()], else_=False)
+    enabled_override = case((external, TenantSettings.external_generated_retention_enabled),
+                            else_=TenantSettings.generated_artifact_retention_enabled)
+    days_override = case((external, TenantSettings.external_generated_retention_days),
+                         else_=TenantSettings.generated_artifact_retention_days)
+    settings = select(enabled_override).where(
         TenantSettings.tenant_id == Artifact.tenant_id).scalar_subquery()
-    duration = func.coalesce(select(TenantSettings.generated_artifact_retention_days).where(
+    duration = func.coalesce(select(days_override).where(
         TenantSettings.tenant_id == Artifact.tenant_id).scalar_subquery(), days)
     instant = as_utc(now).replace(tzinfo=None)
     if db.bind.dialect.name == "sqlite":

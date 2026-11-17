@@ -61,7 +61,7 @@ async def framing_policy(request, call_next):
         response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
         response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    if request.url.path.startswith("/v2/editor/") or request.headers.get("x-ig-editor-token"):
+    if request.url.path.startswith(("/v2/editor/", "/v2/user/storage", "/v2/tenant/settings/storage")) or request.headers.get("x-ig-editor-token"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -162,3 +162,13 @@ app.include_router(artifact_cleanup_router, prefix="/v2")
 
 from app.api.video_recovery import router as video_recovery_router
 app.include_router(video_recovery_router, prefix="/v2")
+
+from app.api.user_storage import router as user_storage_router
+from app.storage_integrations.google_drive import DriveError
+from fastapi.responses import JSONResponse
+app.include_router(user_storage_router, prefix="/v2")
+
+@app.exception_handler(DriveError)
+async def drive_unavailable(request, exc):
+    return JSONResponse(status_code=503, content={"detail": {"code": "DRIVE_UNAVAILABLE", "message": str(exc)}},
+                        headers={"Cache-Control": "no-store"})

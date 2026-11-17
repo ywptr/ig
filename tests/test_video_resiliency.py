@@ -202,7 +202,7 @@ class VideoResiliencyTests(video.VideoTestCase):
     def test_deadline_during_storage_cannot_publish_artifact(self):
         job_id, execution_id, token = self.start_video()
         claim = _claim_operation(job_id, token)
-        def stage(payload):
+        def stage(payload, **owner):
             with self.sessions() as db:
                 execution = db.get(Execution, execution_id)
                 metadata = deepcopy(execution.metadata_json)

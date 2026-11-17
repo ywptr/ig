@@ -16,7 +16,7 @@ SCHEME = "vercel-blob"
 
 class VercelBlobArtifactStore:
     retention_default_enabled = True
-    retention_default_days = 28
+    retention_default_days = 30
 
 
     def put_bytes(

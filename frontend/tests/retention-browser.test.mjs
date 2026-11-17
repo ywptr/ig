@@ -13,12 +13,13 @@ const fixture = `
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import App from '/src/App.tsx';
-window.policy={generated_artifact_retention_enabled:true,generated_artifact_retention_days:28};window.saves=[];
+window.policy={generated_artifact_retention_enabled:true,generated_artifact_retention_days:30};window.saves=[];
 const member=new URL(location.href).searchParams.has('member');
 window.fetch=async(url,options={})=>{
  let body=[];
  if(url==='/v2/auth/me') body={user_id:'user',name:'Admin',email:'admin@example.test'};
  else if(url==='/v2/tenant') body={membership:{role:member?'member':'admin'}};
+ else if(url==='/v2/tenant/settings/storage') body={google_drive_enabled:false};
  else if(url==='/v2/tenant/settings/retention') {
    if(member) return new Response('{}',{status:403});
    if(options.method==='PATCH') {if(window.rejectSave)return new Response('{}',{status:422});window.policy=JSON.parse(options.body);window.saves.push(window.policy);}
@@ -73,9 +74,9 @@ test("admin retention settings persist enable, disable and duration with errors"
  await wait(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Settings')`);
  await click('Settings');
  await wait(`document.querySelector('input[type=number]')`);
- assert.equal(await evaluate(`document.querySelector('input[type=number]').value`),'28');
+ assert.equal(await evaluate(`document.querySelector('input[type=number]').value`),'30');
  assert.match(await evaluate(`document.querySelector('main').textContent`),/Uploads and reference uploads are excluded/);
- await evaluate(`document.querySelector('input[type=checkbox]').click()`);
+ await evaluate(`document.querySelector('#retention-title').closest('section').querySelector('input[type=checkbox]').click()`);
  await change('input[type=number]','60');
  await click('Save retention settings');
  await wait(`document.querySelector('[role=status]')?.textContent==='Retention settings saved.'`);
@@ -83,13 +84,13 @@ test("admin retention settings persist enable, disable and duration with errors"
  assert.equal(await evaluate(`window.policy.generated_artifact_retention_days`),60);
  await click('Jobs');await click('Settings');
  await wait(`document.querySelector('input[type=number]')?.value==='60'`);
- assert.equal(await evaluate(`document.querySelector('input[type=checkbox]').checked`),false);
+ assert.equal(await evaluate(`document.querySelector('#retention-title').closest('section').querySelector('input[type=checkbox]').checked`),false);
  await change('input[type=number]','0');
  await evaluate(`document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))`);
  await wait(`document.querySelector('[role=status]')?.textContent.includes('1 to 3650')`);
  assert.equal(await evaluate(`window.saves.length`),1);
  await change('input[type=number]','30');
- await evaluate(`document.querySelector('input[type=checkbox]').click(); window.rejectSave=true`);
+ await evaluate(`document.querySelector('#retention-title').closest('section').querySelector('input[type=checkbox]').click(); window.rejectSave=true`);
  await click('Save retention settings');
  await wait(`document.querySelector('[role=status]')?.textContent.includes('Unable to save')`);
  await evaluate(`window.rejectSave=false`);await click('Save retention settings');

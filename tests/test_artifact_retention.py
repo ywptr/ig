@@ -24,7 +24,7 @@ class RetentionTests(contracts.MediaJobTestCase):
         self.store = install_storage(self)
         self.now = utc_now()
 
-    def artifact(self, *, age=29, provenance="generated", tenant="tenant-one"):
+    def artifact(self, *, age=31, provenance="generated", tenant="tenant-one"):
         with self.sessions() as db:
             row = service.create_artifact(db, tenant_id=tenant, user_id="user-one", media_type="image",
                 mime_type="image/png", storage_uri=self.store.put_bytes(filename="source", data=b"source"),
@@ -44,7 +44,7 @@ class RetentionTests(contracts.MediaJobTestCase):
 
     def test_default_and_override_survives_backend_change(self):
         self.assertTrue(policy(None, "local")["generated_artifact_retention_enabled"])
-        self.assertEqual(policy(None, "vercel")["generated_artifact_retention_days"], 28)
+        self.assertEqual(policy(None, "vercel")["generated_artifact_retention_days"], 30)
         self.assertFalse(policy(None, "future-user-owned")["generated_artifact_retention_enabled"])
         settings = TenantSettings(generated_artifact_retention_enabled=True, generated_artifact_retention_days=45)
         value = policy(settings, "future-user-owned")
@@ -55,7 +55,7 @@ class RetentionTests(contracts.MediaJobTestCase):
     def test_admin_api_persists_and_tenant_scopes(self):
         self.admin()
         path = "/v2/tenant/settings/retention"
-        self.assertEqual(self.client.get(path).json()["generated_artifact_retention_days"], 28)
+        self.assertEqual(self.client.get(path).json()["generated_artifact_retention_days"], 30)
         response = self.client.patch(path, json={"generated_artifact_retention_enabled": False,
                                                  "generated_artifact_retention_days": 90})
         self.assertEqual(response.status_code, 200, response.text)
@@ -78,7 +78,7 @@ class RetentionTests(contracts.MediaJobTestCase):
             self.assertEqual(response.status_code, 422, (days, response.text))
 
     def test_age_boundary_uploads_and_utc(self):
-        young, boundary, old = self.artifact(age=27), self.artifact(age=28), self.artifact(age=29)
+        young, boundary, old = self.artifact(age=29), self.artifact(age=30), self.artifact(age=31)
         upload = self.artifact(age=100, provenance="uploaded")
         unknown = self.artifact(age=100, provenance="unknown")
         with self.sessions() as db:
@@ -89,7 +89,7 @@ class RetentionTests(contracts.MediaJobTestCase):
         self.assertEqual(result["bytes_reclaimed"], 6)
 
     def test_subsecond_utc_threshold(self):
-        identity = self.artifact(age=28)
+        identity = self.artifact(age=30)
         with self.sessions() as db:
             db.get(Artifact, identity).created_at -= timedelta(microseconds=1)
             db.commit()
@@ -430,7 +430,7 @@ class CleanupBatchingTests(contracts.MediaJobTestCase):
 
     def test_global_age_order_across_tenants(self):
         first = self.artifact(age=40, tenant="tenant-two")
-        second = self.artifact(age=30)
+        second = self.artifact(age=31)
         self.run_cleanup(limit=1)
         with self.sessions() as db:
             self.assertIsNotNone(db.get(Artifact, first).content_removed_at)

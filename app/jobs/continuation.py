@@ -248,7 +248,10 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
                 or execution.metadata_json.get("continuation", {}).get("claim_id") != claim.claim_id
             ):
                 return False
-        staged = stage_media_result(result.artifact)
+            from app.artifacts.storage.selection import select_write_store
+            from app.artifacts.service import artifact_store
+            writer = select_write_store(db, tenant_id=claim.tenant_id, user_id=claim.user_id, managed_store=artifact_store)
+        staged = stage_media_result(result.artifact, writer=writer)
         try:
             media_properties = inspect_media(result.artifact.data, result.artifact.media_type)
         except Exception:

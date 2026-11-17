@@ -40,7 +40,7 @@ export function RetentionSettings() {
         <h2 id="retention-title">Generated media retention</h2>
         <p>Automatically removes generated media and its previews. Uploads and reference uploads are excluded.
             Historical metadata and lineage remain available. Generated media used as a reference may expire after its active jobs finish.</p>
-        <p>For user-owned external storage, automatic cleanup may be disabled by default.</p>
+        <p>This policy applies to IG-managed storage. User-owned Drive storage defaults to no automatic cleanup and uses a separate external policy.</p>
         {policy && <form onSubmit={event => void save(event)}>
             <label><input type="checkbox" checked={policy.generated_artifact_retention_enabled}
                 onChange={event => setPolicy({ ...policy, generated_artifact_retention_enabled: event.target.checked })} />

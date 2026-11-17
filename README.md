@@ -1441,11 +1441,12 @@ for the standard cloud deployment.
 Artifacts expose storage-independent IDs to API consumers.
 
 Generated media in IG-managed/local/Vercel storage defaults to automatic cleanup
-at 28 days. Tenant admins can disable it or change the duration in Settings.
+at 30 days. Tenant admins can disable it or change the duration in Settings.
 Uploads/reference uploads are excluded. Cleanup removes bytes and all previews,
 retaining Artifact IDs and lineage; intentionally removed content returns 410.
-Future user-owned Google Drive storage defaults to retention off unless the tenant
-explicitly enables it. See [Artifact lifecycle and retention](docs/artifact-lifecycle.md)
+Per-user Google Drive storage defaults to retention off unless a tenant admin
+explicitly enables the separate external-retention policy. Drive capability alone
+never changes retention. See [Google Drive storage](docs/google-drive-storage.md). See [Artifact lifecycle and retention](docs/artifact-lifecycle.md)
 for dry-run commands, migration/cron rollout, authorization and orphan limitations.
 
 ---
@@ -1564,9 +1565,8 @@ first deployment; APIs/UI for these operations remain future work.
 
 ## Storage
 
-- Google Drive integration
-- Google Drive as a tenant-selectable artifact backend
-- User-owned Drive storage
+- Additional Drive folder selection/picker workflows (per-user Drive storage is
+  implemented; see [IG#0007 report](docs/ig0007-report.md))
 - Additional cloud object-storage adapters
 - Storage quotas and policies
 - Additional retention scopes for imported/uploaded artifacts

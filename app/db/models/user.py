@@ -23,6 +23,10 @@ class User(Base):
         primary_key=True,
     )
 
+    artifact_storage_preference: Mapped[str] = mapped_column(
+        String(24), default="ig_managed", server_default="ig_managed", nullable=False,
+    )
+
     password_hash: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,

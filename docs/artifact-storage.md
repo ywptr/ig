@@ -85,3 +85,9 @@ storage isolation, or authorization. SHA-256 equality never grants shared access
 
 Artifact retention, idempotent deletion, scheme registration, tombstones and
 provider transition invariants are documented in [Artifact lifecycle](artifact-lifecycle.md).
+
+## Per-user external storage
+
+[IG#0007 Google Drive storage](google-drive-storage.md) adds an owner-aware writer
+selection layer above the adapters, private connection-bound locators and per-user
+OAuth. Existing local/Vercel identity and isolation rules still apply.

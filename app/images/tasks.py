@@ -253,8 +253,10 @@ def persist_image_result(
     extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(result.mime_type, "png")
     filename = f"{uuid.uuid4()}.{extension}"
 
+    from app.artifacts.storage.selection import select_write_store
+    writer = select_write_store(db, tenant_id=image_record.tenant_id, user_id=image_record.user_id, managed_store=artifact_store)
     storage_uri = (
-        artifact_store.put_bytes(
+        writer.put_bytes(
             filename=filename,
             data=result.data,
         )

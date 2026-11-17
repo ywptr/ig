@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { StorageSettings, TenantStorageSettings } from "./components/StorageSettings";
 import { RetentionSettings } from "./components/RetentionSettings";
 import { AuthScreen } from "./components/AuthScreen";
 import { GenerationLab } from "./components/GenerationLab";
@@ -9,7 +10,7 @@ import { safeMessage } from "./api/client";
 import { useGenerationFeed } from "./hooks/useGenerationFeed";
 
 function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<void> }) {
-    const [view, setView] = useState<"generate" | "jobs" | "executions" | "settings">("generate");
+    const [view, setView] = useState<"generate" | "jobs" | "executions" | "settings" | "storage">(() => new URLSearchParams(window.location.search).has("storage") ? "storage" : "generate");
     const feed = useGenerationFeed();
     const [admin, setAdmin] = useState(false);
     useEffect(() => {
@@ -26,6 +27,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<voi
                 <button className={view === "generate" ? "active" : ""} aria-current={view === "generate" ? "page" : undefined} onClick={() => setView("generate")}>Generate</button>
                 <button className={view === "jobs" ? "active" : ""} aria-current={view === "jobs" ? "page" : undefined} onClick={() => { setView("jobs"); feed.refresh(); }}>Jobs</button>
                 <button className={view === "executions" ? "active" : ""} aria-current={view === "executions" ? "page" : undefined} onClick={() => setView("executions")}>Executions</button>
+                <button onClick={() => setView("storage")} aria-current={view === "storage" ? "page" : undefined}>My storage</button>
                 {admin && <button onClick={() => setView("settings")} aria-current={view === "settings" ? "page" : undefined}>Settings</button>}
             </nav>
             <div className="user-menu"><div className="user-info"><strong>{user.name || user.email}</strong>{user.name && <span>{user.email}</span>}</div>
@@ -38,7 +40,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<voi
             </section>
             {view === "jobs" && <Jobs jobs={feed.data.jobs} error={feed.error} loading={feed.loading} onRefresh={feed.refresh} />}
             {view === "executions" && <Executions />}
-            {admin && view === "settings" && <RetentionSettings />}
+            {view === "storage" && <StorageSettings />}
+            {admin && view === "settings" && <><TenantStorageSettings /><RetentionSettings /></>}
         </main>
     </div>;
 }

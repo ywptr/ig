@@ -150,3 +150,21 @@ def patch_retention(request: RetentionUpdate, context: TenantContext = Depends(g
     settings.generated_artifact_retention_days = request.generated_artifact_retention_days
     db.commit()
     return policy(settings)
+
+
+@router.get("/external-retention")
+def read_external_retention(context: TenantContext = Depends(get_admin_tenant_context), db: Session = Depends(get_db)):
+    return policy(db.get(TenantSettings, context.tenant.tenant_id), "gdrive")
+
+
+@router.patch("/external-retention")
+def patch_external_retention(request: RetentionUpdate, context: TenantContext = Depends(get_admin_tenant_context),
+                             db: Session = Depends(get_db)):
+    settings = db.get(TenantSettings, context.tenant.tenant_id)
+    if settings is None:
+        settings = TenantSettings(tenant_id=context.tenant.tenant_id)
+        db.add(settings)
+    settings.external_generated_retention_enabled = request.generated_artifact_retention_enabled
+    settings.external_generated_retention_days = request.generated_artifact_retention_days
+    db.commit()
+    return policy(settings, "gdrive")
