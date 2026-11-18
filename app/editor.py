@@ -15,7 +15,7 @@ from app.auth.principal import RequestPrincipal
 from app.auth.service_access import fail
 from app.core.time import utc_now, utc_iso
 from app.db.models import EditorSession, EditorAttempt, ServiceCredential, UserIdentity, User, Tenant, Execution
-from app.media.schemas import MediaGenerationRequest
+from ig_core.media.schemas import MediaGenerationRequest
 from app.tenancy.governance import get_tenancy_governance
 
 
@@ -115,10 +115,10 @@ def resolve_binding(db, session):
 
 def validate_draft(db, draft, principal):
     """Preserve unavailable model/control errors for repair, never remove references."""
-    from app.media.validation import validate_media_request, validate_model_capabilities, MediaRequestValidationError
+    from ig_core.media.validation import validate_media_request, validate_model_capabilities, MediaRequestValidationError
     from app.media.video_service import resolve_video_selection, resolve_video_references
-    from app.media.providers.video import VideoProviderConfigurationError
-    from app.media.providers.base import ImageProviderConfigurationError
+    from ig_core.providers.video import VideoProviderConfigurationError
+    from ig_core.providers.base import ImageProviderConfigurationError
     from app.media.providers.registry import image_provider_registration
     from app.artifacts.references import resolve_references
     from app.db.models import Artifact

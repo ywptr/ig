@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 
 dependencies = [
+    "ig-core==0.1.0",
     "fastapi==0.141.1",
     "uvicorn==0.52.4",
     "openai==3.5.0",
@@ -39,6 +40,9 @@ exclude = [
     "frontend*",
     "output*",
 ]
+
+[tool.uv.sources]
+ig-core = { path = "packages/ig-core" }
 
 [tool.vercel]
 entrypoint = "app.main:app"

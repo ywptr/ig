@@ -416,6 +416,7 @@ dependencies = [
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "google-auth" },
+    { name = "ig-core" },
     { name = "openai" },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
@@ -441,6 +442,7 @@ requires-dist = [
     { name = "email-validator" },
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "google-auth" },
+    { name = "ig-core", directory = "packages/ig-core" },
     { name = "openai", specifier = "==3.5.0" },
     { name = "pillow", specifier = "==12.3.0" },
     { name = "psycopg", extras = ["binary"] },
@@ -456,6 +458,27 @@ requires-dist = [
     { name = "uvicorn", specifier = "==0.52.4" },
     { name = "vercel", specifier = "==0.11.5" },
     { name = "vercel-queue", specifier = "==0.9.1" },
+]
+
+[[package]]
+name = "ig-core"
+version = "0.1.0"
+source = { directory = "packages/ig-core" }
+dependencies = [
+    { name = "av" },
+    { name = "openai" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "av", specifier = ">=16.1,<17" },
+    { name = "openai", specifier = ">=3.5,<4" },
+    { name = "pillow", specifier = ">=12.3,<13" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "requests", specifier = ">=2.32,<3" },
 ]
 
 [[package]]

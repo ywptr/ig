@@ -73,16 +73,12 @@ test("forbidden admin responses and field validation remain actionable errors", 
     await assert.rejects(api.saveRetentionPolicy("managed", true, "30"), /greater than or equal to 1/);
 });
 
-test("provider summary allowlists model defaults and omits credentials/arbitrary config", async t => {
-    fakeFetch(t, url => {
-        assert.equal(url, "/v2/tenant/providers");
-        return json([{ provider: "example", enabled: true, has_credentials: true, credentials: { api_key: "private" },
-            config: { default_model: "image-default", default_models: { video: "video-default", private: "hidden" }, api_key: "private", base_url: "private-url" } }]);
-    });
-    const result = await api.getProviderSummaries();
-    assert.deepEqual(result, [{ provider: "example", enabled: true, has_credentials: true,
-        defaults: [{ media: "Default", model: "image-default" }, { media: "video", model: "video-default" }] }]);
-    assert.doesNotMatch(JSON.stringify(result), /private|api_key|base_url/);
+test("model settings read the credential-free catalog rather than arbitrary provider config", async t => {
+    const calls=[];
+    const document={providers:[{id:"example",display_name:"Example",has_credentials:true,enabled:true,media:[]}]};
+    fakeFetch(t, url => { calls.push(url); assert.equal(url,"/v2/tenant/model-governance");return json(document); });
+    assert.deepEqual(await api.getModelGovernance(), document);
+    assert.deepEqual(calls,["/v2/tenant/model-governance"]);
 });
 
 test("tenant context request is read-only and abortable", async t => {

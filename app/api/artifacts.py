@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.auth.dependencies import get_db
 from app.artifacts import previews
-from app.artifacts.preview_policy import VERSION, MAX_PREVIEW_BYTES
+from ig_core.artifacts.preview_policy import VERSION, MAX_PREVIEW_BYTES
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 from typing import Literal

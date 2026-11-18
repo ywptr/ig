@@ -24,6 +24,7 @@ window.drive={google_drive_enabled:false}; window.writes=[];window.calls=[];
 window.fetch=async(url,options={})=>{
  window.calls.push(url);
  const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
+ if(url==='/v2/tenant/model-governance')return reply({providers:[{id:'example-provider',display_name:'example-provider',enabled:true,has_credentials:true,media:[{media_type:'video',restricted:false,default_model:'tenant-video-default',default_override:null,configuration_error:null,models:[{id:'tenant-video-default',display_name:'tenant-video-default',known:true,supported:true,enabled:true,available:true,usable:true,lifecycle:{deprecated:false,sunset_at:null,replacement_model:null}}]}]}]});
  if(url==='/v2/auth/me')return reply({user_id:'user',name:'User',email:'personal@example.test'});
  if(url==='/v2/tenant')return reply({tenant_id:'tenant-one',name:'Studio One',slug:'studio-one',membership:{role:member?'member':'admin'}});
  if(url.startsWith('/v2/tenant/settings/')||url==='/v2/tenant/providers'){

@@ -369,12 +369,12 @@ class DriveIntegrationTests(contracts.MediaJobTestCase):
         video.VideoTestCase.configure(self)
         self.enterContext(patch("app.jobs.video_lifecycle.poll_interval", return_value=0))
         self.enterContext(patch("app.media.video_tasks.SessionLocal", self.sessions))
-        http = self.enterContext(patch("app.media.providers.alibaba.video.requests.request", return_value=operation_response("PENDING")))
+        http = self.enterContext(patch("ig_core.providers.alibaba.video.requests.request", return_value=operation_response("PENDING")))
         from tempfile import TemporaryDirectory
         from tests.test_artifact_previews import encoded_video
         directory = self.enterContext(TemporaryDirectory())
         real_video = encoded_video(Path(directory) / "video.mp4", 2)
-        download = self.enterContext(patch("app.media.providers.alibaba.video.requests.get", return_value=HTTPResponse(chunks=[real_video])))
+        download = self.enterContext(patch("ig_core.providers.alibaba.video.requests.get", return_value=HTTPResponse(chunks=[real_video])))
         response = video.VideoTestCase.submit_video(self)
         self.assertEqual(response.status_code, 202, response.text)
         job_id = response.json()["job_id"]

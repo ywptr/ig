@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.db.models import Artifact
 from app.artifacts.storage.provider import artifact_store
-from app.artifacts.storage.base import ArtifactStore
-from app.artifacts.types import ArtifactPayload
-from app.artifacts.media_metadata import inspect_media
+from ig_core.artifacts.storage import ArtifactStore
+from ig_core.artifacts.types import ArtifactPayload
+from ig_core.artifacts.media_metadata import inspect_media
 from app.artifacts.schemas import ArtifactProvenance
 from app.artifacts.lineage import record_generation
 from app.artifacts.previews import generate_preview_for_artifact

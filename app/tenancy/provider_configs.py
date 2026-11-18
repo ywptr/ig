@@ -68,6 +68,10 @@ def set_provider_config(
 ) -> TenantProviderConfig:
     provider = provider.strip().lower()
 
+    if config is not None:
+        from app.media.model_governance import validate_provider_model_config
+        validate_provider_model_config(provider, config)
+
     provider_config = get_provider_config(
         db,
         tenant_id=tenant_id,

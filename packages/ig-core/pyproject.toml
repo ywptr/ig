@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ig-core"
+version = "0.1.0"
+description = "Internal AI media generation primitives and provider adapters"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.12,<3",
+    "openai>=3.5,<4",
+    "requests>=2.32,<3",
+    "Pillow>=12.3,<13",
+    "av>=16.1,<17",
+]
+
+[tool.setuptools.packages.find]
+include = ["ig_core*"]

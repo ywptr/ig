@@ -17,8 +17,8 @@ from tests.video_support import (
 class AlibabaAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = AlibabaWanVideoProvider(api_key=TEST_KEY, base_url=BASE_URL, model="wan3.0-video")
-        self.http = self.enterContext(patch("app.media.providers.alibaba.video.requests.request"))
-        self.download = self.enterContext(patch("app.media.providers.alibaba.video.requests.get"))
+        self.http = self.enterContext(patch("ig_core.providers.alibaba.video.requests.request"))
+        self.download = self.enterContext(patch("ig_core.providers.alibaba.video.requests.get"))
 
     def request(self, **fields):
         return ResolvedVideoRequest(**{
@@ -127,7 +127,7 @@ class AlibabaAdapterTests(unittest.TestCase):
         ):
             with self.subTest(headers=response.headers):
                 self.download.return_value = response
-                with patch("app.media.providers.alibaba.video.MAX_VIDEO_BYTES", 10):
+                with patch("ig_core.providers.alibaba.video.MAX_VIDEO_BYTES", 10):
                     with self.assertRaises(VideoProviderTerminalError):
                         self.adapter.poll(TASK_ID, {})
 
@@ -142,7 +142,7 @@ class AlibabaAdapterTests(unittest.TestCase):
                 with self.assertRaises(VideoProviderError):
                     self.adapter.poll(TASK_ID, {})
         self.download.return_value = HTTPResponse()
-        with patch("app.media.providers.alibaba.video.time.monotonic", side_effect=[0, 100]):
+        with patch("ig_core.providers.alibaba.video.time.monotonic", side_effect=[0, 100]):
             with self.assertRaisesRegex(VideoProviderError, "deadline"):
                 self.adapter.poll(TASK_ID, {})
 

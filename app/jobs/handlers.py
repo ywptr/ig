@@ -2,7 +2,7 @@ from app.images.tasks import execute_image_generation
 from app.media.video_tasks import execute_video_generation, resume_video_generation
 from typing import Protocol
 
-from app.jobs.result import Completed, HandlerResult, ProviderOperation
+from ig_core.execution.result import Completed, HandlerResult, ProviderOperation
 
 def noop(
     input_data: dict,

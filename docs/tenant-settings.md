@@ -34,12 +34,13 @@ checks continue to authorize IG application settings; no new authority is added.
   Both retention policies remove physical generated content and previews while
   retaining Artifact history/lineage. Uploaded/reference-upload provenance remains
   excluded. Generated content later referenced can expire after active jobs finish.
-- **Providers / Generation settings:** read-only tenant enablement, credential
-  presence and supported configured model defaults. The frontend renders only
-  known default-model fields, not arbitrary configuration or secrets. There was
-  no existing provider-admin UI to move. Provider edits/credentials remain with
-  the supported `/v2/tenant/providers` admin APIs and operator helper
-  `scripts/configure-tenant-provider.py`. No new generation policy is invented.
+- **Providers / Generation settings:** dynamic, credential-free registered model
+  catalog for each configured provider. Admins can restrict enabled models and
+  choose a default per supported media type; choosing Auto removes an explicit
+  override. Models are supplied by the backend, including lifecycle warnings.
+  Missing credentials are shown as unavailable and model controls are disabled.
+  Credential provisioning and provider enablement remain with existing operator
+  tooling/APIs. See [model governance](openai-model-catalog.md).
 
 ## Personal settings remain separate
 
@@ -61,7 +62,7 @@ rejects empty/non-integral/out-of-range durations; server validation messages ar
 shown without displaying raw response bodies. No optimistic update claims a save
 before the server accepts it.
 
-Existing APIs are reused unchanged:
+Existing storage/retention APIs are reused; model governance adds narrow admin endpoints:
 
 | Purpose | Endpoint |
 | --- | --- |
@@ -69,10 +70,10 @@ Existing APIs are reused unchanged:
 | Drive capability | GET/PATCH `/v2/tenant/settings/storage` |
 | IG-managed retention | GET/PATCH `/v2/tenant/settings/retention` |
 | External/Drive retention | GET/PATCH `/v2/tenant/settings/external-retention` |
-| Provider summary | GET `/v2/tenant/providers` |
+| Model governance | GET `/v2/tenant/model-governance`; PATCH `/v2/tenant/model-governance/{provider}` |
 | Personal storage | Existing `/v2/user/storage` routes, on My Settings only |
 
-There are no new backend endpoints, configuration variables or migrations.
+IG#0007B adds the model-governance endpoints above, with no configuration variables or migrations.
 Existing APIs do not provide revisions, ETags or conflict detection: the last
 successful save within a section wins. Reload to see other administrators' changes.
 Saving one section does not rewrite the other sections. Resetting nullable
@@ -100,8 +101,7 @@ git diff --check
 ```
 
 See [the completion report](ig0007a-report.md) for actual results and environment
-limitations. This task changes frontend implementation, tests and documentation
-only; no backend implementation or schema change is required.
+limitations. See also [IG#0007B completion report](ig0007b-report.md) for the model-governance implementation and validation.
 
 Release: feature branch → explicitly authorized push → Vercel Preview → validate
 admin/member routes, mobile layout, section saves and authorization → review →

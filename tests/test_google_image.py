@@ -24,7 +24,7 @@ from tests.google_support import GoogleResponse, JPEG, MODEL, PNG, TEST_CREDENTI
 class GoogleAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = GoogleImageProvider(api_key=TEST_CREDENTIAL)
-        self.http = self.enterContext(patch("app.media.providers.google.image.requests.post"))
+        self.http = self.enterContext(patch("ig_core.providers.google.image.requests.post"))
         self.http.return_value = GoogleResponse()
 
     def request(self, **fields):
@@ -54,7 +54,7 @@ class GoogleAdapterTests(unittest.TestCase):
 
     def test_resolution_explicit_then_media_default_then_legacy_then_adapter(self):
         for config, explicit in (
-            ({"default_models": {"image": "unsupported"}}, MODEL),
+            ({"default_models": {"image": MODEL}}, MODEL),
             ({"default_models": {"image": MODEL}, "default_model": "ignored"}, None),
             ({"default_model": MODEL}, None), ({}, None),
         ):
@@ -288,13 +288,13 @@ class GoogleAdapterTests(unittest.TestCase):
             self.adapter.generate(self.request())
 
     def test_response_and_image_size_caps(self):
-        with patch("app.media.providers.google.image.MAX_RESPONSE_BYTES", 8):
+        with patch("ig_core.providers.google.image.MAX_RESPONSE_BYTES", 8):
             with self.assertRaises(ImageProviderError):
                 self.adapter.generate(self.request())
-        with patch("app.media.providers.google.image.MAX_IMAGE_BYTES", 4):
+        with patch("ig_core.providers.google.image.MAX_IMAGE_BYTES", 4):
             with self.assertRaises(ImageProviderError):
                 self.adapter.generate(self.request())
-        with patch("app.media.providers.google.image.MAX_REFERENCE_BYTES", 4):
+        with patch("ig_core.providers.google.image.MAX_REFERENCE_BYTES", 4):
             self.http.reset_mock()
             with self.assertRaises(ImageProviderConfigurationError):
                 self.adapter.generate(self.request(references=[self.reference()]))
@@ -307,7 +307,7 @@ class GoogleAdapterTests(unittest.TestCase):
         self.assertEqual(self.adapter.generate(self.request()).data, PNG)
 
     def test_response_deadline_stops_slow_progress_without_retry(self):
-        with patch("app.media.providers.google.image.time.monotonic", side_effect=[0, 121]):
+        with patch("ig_core.providers.google.image.time.monotonic", side_effect=[0, 121]):
             with self.assertRaisesRegex(ImageProviderError, "deadline exceeded"):
                 self.adapter.generate(self.request())
         self.http.assert_called_once()
@@ -319,13 +319,13 @@ class OpenAIAdapterRegressionTests(unittest.TestCase):
         response = SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(PNG).decode())])
         client.images.generate.return_value = response
         client.images.edit.return_value = response
-        with patch("app.media.providers.openai.image.OpenAI", return_value=client):
+        with patch("ig_core.providers.openai.image.OpenAI", return_value=client):
             adapter = OpenAIImageProvider(api_key="test-only-not-an-openai-key")
         request = ResolvedImageRequest("A lighthouse", "high", "4:5", "auto", "single", None, None, provider="openai")
         result = adapter.generate(request)
         client.images.generate.assert_called_once_with(
             model="gpt-image-2", prompt=build_image_prompt(replace(request, model="gpt-image-2")),
-            size="1024x1280", quality="high",
+            size="1024x1280", quality="high", output_format="png",
         )
         self.assertIs(legacy_prompt, build_image_prompt)
         self.assertEqual((result.data, result.mime_type), (PNG, "image/png"))

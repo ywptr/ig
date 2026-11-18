@@ -6,7 +6,7 @@ from app.core.time import utc_now
 from app.db.database import SessionLocal
 from app.db.models import Job, Execution
 from app.jobs.handlers import get_handler
-from app.jobs.result import Pending
+from ig_core.execution.result import Pending
 from app.jobs.cancellation import (
     JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
 )
@@ -105,7 +105,7 @@ def execute_job(job_id: str) -> None:
                 if capability == "video.generate":
                     from app.jobs.video_lifecycle import terminal_failure
                     phase = (execution.metadata_json or {}).get("video_lifecycle", {}).get("phase")
-                    from app.media.providers.video import VideoProviderTerminalError
+                    from ig_core.providers.video import VideoProviderTerminalError
                     code = "VIDEO_PROVIDER_FAILED" if isinstance(exc, VideoProviderTerminalError) else (
                         "VIDEO_SUBMISSION_UNCERTAIN" if phase == "submitting" else "VIDEO_CHECKPOINT_INVALID")
                     terminal_failure(job, execution, code, utc_now())

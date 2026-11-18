@@ -1,13 +1,13 @@
 """Generic video orchestration; provider protocol details stay in adapters."""
-from app.artifacts.types import ArtifactPayload
+from ig_core.artifacts.types import ArtifactPayload
 from app.db.database import SessionLocal
 from app.jobs.cancellation import check_cancellation
-from app.jobs.result import Completed, Pending, ProviderOperation, TerminalOperationError
-from app.media.providers.video import (
+from ig_core.execution.result import Completed, Pending, ProviderOperation, TerminalOperationError
+from ig_core.providers.video import (
     ResolvedVideoRequest, VideoProviderCompleted, VideoProviderPending, VideoProviderTerminalError,
 )
-from app.media.schemas import MediaGenerationRequest
-from app.media.validation import validate_media_request
+from ig_core.media.schemas import MediaGenerationRequest
+from ig_core.media.validation import validate_media_request
 from app.media.video_service import load_video_provider, resolve_video_references, validate_video_capabilities
 
 

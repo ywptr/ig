@@ -107,7 +107,13 @@ class MediaRoutingTests(ImageExecutionTestCase):
 
     def test_invalid_default_configuration_fails_without_exposing_raw_values(self):
         self.disable()
-        self.configure(config={"default_models": {"image": "https://private-config-canary.test"}})
+        with self.sessions() as db:
+            row = db.get(TenantProviderConfig, ("tenant-one", "google"))
+            if row is None:
+                row = TenantProviderConfig(tenant_id="tenant-one", provider="google", enabled=True, encrypted_credentials="opaque")
+                db.add(row)
+            row.config_json = {"default_models": {"image": "https://private-config-canary.test"}}
+            db.commit()
         response = self.submit()
         self.assert_no_submission(response)
         self.assertNotIn("private-config-canary", response.text)
@@ -193,7 +199,9 @@ class MediaRoutingTests(ImageExecutionTestCase):
         self.configure()
         job_id, selection = self.selection(self.submit(purpose="thumbnail"))
         # Even a now-invalid default mapping cannot change this accepted model.
-        self.configure(config={"default_models": "changed-after-enqueue"})
+        with self.sessions() as db:
+            db.get(TenantProviderConfig, ("tenant-one", "google")).config_json = {"default_models": "changed-after-enqueue"}
+            db.commit()
         with patch("app.images.tasks.resolve_image_model", side_effect=AssertionError("Must not resolve again")), patch(
             "app.media.routing.resolve_image_selection", side_effect=AssertionError("Must not reroute"),
         ):
@@ -213,7 +221,7 @@ class MediaRoutingTests(ImageExecutionTestCase):
 
     def test_openai_default_is_pinned_before_tenant_change(self):
         job_id, selection = self.selection(self.submit())
-        self.configure(provider="openai", config={"default_model": "later-model"})
+        self.configure(provider="openai", config={"default_model": "gpt-image-2.5-flare"})
         execute_job(job_id)
         self.assertEqual(self.provider.generate.call_args.args[0].model, selection["model"])
 
@@ -253,6 +261,9 @@ class MediaRoutingTests(ImageExecutionTestCase):
         second = replace(first, id="test-second")
         class TaggedProvider(OpenAIImageProvider):
             CAPABILITIES = ProviderMetadata("Test provider", (first, second))
+            @classmethod
+            def validate_submission_options(cls, **kwargs):
+                pass
             @staticmethod
             def default_model_for(config):
                 return "test-second"

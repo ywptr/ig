@@ -35,9 +35,10 @@ quality, aspect ratio, style, count or references. For example:
 3. Otherwise use the normal image path: prefer the existing default image provider
    (OpenAI) when its configured default is usable, then other registered available
    providers in declaration order. This also enables Google-only tenants.
-4. Normal model defaults remain adapter-owned: OpenAI uses legacy `default_model`,
-   Google uses `default_models.image` then legacy `default_model`; adapter defaults
-   apply when no tenant model default is configured.
+4. Model defaults use `default_models.image`, then legacy `default_model`.
+   Without an explicit tenant default, prefer the eligible adapter default, then
+   the first eligible model in catalog order. All routes enforce the same tenant
+   allowlist, registered technical catalog and lifecycle rules as discovery.
 
 Ties use stable registration order, not price, latency, health or quality scores.
 There is no tenant purpose-route JSON configuration in this release. Provider rows
@@ -47,8 +48,8 @@ is deferred rather than duplicating settings across provider configurations.
 If no specialized thumbnail model is available/compatible, use the normal image
 route. If there is no usable normal provider either, fail HTTP 400 before creating
 an ImageRequest or Job and before enqueue. Explicit unsupported model IDs also
-fail locally. Existing OpenAI custom tenant defaults retain legacy acceptance even
-when outside the registered discovery catalog; explicit model IDs must be registered.
+fail locally. Unknown configured defaults are configuration errors; explicit and default model
+IDs must both be registered and tenant-enabled.
 
 Availability is structural: registered adapter, enabled tenant row, encrypted
 credential presence and valid required non-secret settings. Routing never decrypts
@@ -82,7 +83,7 @@ The new Job selection is built internally; public request fields cannot override
 Workers do not rerun routing or model-default resolution for these Jobs. Changing
 tenant defaults between submission and execution cannot change their provider/model.
 Workers still use current encrypted credentials and require an enabled configuration;
-removing/disabling it can fail a queued Job, without a replacement generation.
+removing/disabling it or disabling its recorded model can fail a queued Job, without a replacement generation.
 Older Jobs without a selection keep their historical execution behavior. V1 response
 shape and image controls are preserved; its new internal Jobs gain a general selection.
 The existing image transaction/crash/projection limitations remain unchanged.

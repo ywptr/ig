@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from sqlalchemy import select, update
 from app.core.time import utc_now
 from app.db.models import Job, Execution, ImageRequest
-from app.jobs.result import Pending
+from ig_core.execution.result import Pending
 
 
 class JobCancelled(RuntimeError):

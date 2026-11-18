@@ -4,7 +4,7 @@ from dataclasses import replace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.artifacts.media_metadata import inspect_media
+from ig_core.artifacts.media_metadata import inspect_media
 from app.artifacts.lineage import record_generation
 from app.executions.context import current_execution
 from app.artifacts.service import create_artifact
@@ -13,7 +13,7 @@ from app.artifacts.storage.provider import (
     artifact_store,
 )
 from app.db.database import SessionLocal
-from app.jobs.result import Completed
+from ig_core.execution.result import Completed
 from app.jobs.cancellation import check_cancellation, JobCancelled
 from app.media.routing import MediaSelection
 from app.media.providers.registry import (
@@ -24,7 +24,7 @@ from app.media.providers.registry import (
 from app.db.models import (
     ImageRequest,
 )
-from app.media.providers.base import (
+from ig_core.providers.base import (
     ImageProviderResult,
     ResolvedImageReference,
     ResolvedImageRequest,
@@ -217,6 +217,10 @@ def generate_image(
         or {}
     )
 
+    from app.media.model_governance import validate_selected_model
+    from app.media.providers.registry import image_provider_registration
+    if model_is_resolved:
+        validate_selected_model(image_provider_registration(request.provider), provider_settings, "image", request.model)
     resolved_model = request.model if model_is_resolved else resolve_image_model(
         request.provider, config=provider_settings, model=request.model,
     )
@@ -532,6 +536,9 @@ def resolve_image_references(
     selection = input_data.get("selection") or input_data.get("advanced") or {}
     provider = selection.get("provider") or DEFAULT_IMAGE_PROVIDER
     model = selection.get("model") or ""
+    if "selection" not in input_data:
+        config = get_provider_config(db, tenant_id=image_record.tenant_id, provider=provider)
+        model = resolve_image_model(provider, config=config.config_json if config else {}, model=model or image_record.model)
     rows = resolve_references(db, input_data.get("references") or [],
         slots=reference_slots(provider, model, "image"), tenant_id=image_record.tenant_id,
         user_id=image_record.user_id, store=artifact_store, read_bytes=True)

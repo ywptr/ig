@@ -5,7 +5,8 @@ WORKDIR /app
 # Use the current application dependency manifest, including OIDC and queue pins.
 COPY pyproject.toml ./
 COPY app ./app
-RUN pip install --no-cache-dir .
+COPY packages/ig-core ./packages/ig-core
+RUN pip install --no-cache-dir ./packages/ig-core .
 
 RUN mkdir -p /app/output
 EXPOSE 8000

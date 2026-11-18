@@ -25,9 +25,9 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
         for target in (
             "app.tenancy.provider_configs.decrypt_credentials",
             "app.tenancy.provider_configs.get_provider_credentials",
-            "app.media.providers.openai.image.OpenAI",
-            "app.media.providers.alibaba.video.requests.request",
-            "app.media.providers.alibaba.video.requests.get",
+            "ig_core.providers.openai.image.OpenAI",
+            "ig_core.providers.alibaba.video.requests.request",
+            "ig_core.providers.alibaba.video.requests.get",
         ):
             self.enterContext(patch(target, side_effect=AssertionError("Discovery must remain local")))
 
@@ -176,19 +176,17 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
         self.assertEqual(model["supported_interface_levels"], ["easy", "medium", "hard"])
         self.assertEqual(model["use_cases"], [])
 
-    def test_image_legacy_default_resolution_preserved(self):
-        # The image pipeline uses default_model, not the video convention or ORM column.
-        self.configure(config={"default_model": "legacy-model", "default_models": {"image": "ignored"}})
-        with self.sessions() as db:
-            db.get(TenantProviderConfig, ("tenant-one", "openai")).default_model = "also-ignored"
-            db.commit()
+    def test_unknown_legacy_default_is_not_available_and_media_specific_default_wins(self):
+        self.configure(config={"default_model": "legacy-model"})
         provider = self.provider()
-        self.assertEqual(provider["default_model"], "legacy-model")
-        self.assertFalse(provider["default_model_available"])
-        self.assertTrue(provider["models"][0]["available"])
+        self.assertIsNone(provider["default_model"])
+        self.assertFalse(provider["available"])
+        self.assertIsNotNone(provider["configuration_error"])
+        self.configure(config={"default_model": "legacy-model", "default_models": {"image": "gpt-image-2.5-flare"}})
+        self.assertEqual(self.provider()["default_model"], "gpt-image-2.5-flare")
         for config in ({}, {"default_model": ""}, {"default_model": "gpt-image-2"}):
             self.configure(config=config)
-            self.assertEqual(self.provider()["default_model"], resolve_openai_model(config.get("default_model")))
+            self.assertEqual(self.provider()["default_model"], "gpt-image-2")
 
     def test_video_defaults_share_generation_resolution(self):
         for config in (
@@ -200,13 +198,14 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
             self.assertEqual(provider["default_model"], AlibabaWanVideoProvider.resolve_tenant_model(config))
             self.assertTrue(provider["default_model_available"])
 
-    def test_invalid_video_default_does_not_break_hard_mode_catalog(self):
+    def test_invalid_video_default_is_known_but_unavailable(self):
         for defaults in ({"video": "unsupported"},):
             self.configure("alibaba", config={"base_url": "https://example.test", "default_models": defaults})
             provider = self.provider("video", "alibaba")
             self.assertIsNone(provider["default_model"])
             self.assertFalse(provider["default_model_available"])
-            self.assertTrue(provider["models"][0]["available"])
+            self.assertTrue(provider["models"][0]["known"])
+            self.assertFalse(provider["models"][0]["available"])
 
     def test_malformed_video_defaults_are_invalid_configuration(self):
         self.configure("alibaba", config={"base_url": "https://example.test", "default_models": "invalid"})
@@ -276,7 +275,7 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
 
 class ImageDiscoveryGenerationConsistencyTests(ImageExecutionTestCase):
     def test_discovered_legacy_default_is_used_by_real_image_execution_path(self):
-        for configured_model in (None, "gpt-image-2", "custom-legacy-model"):
+        for configured_model in (None, "gpt-image-2", "gpt-image-2.5-flare"):
             with self.subTest(configured_model=configured_model):
                 with self.sessions() as db:
                     row = db.get(TenantProviderConfig, ("tenant-one", "openai"))

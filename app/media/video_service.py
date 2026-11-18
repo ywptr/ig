@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.artifacts.storage.provider import artifact_store
 from app.media.providers.registry import VIDEO_PROVIDERS, create_video_provider, video_provider_registration
-from app.media.providers.video import ResolvedVideoReference, VideoProviderConfigurationError
-from app.media.schemas import MediaGenerationRequest
+from ig_core.providers.video import ResolvedVideoReference, VideoProviderConfigurationError
+from ig_core.media.schemas import MediaGenerationRequest
 from app.tenancy.provider_configs import get_provider_config, get_provider_credentials, list_provider_configs
 
 
@@ -20,6 +20,8 @@ def load_video_provider(db: Session, *, tenant_id: str, provider: str, model: st
     config = get_provider_config(db, tenant_id=tenant_id, provider=provider)
     if not config or not config.enabled:
         raise VideoProviderConfigurationError("Video provider is not enabled for this tenant")
+    from app.media.model_governance import validate_selected_model
+    validate_selected_model(video_provider_registration(provider), config.config_json or {}, "video", model)
     credentials = get_provider_credentials(db, tenant_id=tenant_id, provider=provider)
     return create_video_provider(provider, credentials=credentials, config=config.config_json or {}, model=model)
 
@@ -63,7 +65,7 @@ def resolve_video_references(
 
 
 def validate_video_capabilities(request, provider, model):
-    from app.media.validation import validate_model_capabilities
+    from ig_core.media.validation import validate_model_capabilities
     metadata = next((item for item in video_provider_registration(provider).CAPABILITIES.models if item.id == model), None)
     if metadata is None:
         raise VideoProviderConfigurationError("Video model capabilities are unknown")

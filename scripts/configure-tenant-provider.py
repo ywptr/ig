@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 # Prefer the checked-out application when invoked as python scripts/....
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.media.model_governance import ModelGovernanceError
 from app.ops.database_safety import (
     UnsafeDatabaseTarget, add_write_confirmation_arguments, require_safe_admin_target,
 )
@@ -249,9 +250,11 @@ def main() -> None:
     print(
         "Example:"
     )
-    print(
-        '{"default_model":"gpt-image-2"}'
-    )
+    from app.media.model_governance import provider_adapters
+    catalogs = provider_adapters(provider)
+    example = {"default_models": {media: next((model.id for model in adapter.CAPABILITIES.models if not model.lifecycle.deprecated), adapter.CAPABILITIES.models[0].id) for media, adapter in catalogs.items()},
+               "enabled_models": {media: [model.id for model in adapter.CAPABILITIES.models] for media, adapter in catalogs.items()}}
+    print(json.dumps(example if catalogs else {}))
     print(
         "Leave blank to preserve existing configuration."
     )
@@ -313,14 +316,13 @@ def main() -> None:
             f"Has credentials: "
             f"{result['has_credentials']}"
         )
-        print(
-            "Config:",
-            json.dumps(
-                result["config"],
-                indent=2,
-                sort_keys=True,
-            ),
-        )
+        from app.media.model_governance import model_policy
+        for media, adapter in catalogs.items():
+            policy = model_policy(adapter, result["config"], media)
+            print(f"{media} default: {policy.default or 'none'}")
+            print(f"{media} enabled models: {', '.join(policy.enabled) or 'none'}")
+        # Do not print arbitrary configuration: secrets may have been misplaced there.
+
 
     finally:
         db.close()
@@ -329,5 +331,5 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except UnsafeDatabaseTarget as exc:
+    except (UnsafeDatabaseTarget, ModelGovernanceError) as exc:
         raise SystemExit(str(exc)) from None

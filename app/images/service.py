@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.db.models import ImageRequest
 from app.jobs.service import create_job
 from app.media.routing import resolve_image_selection
-from app.media.schemas import MediaGenerationRequest
-from app.media.validation import validate_media_request
+from ig_core.media.schemas import MediaGenerationRequest
+from ig_core.media.validation import validate_media_request
 
 def submit_image_generation(
     db: Session,

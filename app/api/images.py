@@ -8,8 +8,8 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError
-from app.media.providers.base import ImageProviderConfigurationError
-from app.media.validation import MediaRequestValidationError
+from ig_core.providers.base import ImageProviderConfigurationError
+from ig_core.media.validation import MediaRequestValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.auth.dependencies import get_db

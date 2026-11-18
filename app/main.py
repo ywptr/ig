@@ -172,3 +172,6 @@ app.include_router(user_storage_router, prefix="/v2")
 async def drive_unavailable(request, exc):
     return JSONResponse(status_code=503, content={"detail": {"code": "DRIVE_UNAVAILABLE", "message": str(exc)}},
                         headers={"Cache-Control": "no-store"})
+
+from app.api.model_governance import router as model_governance_router
+app.include_router(model_governance_router, prefix="/v2")

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { ApiError, safeMessage } from "../api/client";
-import { getDriveCapability, getProviderSummaries, getTenantInfo, saveDriveCapability,
-    type DriveCapability, type ProviderSummary, type TenantInfo } from "../api/tenantSettings";
+import { getDriveCapability, getTenantInfo, saveDriveCapability,
+    type DriveCapability, type TenantInfo } from "../api/tenantSettings";
+import { ProviderModelSettings } from "./ProviderModelSettings";
 import { RetentionSettings } from "./RetentionSettings";
 
 type Access = { status: "loading" } | { status: "error"; message: string }
@@ -42,29 +43,13 @@ function DriveGovernance({ initial }: { initial: DriveCapability }) {
 }
 
 function ProviderSettings() {
-    const [providers, setProviders] = useState<ProviderSummary[] | null>(null);
-    const [error, setError] = useState("");
-    useEffect(() => {
-        const controller = new AbortController();
-        void getProviderSummaries(controller.signal).then(value => { if (!controller.signal.aborted) setProviders(value); })
-            .catch(error => { if (!controller.signal.aborted) setError(safeMessage(error.message, "Unable to load provider settings.")); });
-        return () => controller.abort();
-    }, []);
     return <section className="settings-card" aria-labelledby="provider-settings-title">
         <h2 id="provider-settings-title">Providers / Generation settings</h2>
-        <p>Provider enablement and model defaults are tenant-scoped. This summary shows existing configuration.
+        <p>Provider enablement and model defaults are tenant-scoped. Model choices below come from the registered catalog and this tenant’s policy.
             An operator can update credentials, provider configuration and defaults using the supported tenant provider API
             or <code>scripts/configure-tenant-provider.py</code>.</p>
-        {error && <p className="settings-error" role="alert">{error}</p>}
-        {!providers && !error && <p role="status">Loading provider settings…</p>}
-        {providers?.length === 0 && <p>No providers configured for this tenant.</p>}
-        {providers && providers.length > 0 && <ul className="settings-providers">{providers.map(provider => <li key={provider.provider}>
-            <strong>{provider.provider}</strong>
-            <span>{provider.enabled ? "Enabled" : "Disabled"} · Credentials {provider.has_credentials ? "configured" : "not configured"}</span>
-            {provider.defaults.length ? <ul>{provider.defaults.map(value => <li key={value.media}>{value.media}: {value.model}</li>)}</ul>
-                : <span>No tenant model defaults configured.</span>}
-        </li>)}</ul>}
-        <p>Provider secrets are not displayed or edited here. No additional generation policy is introduced by this page.</p>
+        <ProviderModelSettings />
+        <p>Provider secrets are not displayed or edited here.</p>
     </section>;
 }
 

@@ -1,7 +1,7 @@
 from typing import Iterator
 from urllib.parse import urlparse
 
-from app.artifacts.storage.base import (
+from ig_core.artifacts.storage import (
     ArtifactStore,
 )
 

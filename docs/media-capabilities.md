@@ -40,7 +40,7 @@ media URLs are returned.
 a usable registered default. It is null when none can be established. Image
 selection retains OpenAI when its normal default is usable, even when Google is
 enabled. A Google-only tenant can use Google automatically in easy/medium.
-Both current image models support easy/medium/hard. `default_provider` reflects
+Registered image models declare their supported interface levels. `default_provider` reflects
 the general route; thumbnail selection can differ. See [purpose routing](media-routing.md).
 Video still requires
 exactly one enabled registered provider for automatic selection; multiple enabled
@@ -48,16 +48,14 @@ providers remain selectable in hard mode but do not trigger automatic ranking.
 An enabled provider with incomplete configuration still participates in that
 existing video ambiguity rule. This endpoint does not change generation routing.
 
-OpenAI image defaults retain `config_json.default_model` with adapter fallback.
-The unused ORM `default_model` column and `default_models.image` do not override
-OpenAI defaults. Google image defaults resolve `default_models.image`, then legacy
-`default_model`, then the adapter default. Explicit hard-mode models take priority.
-Existing custom image defaults are reported as identifiers, but
-`default_model_available` is false when they are outside the registered catalog;
-legacy configured image defaults retain their existing acceptance behavior. Explicit
-hard-mode model IDs must be registered. Video uses
-`default_models.video` with adapter fallback and registered-model validation.
-Invalid video defaults produce a null default rather than failing discovery.
+All providers resolve registered model defaults through the shared tenant model
+policy: `default_models.<media_type>` wins over legacy image `default_model`.
+Absent explicit defaults, use the adapter default when eligible, then the first
+eligible model in catalog order. Optional `enabled_models.<media_type>` restricts
+the catalog; an empty list disables that media type. Invalid, unknown, disabled or
+sunset defaults invalidate local provider availability and expose a safe
+`configuration_error`. Arbitrary configured strings never bypass validation.
+See [model catalog and governance](openai-model-catalog.md).
 
 Generic image controls include semantic quality/styles, references with roles and
 strength, supported aspect ratios and panel layouts. Discovery conservatively
@@ -104,7 +102,7 @@ may continue and incur charges.
 
 Adapter model declarations are the sole authority for technical support. The
 provider registry determines which adapters are deployed. The database controls
-tenant credentials, enablement, and defaults only; it cannot grant features.
+tenant credentials, provider/model enablement, and defaults only; it cannot grant features.
 There is no Provider, Model, Capability, or Workflow database entity to synchronize,
 and no migration or capability seed is required. New models are reviewed code
 changes with tests rather than schema migrations. Contract versions are independent
@@ -117,26 +115,20 @@ Provider-wide support is the union of its declared models, never an implicit gra
 to every model. Shared declarations can be constructed in adapter code when useful.
 No duplicated provider-wide feature flags or tenant overrides are introduced.
 
-`available` preserves the existing local configuration meaning. `usable` additionally
-requires a known technical declaration. Neither flag verifies credentials or account
-entitlements remotely. An unknown legacy OpenAI default is still accepted for
-backward compatibility but has no invented model contract; it is not added to the
-catalog and `default_model_available` remains false. Catalog models remain usable
-through explicit selection even with an unknown configured default.
+Model `known` identifies a registered catalog entry; `supported` additionally
+requires a current technical declaration; `enabled` reflects the tenant allowlist.
+`available` combines local provider configuration, provider/model enablement and
+model lifecycle eligibility. `usable` also requires a technical declaration.
+Neither flag verifies credentials or account entitlements remotely. Lifecycle
+metadata includes optional deprecation, sunset and replacement information.
 
-`validate_model_capabilities` rejects incompatible output media, text/reference
-inputs, reference counts, multiple-reference support, aspect ratios, and declared
-prompt/duration/resolution/audio limits before creating jobs. Image selection calls
-it for known models, including legacy image submission through `/v2/images`.
-Existing video execution retains its existing validation; future adapters can use
-the reusable validator without changing it. Artifact
-ownership, MIME and byte validation remain at reference resolution, where the
-actual artifact is known; technical MIME lists describe supported formats.
-Count/layout/strategy and native parameters retain existing adapter/legacy checks:
-OpenAI historically accepts counts/layouts broader than the conservative discovery
-controls, so this milestone does not tighten them. Unknown legacy image defaults
-retain their earlier validation. Strict discovery-based validation therefore applies
-to known models rather than promising universal validation of legacy requests.
+Every selected model, including legacy tenant defaults and `/v2/images`, must
+resolve through the catalog before Job acceptance. Shared validation checks
+technical input/output compatibility, references, prompt/duration/resolution/audio
+limits and declared image controls. Adapter validation handles native parameters.
+Artifact ownership, MIME and byte validation remain at reference resolution.
+Queued work rechecks its recorded model's registration/enablement, without
+resolving a changed tenant default or silently selecting a replacement.
 
 Example excerpt for a configured, enabled tenant (other response fields omitted):
 
@@ -159,7 +151,7 @@ Example excerpt for a configured, enabled tenant (other response fields omitted)
             "provider_cancellation_supported": false
           },
           "reference_mime_types": ["image/png", "image/jpeg", "image/webp", "image/jpg"],
-          "output_mime_types": ["image/png"], "max_prompt_characters": null
+          "output_mime_types": ["image/png"], "max_prompt_characters": 32000
         }
       }]
     }]

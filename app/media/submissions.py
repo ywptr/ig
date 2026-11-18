@@ -12,7 +12,7 @@ from app.auth.service_access import audit, fail
 from app.core.time import utc_now
 from app.db.models import Job, MediaSubmissionKey
 from app.jobs.provider import get_job_queue
-from app.media.schemas import MediaGenerationRequest
+from ig_core.media.schemas import MediaGenerationRequest
 from app.media.service import MediaSubmission, submit_media_generation
 
 

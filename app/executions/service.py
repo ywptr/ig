@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Execution
-from app.jobs.result import Completed, HandlerResult, Pending
+from ig_core.execution.result import Completed, HandlerResult, Pending
 
 def create_execution(
     db: Session,

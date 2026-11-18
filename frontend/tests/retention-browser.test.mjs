@@ -17,7 +17,8 @@ window.policy={generated_artifact_retention_enabled:true,generated_artifact_rete
 const member=new URL(location.href).searchParams.has('member');
 window.fetch=async(url,options={})=>{
  let body=[];
- if(url==='/v2/auth/me') body={user_id:'user',name:'Admin',email:'admin@example.test'};
+ if(url==='/v2/tenant/model-governance') body={providers:[]};
+ else if(url==='/v2/auth/me') body={user_id:'user',name:'Admin',email:'admin@example.test'};
  else if(url==='/v2/tenant') body={tenant_id:'tenant-one',slug:'one',name:'One',membership:{role:member?'member':'admin'}};
  else if(url==='/v2/tenant/settings/storage') body={google_drive_enabled:false};
  else if(url==='/v2/tenant/settings/external-retention') body={generated_artifact_retention_enabled:false,generated_artifact_retention_days:30,retention_policy_source:'storage_default'};

@@ -1,4 +1,5 @@
-from app.media.providers.base import (
+from ig_core.providers.runtime import ProviderRuntimeConfig, create_image_adapter, create_video_adapter
+from ig_core.providers.base import (
     ImageProviderAdapter,
     ImageProviderConfigurationError,
 )
@@ -6,7 +7,7 @@ from app.media.providers.openai.image import (
     OpenAIImageProvider,
 )
 from app.media.providers.alibaba.video import AlibabaWanVideoProvider
-from app.media.providers.video import VideoProviderAdapter, VideoProviderConfigurationError
+from ig_core.providers.video import VideoProviderAdapter, VideoProviderConfigurationError
 from app.media.providers.google.image import GoogleImageProvider
 
 
@@ -40,9 +41,9 @@ def create_video_provider(
     provider: str, *, credentials: dict[str, str], config: dict, model: str | None = None,
 ) -> VideoProviderAdapter:
     registration = video_provider_registration(provider)
-    return registration.from_config(
-        credentials=credentials, config=config, model=registration.resolve_model(model),
-    )
+    return create_video_adapter(registration, ProviderRuntimeConfig(
+        provider=provider, credentials=credentials, model=model, endpoint=config.get("base_url"),
+    ))
 
 def create_image_provider(
     provider: str,
@@ -54,7 +55,9 @@ def create_image_provider(
 
     registration = IMAGE_PROVIDERS.get(provider)
     if registration is not None:
-        return registration.from_config(credentials=credentials, config=config)
+        return create_image_adapter(registration, ProviderRuntimeConfig(
+            provider=provider, credentials=credentials,
+        ))
 
     raise ValueError(
         f"Unsupported image provider: "

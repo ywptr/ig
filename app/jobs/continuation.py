@@ -16,7 +16,7 @@ from sqlalchemy import and_, or_, select, update
 from app.db.database import SessionLocal
 from app.db.models import Execution, Job
 from app.executions.service import apply_execution_result, complete_execution, wait_execution, fail_execution
-from app.artifacts.media_metadata import inspect_media
+from ig_core.artifacts.media_metadata import inspect_media
 from app.artifacts.service import stage_media_result, persist_media_result
 from app.artifacts.previews import generate_preview_for_artifact
 from app.jobs.cancellation import (
@@ -24,7 +24,7 @@ from app.jobs.cancellation import (
 )
 from app.jobs.handlers import get_resume_handler
 from app.jobs.provider import get_job_queue
-from app.jobs.result import Completed, HandlerResult, Pending, ProviderOperation, TerminalOperationError
+from ig_core.execution.result import Completed, HandlerResult, Pending, ProviderOperation, TerminalOperationError
 
 CONTINUATION_DELAY_SECONDS = 30
 # Internal lease policy. Provider status-read timeouts must be shorter than this.

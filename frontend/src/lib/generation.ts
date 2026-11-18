@@ -29,7 +29,7 @@ export const INITIAL_FORM: LabForm = {
 
 export function eligibleModels(media: MediaCapability, mode: InterfaceLevel): MediaModel[] {
     return media.providers.filter(provider => provider.available).flatMap(provider => provider.models)
-        .filter(model => model.available && model.supported_interface_levels.includes(mode)
+        .filter(model => model.available && model.usable !== false && model.enabled !== false && model.supported_interface_levels.includes(mode)
             && model.capabilities.text_to_media && model.capabilities.layout_types.includes("single"));
 }
 export function availableMedia(capabilities: MediaCapabilities, mode: InterfaceLevel) {
@@ -68,7 +68,7 @@ export function resolveLabForm(capabilities: MediaCapabilities, form: LabForm) {
     const providers = media?.providers.filter(provider => provider.available && provider.models.some(model =>
         eligibleModels(media, form.mode).includes(model) && model.selectable_in.includes(form.mode))) ?? [];
     const provider = rules.explicit_provider_selection ? providers.find(item => item.id === form.provider) : undefined;
-    const models = provider?.models.filter(model => model.available && model.supported_interface_levels.includes(form.mode)
+    const models = provider?.models.filter(model => model.available && model.usable !== false && model.enabled !== false && model.supported_interface_levels.includes(form.mode)
         && model.selectable_in.includes(form.mode) && model.capabilities.text_to_media && model.capabilities.layout_types.includes("single")) ?? [];
     const selectedModel = rules.explicit_model_selection ? models.find(model => model.id === form.model) : undefined;
     // Auto never predicts IG routing: show only controls shared by eligible models.

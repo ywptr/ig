@@ -1169,7 +1169,7 @@ source .venv/bin/activate
 Install backend dependencies:
 
 ```bash
-pip install -e .
+pip install ./packages/ig-core -e .
 ```
 
 Install frontend dependencies:
@@ -1679,3 +1679,7 @@ Users are responsible for ensuring that their inputs and generated outputs compl
 
 The core V4 platform is operational.
 The frontend still requires work and currently is limited to current-tenant functions.
+
+Tenant-admin model controls and the adapter-owned OpenAI image catalog are documented
+in [model catalog and governance](docs/openai-model-catalog.md) and
+[Tenant Settings](docs/tenant-settings.md).

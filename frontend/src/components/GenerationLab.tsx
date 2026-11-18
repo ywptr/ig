@@ -100,7 +100,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                         {resolved.provider && capabilities.interface_levels[form.mode].explicit_model_selection && <label>Model
                             <select value={editor ? form.model : resolved.values.model} onChange={event => update({ model: event.target.value })}>
                                 <option value="" disabled={!resolved.provider.default_model_available}>Auto · provider default</option>
-                                {resolved.models.map(model => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+                                {resolved.models.map(model => <option key={model.id} value={model.id}>{model.display_name}{model.lifecycle?.deprecated ? " (deprecated)" : ""}</option>)}
                             </select></label>}
                     </fieldset> : <p className="lab-help">Provider / model: <strong>Auto</strong></p>}
                     {resolved.controls && resolved.media && <GenerationControls media={resolved.values.media} controls={resolved.controls}

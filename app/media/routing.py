@@ -7,11 +7,12 @@ remains preferred for general requests whenever its configured default is usable
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.media.providers.base import ImageProviderConfigurationError
+from ig_core.providers.base import ImageProviderConfigurationError
 from app.media.providers.registry import DEFAULT_IMAGE_PROVIDER, IMAGE_PROVIDERS
-from app.media.validation import validate_model_capabilities
-from app.media.schemas import ImagePurpose, InterfaceLevel, MediaGenerationRequest
+from ig_core.media.validation import validate_model_capabilities
+from ig_core.media.schemas import ImagePurpose, InterfaceLevel, MediaGenerationRequest
 from app.tenancy.provider_configs import list_provider_configs
+from app.media.model_governance import model_policy, validate_selected_model, ModelGovernanceError
 
 
 class MediaSelection(BaseModel):
@@ -23,8 +24,13 @@ class MediaSelection(BaseModel):
 
 
 def provider_is_available(adapter, row) -> bool:
-    return bool(row is not None and row.enabled and row.encrypted_credentials
-                and isinstance(row.config_json, dict) and adapter.configuration_is_valid(row.config_json))
+    if not (row is not None and row.enabled and row.encrypted_credentials
+            and isinstance(row.config_json, dict) and adapter.configuration_is_valid(row.config_json)):
+        return False
+    try:
+        return model_policy(adapter, row.config_json, "image").default is not None
+    except ModelGovernanceError:
+        return False
 
 
 def normal_image_selection(
@@ -37,11 +43,12 @@ def normal_image_selection(
         if not provider_is_available(adapter, row):
             continue
         try:
-            model = adapter.default_model_for(row.config_json)
-            metadata = next((item for item in adapter.CAPABILITIES.models if item.id == model), None)
-            if metadata is not None and interface_level not in metadata.supported_interface_levels:
+            policy = model_policy(adapter, row.config_json, "image")
+            model = policy.default
+            metadata = validate_selected_model(adapter, row.config_json, "image", model)
+            if metadata.technical is None or interface_level not in metadata.supported_interface_levels:
                 continue
-            source = "tenant_default" if adapter.tenant_default_model(row.config_json) else "adapter_default"
+            source = policy.source
             return MediaSelection(provider=provider, model=model, purpose=purpose, reason=source)
         except (ValueError, TypeError, AttributeError):
             # An unusable configured default does not prevent another registered
@@ -51,10 +58,8 @@ def normal_image_selection(
 
 
 def _validate_options(adapter, request: MediaGenerationRequest, model: str, config: dict) -> None:
-    metadata = next((item for item in adapter.CAPABILITIES.models if item.id == model), None)
-    # Preserve legacy custom defaults, whose technical capabilities are unknown.
-    if metadata is not None:
-        validate_model_capabilities(request, metadata)
+    metadata = validate_selected_model(adapter, config, "image", model)
+    validate_model_capabilities(request, metadata)
     adapter.validate_submission_options(
         config=config, model=model, count=request.output.count, strategy=request.strategy,
         reference_count=len(request.references),
@@ -113,6 +118,12 @@ def resolve_image_selection(db: Session, request: MediaGenerationRequest, *, ten
             if not provider_is_available(adapter, row):
                 continue
             for metadata in adapter.CAPABILITIES.models:
+                if metadata.id not in model_policy(adapter, row.config_json, "image").enabled:
+                    continue
+                try:
+                    validate_selected_model(adapter, row.config_json, "image", metadata.id)
+                except ModelGovernanceError:
+                    continue
                 if purpose not in metadata.use_cases or not _compatible(metadata, request):
                     continue
                 try:

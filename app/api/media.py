@@ -5,22 +5,23 @@ from fastapi import (
     HTTPException,
 )
 from sqlalchemy.orm import Session
+from app.media.model_governance import ModelGovernanceError
 
 from app.auth.dependencies import get_db
 from app.media.capabilities import media_capabilities
 from app.media.capability_schemas import MediaCapabilities
-from app.media.providers.video import VideoProviderConfigurationError
-from app.media.providers.base import ImageProviderConfigurationError
+from ig_core.providers.video import VideoProviderConfigurationError
+from ig_core.providers.base import ImageProviderConfigurationError
 from app.tenancy.provider_configs import ProviderNotConfiguredError
 
-from app.media.schemas import (
+from ig_core.media.schemas import (
     MediaGenerationRequest,
 )
 from app.media.service import (
     MediaCapabilityNotAvailableError,
     submit_media_generation,
 )
-from app.media.validation import (
+from ig_core.media.validation import (
     MediaRequestValidationError,
 )
 from app.tenancy.context import TenantContext
@@ -76,7 +77,7 @@ def generate_media(
                 user_id=context.membership.user_id,
             )
 
-    except (MediaRequestValidationError, ImageProviderConfigurationError, VideoProviderConfigurationError, ProviderNotConfiguredError) as exc:
+    except (ModelGovernanceError, MediaRequestValidationError, ImageProviderConfigurationError, VideoProviderConfigurationError, ProviderNotConfiguredError) as exc:
         raise HTTPException(
             status_code=400,
             detail={

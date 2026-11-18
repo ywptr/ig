@@ -47,6 +47,9 @@ export interface GenerationCapabilities {
     styles: string[];
 }
 export interface MediaModel {
+    known?: boolean;
+    enabled?: boolean;
+    lifecycle?: { deprecated: boolean; sunset_at: string | null; replacement_model: string | null };
     usable: boolean;
     technical: TechnicalCapabilities | null;
     id: string;

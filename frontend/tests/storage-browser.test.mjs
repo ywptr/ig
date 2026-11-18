@@ -18,7 +18,8 @@ window.actions=[];
 const member=new URL(location.href).searchParams.has('member');
 window.fetch=async(url,options={})=>{
  let body=[];
- if(url==='/v2/auth/me') body={user_id:'user',name:'User',email:'user@example.test'};
+ if(url==='/v2/tenant/model-governance') body={providers:[]};
+ else if(url==='/v2/auth/me') body={user_id:'user',name:'User',email:'user@example.test'};
  else if(url==='/v2/tenant') body={tenant_id:'tenant-one',slug:'one',name:'One',membership:{role:member?'member':'admin'}};
  else if(url==='/v2/user/storage') {
    if(options.method==='PATCH') {window.storage.artifact_storage_preference=JSON.parse(options.body).artifact_storage_preference;window.actions.push('preference');}

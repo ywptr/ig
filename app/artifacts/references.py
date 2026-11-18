@@ -1,39 +1,16 @@
 """Shared capability-driven artifact checks. Every lookup remains actor scoped."""
 from sqlalchemy import select
 from app.db.models import Artifact
-from app.media.validation import MediaRequestValidationError
+from ig_core.media.validation import MediaRequestValidationError, validate_reference_shape as validate_reference_shape
 from app.media.providers.registry import image_provider_registration, video_provider_registration
 
 
 def reference_slots(provider: str, model: str, media_type: str):
     registration = (image_provider_registration if media_type == "image" else video_provider_registration)(provider)
     metadata = next((item for item in registration.CAPABILITIES.models if item.id == model), None)
-    # Legacy tenant-specific model aliases use the adapter's implemented input
-    # contract, without advertising those aliases as discovered model support.
     if metadata is None:
-        if media_type == "video":
-            raise MediaRequestValidationError("Video model capabilities are unknown")
-        metadata = registration.CAPABILITIES.models[0]
+        raise MediaRequestValidationError("Model capabilities are unknown")
     return metadata.technical.reference_inputs if metadata.technical else ()
-
-
-def validate_reference_shape(references, slots):
-    counts = {slot.name: 0 for slot in slots}
-    selected = []
-    for ref in references:
-        values = ref if isinstance(ref, dict) else ref.model_dump()
-        slot = next((slot for slot in slots if values.get("role", "previous_output") in slot.roles), None)
-        if slot is None:
-            raise MediaRequestValidationError("Unsupported reference role")
-        strength = values.get("strength")
-        if strength is not None and strength not in slot.strengths:
-            raise MediaRequestValidationError("Unsupported reference strength")
-        counts[slot.name] += 1
-        selected.append((values, slot))
-    for slot in slots:
-        if not slot.min_count <= counts[slot.name] <= slot.max_count:
-            raise MediaRequestValidationError("Unsupported reference count for input slot")
-    return selected
 
 
 def resolve_references(db, references, *, slots, tenant_id, user_id, store=None, read_bytes=False):

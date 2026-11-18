@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import func, select
 
 from app.artifacts.service import create_artifact
-from app.db.models import Artifact, Execution, ImageRequest, Job
+from app.db.models import Artifact, Execution, ImageRequest, Job, TenantProviderConfig
 from app.jobs.worker import execute_job
 from app.media.providers.base import ImageProviderError
 from app.tenancy.provider_configs import set_provider_config
@@ -25,7 +25,7 @@ class GoogleImageGenerationTests(MediaJobTestCase):
         self.enterContext(patch("app.jobs.worker.SessionLocal", self.sessions))
         self.enterContext(patch("app.images.tasks.SessionLocal", self.sessions))
         self.enterContext(patch("app.artifacts.service.SessionLocal", self.sessions))
-        self.http = self.enterContext(patch("app.media.providers.google.image.requests.post", return_value=GoogleResponse()))
+        self.http = self.enterContext(patch("ig_core.providers.google.image.requests.post", return_value=GoogleResponse()))
         self.store = Mock(spec=["put_bytes", "exists", "iter_bytes"])
         self.store.put_bytes.return_value = "file:///isolated-test-output"
         self.store.exists.return_value = True
@@ -113,8 +113,9 @@ class GoogleImageGenerationTests(MediaJobTestCase):
                 self.execute(self.submit(advanced={"provider": "google"}))
                 self.assertIn(f"/{MODEL}:generateContent", self.http.call_args.args[0])
 
-    def test_explicit_model_overrides_tenant_default(self):
-        self.configure(config={"default_models": {"image": "unsupported-default"}})
+    def test_invalid_default_write_is_rejected_and_valid_explicit_selection_still_works(self):
+        with self.assertRaises(ValueError):
+            self.configure(config={"default_models": {"image": "unsupported-default"}})
         self.execute(self.submit())
         self.http.assert_called_once()
         self.assertIn(MODEL, self.http.call_args.args[0])
@@ -208,7 +209,7 @@ class GoogleImageGenerationTests(MediaJobTestCase):
 
     def test_discovery_is_automatic_safe_and_tenant_scoped(self):
         with patch("app.tenancy.provider_configs.decrypt_credentials", side_effect=AssertionError("No decryption")), patch(
-            "app.media.providers.google.image.GoogleImageProvider.__init__", side_effect=AssertionError("No construction"),
+            "ig_core.providers.google.image.GoogleImageProvider.__init__", side_effect=AssertionError("No construction"),
         ):
             media, provider = self.catalog()
             _, other = self.catalog("other.test")
@@ -241,10 +242,10 @@ class GoogleImageGenerationTests(MediaJobTestCase):
         self.assertFalse(provider["available"])
 
     def test_automatic_easy_medium_stay_openai_when_both_providers_configured(self):
-        self.configure(provider="openai", config={"default_model": "gpt-image-2", "default_models": {"image": "ignored"}})
+        self.configure(provider="openai", config={"default_model": "gpt-image-2"})
         client = Mock()
         client.images.generate.return_value = SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(PNG).decode())])
-        with patch("app.media.providers.openai.image.OpenAI", return_value=client):
+        with patch("ig_core.providers.openai.image.OpenAI", return_value=client):
             for level in ("easy", "medium"):
                 self.execute(self.submit_image(interface_level=level))
         self.assertEqual(client.images.generate.call_count, 2)
@@ -259,7 +260,7 @@ class GoogleImageGenerationTests(MediaJobTestCase):
 
     def test_thumbnail_automatic_route_uses_real_google_adapter_with_both_configured(self):
         self.configure(provider="openai", config={"default_model": "gpt-image-2"})
-        with patch("app.media.providers.openai.image.OpenAI", side_effect=AssertionError("Wrong route")):
+        with patch("ig_core.providers.openai.image.OpenAI", side_effect=AssertionError("Wrong route")):
             self.execute(self.submit_image(output={
                 "purpose": "thumbnail", "quality": "standard", "aspect_ratio": "16:9", "style": "illustration",
             }))
@@ -271,7 +272,9 @@ class GoogleImageGenerationTests(MediaJobTestCase):
     def test_queued_google_selection_survives_later_invalid_default_mapping(self):
         response = self.submit_image(output={"purpose": "thumbnail"})
         self.assertEqual(response.status_code, 202, response.text)
-        self.configure(config={"default_models": "changed-after-enqueue"})
+        with self.sessions() as db:
+            db.get(TenantProviderConfig, ("tenant-one", "google")).config_json = {"default_models": "changed-after-enqueue"}
+            db.commit()
         self.execute(response)
         self.http.assert_called_once()
         self.assertIn(f"/{MODEL}:generateContent", self.http.call_args.args[0])

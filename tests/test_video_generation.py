@@ -38,9 +38,9 @@ class VideoTestCase(MediaJobTestCase):
         self.configure()
         self.enterContext(patch("app.jobs.worker.SessionLocal", self.sessions))
         self.enterContext(patch("app.media.video_tasks.SessionLocal", self.sessions))
-        self.http = self.enterContext(patch("app.media.providers.alibaba.video.requests.request"))
+        self.http = self.enterContext(patch("ig_core.providers.alibaba.video.requests.request"))
         self.http.side_effect = AssertionError("HTTP must be explicitly configured by the test")
-        self.download = self.enterContext(patch("app.media.providers.alibaba.video.requests.get"))
+        self.download = self.enterContext(patch("ig_core.providers.alibaba.video.requests.get"))
         self.store = Mock(spec=["put_bytes", "iter_bytes"])
         self.store.iter_bytes.return_value = [MP4]
         self.enterContext(patch("app.artifacts.previews.artifact_store", self.store))
@@ -288,12 +288,12 @@ class VideoSelectionTests(VideoTestCase):
         self.http.assert_not_called()
 
     def test_model_priority_explicit_then_video_default_then_adapter_default(self):
-        self.configure(config={"base_url": BASE_URL, "default_models": {"video": "tenant-video"}, "default_model": "image-model"})
         from dataclasses import replace
         declaration = AlibabaWanVideoProvider.CAPABILITIES
         declared_alias = replace(declaration.models[0], id="tenant-video")
         with patch.object(AlibabaWanVideoProvider, "MODELS", frozenset({"wan3.0-video", "tenant-video"})), \
              patch.object(AlibabaWanVideoProvider, "CAPABILITIES", replace(declaration, models=(*declaration.models, declared_alias))):
+            self.configure(config={"base_url": BASE_URL, "default_models": {"video": "tenant-video"}, "default_model": "image-model"})
             explicit = self.submit_video(interface_level="hard", advanced={"model": "wan3.0-video"})
             self.assertEqual(explicit.status_code, 202, explicit.text)
             with self.sessions() as db:

@@ -4,6 +4,7 @@ from fastapi import (
     HTTPException,
 )
 from sqlalchemy.orm import Session
+from app.media.model_governance import ModelGovernanceError
 
 from app.auth.dependencies import get_db
 from app.tenancy.context import TenantContext
@@ -111,14 +112,17 @@ def update_provider_config(
                 ),
             )
 
-    config = set_provider_config(
-        db,
-        tenant_id=context.tenant.tenant_id,
-        provider=provider,
-        enabled=request.enabled,
-        credentials=credentials,
-        config=request.config,
-    )
+    try:
+        config = set_provider_config(
+            db,
+            tenant_id=context.tenant.tenant_id,
+            provider=provider,
+            enabled=request.enabled,
+            credentials=credentials,
+            config=request.config,
+        )
+    except ModelGovernanceError as exc:
+        raise HTTPException(400, str(exc)) from None
 
     return provider_config_to_dict(
         config

@@ -1,6 +1,6 @@
 """Stable library vocabulary; provenance never grants access."""
 from enum import Enum
-from app.media.technical import InputRole
+from ig_core.media.technical import InputRole
 
 
 class ArtifactProvenance(str, Enum):

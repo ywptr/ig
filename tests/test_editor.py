@@ -137,6 +137,9 @@ class EditorTests(ClientServerTests):
                 response = self.client.request(method, "/v2/tenant/settings/" + path, headers=headers, **options)
                 self.assertEqual(response.status_code, 403)
         self.assertEqual(self.client.get("/v2/tenant/providers", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get("/v2/tenant/model-governance", headers=headers).status_code, 403)
+        self.assertEqual(self.client.patch("/v2/tenant/model-governance/openai", headers=headers,
+            json={"media_type": "image", "enabled_models": None, "default_model": None}).status_code, 403)
 
     def test_browser_and_service_credentials_cannot_expand_editor_routes(self):
         headers = self.editor_headers()

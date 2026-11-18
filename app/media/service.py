@@ -7,10 +7,10 @@ from app.db.models import Job
 from app.images.service import (
     submit_image_generation,
 )
-from app.media.schemas import (
+from ig_core.media.schemas import (
     MediaGenerationRequest,
 )
-from app.media.validation import (
+from ig_core.media.validation import (
     validate_media_request,
 )
 from app.jobs.service import create_job

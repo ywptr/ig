@@ -17,7 +17,7 @@ from sqlalchemy import inspect, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.artifacts.preview_policy import (
+from ig_core.artifacts.preview_policy import (
     VERSION, PROCESS_TIMEOUT, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, MAX_PREVIEW_BYTES, kind_for,
 )
 from app.artifacts.storage.provider import artifact_store
@@ -102,13 +102,13 @@ def process_source(kind: str, storage_uri: str, size_bytes: int | None) -> tuple
         if kind == "thumbnail":
             # Pillow runs in the trusted producer process with byte, dimension
             # and pixel limits. Do not apply process-wide resource limits here.
-            from app.artifacts.preview_worker import image_preview
+            from ig_core.artifacts.preview_worker import image_preview
             metadata = image_preview(source, destination)
         else:
             # Native video decode retains hard memory/CPU/wall-clock isolation.
             environment = {"PATH": os.defpath, "LANG": "C.UTF-8", "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
             process = subprocess.Popen(
-                [sys.executable, "-m", "app.artifacts.preview_worker", kind, str(source), str(destination)],
+                [sys.executable, "-m", "ig_core.artifacts.preview_worker", kind, str(source), str(destination)],
                 cwd=Path(__file__).resolve().parents[2], env=environment,
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
             )
