@@ -4,6 +4,7 @@ Delegated application callers use the [service-access contract](docs/service-acc
 Sandcastle and other trusted backends can adopt the [internal Python integration helper](docs/sandcastle-integration.md).
 The [Advanced Generation Editor guide](docs/embedded-editor.md) covers secure iframe/popup launch and result events.
 Media lists use [deterministic cached previews](docs/artifact-previews.md); originals remain behind explicit Open links.
+Engineering roadmap and milestone history are tracked in [docs/milestones](docs/milestones/README.md).
 
 **Version 4.6**
 
