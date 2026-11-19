@@ -5,8 +5,9 @@ WORKDIR /app
 # Use the current application dependency manifest, including OIDC and queue pins.
 COPY pyproject.toml ./
 COPY packages/ig-queue ./packages/ig-queue
+COPY packages/ig-storage ./packages/ig-storage
 COPY app ./app
-RUN pip install --no-cache-dir ./packages/ig-queue .
+RUN pip install --no-cache-dir ./packages/ig-queue ./packages/ig-storage .
 
 RUN mkdir -p /app/output
 EXPOSE 8000

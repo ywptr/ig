@@ -261,12 +261,13 @@ class DeleteTests(unittest.TestCase):
 
     def test_blob_delete_missing_safe_and_errors_private(self):
         from vercel.blob import BlobNotFoundError
-        store = VercelBlobArtifactStore()
-        with patch("app.artifacts.storage.vercel_blob.delete") as delete:
-            store.delete("vercel-blob:///artifacts/key"); delete.assert_called_once_with("artifacts/key")
-        with patch("app.artifacts.storage.vercel_blob.delete", side_effect=BlobNotFoundError()):
+        with patch.dict("os.environ", {"BLOB_READ_WRITE_TOKEN": "test-blob-token"}):
+            store = VercelBlobArtifactStore()
+        with patch("ig_storage.backends.vercel_blob.delete") as delete:
+            store.delete("vercel-blob:///artifacts/key"); delete.assert_called_once_with("artifacts/key", token="test-blob-token")
+        with patch("ig_storage.backends.vercel_blob.delete", side_effect=BlobNotFoundError()):
             store.delete("vercel-blob:///artifacts/key")
-        with patch("app.artifacts.storage.vercel_blob.delete", side_effect=RuntimeError("private-canary")):
+        with patch("ig_storage.backends.vercel_blob.delete", side_effect=RuntimeError("private-canary")):
             with self.assertRaisesRegex(RuntimeError, "^Blob artifact deletion failed$"): store.delete("vercel-blob:///artifacts/key")
         with self.assertRaisesRegex(ValueError, "^Invalid Blob artifact locator$"): store.delete("https://private-canary")
 

@@ -417,6 +417,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "google-auth" },
     { name = "ig-queue" },
+    { name = "ig-storage" },
     { name = "openai" },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
@@ -441,6 +442,7 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "google-auth" },
     { name = "ig-queue", directory = "packages/ig-queue" },
+    { name = "ig-storage", directory = "packages/ig-storage" },
     { name = "openai", specifier = "==3.5.0" },
     { name = "pillow", specifier = "==12.3.0" },
     { name = "psycopg", extras = ["binary"] },
@@ -475,6 +477,21 @@ requires-dist = [
     { name = "rq", specifier = ">=2.12,<3" },
     { name = "vercel", specifier = "==0.11.5" },
     { name = "vercel-queue", specifier = "==0.9.1" },
+]
+
+[[package]]
+name = "ig-storage"
+version = "0.1.0"
+source = { directory = "packages/ig-storage" }
+dependencies = [
+    { name = "requests" },
+    { name = "vercel" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "requests", specifier = ">=2.32,<3" },
+    { name = "vercel", specifier = "==0.11.5" },
 ]
 
 [[package]]

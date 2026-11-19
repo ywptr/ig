@@ -474,7 +474,7 @@ class DriveTransportTests(unittest.TestCase):
         return result
 
     def client(self, replies):
-        request = self.enterContext(patch("app.storage_integrations.google_drive.requests.request", side_effect=replies))
+        request = self.enterContext(patch("ig_storage.backends.drive_client.requests.request", side_effect=replies))
         return DriveClient("private-access-token"), request
 
     def folder(self):
@@ -501,11 +501,13 @@ class DriveTransportTests(unittest.TestCase):
             requests.ConnectionError("must not leak private-access-token"),
             self.response(200, {"id": "allocated"})]
         client, request = self.client(replies)
-        with patch("app.storage_integrations.google_drive.CHUNK_BYTES", 4):
+        with patch("ig_storage.backends.drive_client.CHUNK_BYTES", 4):
             self.assertEqual(client.upload("folder", "video.mp4", b"abcdefgh"), "allocated")
         calls = request.call_args_list
         self.assertEqual(len([c for c in calls if c.args[0] == "POST"]), 1)
         self.assertEqual(calls[2].kwargs["json"]["id"], "allocated")
+        self.assertEqual(calls[2].kwargs["json"]["appProperties"],
+                         {"ig_schema": "1", "ig_kind": "artifact"})
         self.assertEqual(calls[-1].kwargs["headers"]["Content-Range"], "bytes */8")
         self.assertEqual(calls[-2].kwargs["headers"]["Content-Range"], "bytes 4-7/8")
 
