@@ -23,12 +23,12 @@ This directory is the canonical engineering roadmap and milestone history for IG
 | Milestone | Title | Status | Depends on | Primary outcome |
 |---|---|---|---|---|
 | [IG#0016](IG-0016-audio-video-foundation.md) | Audio-capable video foundation | PLANNED | IG#0015 | First-class audio/speech capabilities for video |
-| [IG#0017](IG-0017-wan-video.md) | Expanded Wan video support | PLANNED | IG#0016 | Broader Wan variants, audio, references, and current async workflows |
-| [IG#0018](IG-0018-kling-video.md) | Kling provider | PLANNED | IG#0016 | Kling generation, Omni/reference workflows, and speech-aware capabilities |
-| [IG#0019](IG-0019-audio-driven-video.md) | Audio-driven video and lip sync | PLANNED | IG#0016, IG#0018 | Provider-neutral lip-sync/audio-driven video operations |
-| [IG#0020](IG-0020-veo-video.md) | Google Veo | PLANNED | IG#0016 | Veo video generation with synchronized audio |
-| [IG#0021](IG-0021-vidu-evaluation.md) | Vidu drama/ad evaluation | CANDIDATE / EVALUATION | IG#0017–0020 | Evaluate Vidu specifically for drama and advertising workflows |
-| [IG#0022](IG-0022-voice-profile.md) | Reusable voice profiles and voice references | PLANNED | IG#0016 | Stable voice identity, reference audio, provider voice handles, and calibration contracts |
+| [IG#0017](IG-0017-voice-profile.md) | Reusable voice profiles and voice references | PLANNED | IG#0016 | Stable voice identity, reference audio, provider voice handles, and calibration contracts |
+| [IG#0018](IG-0018-wan-video.md) | Expanded Wan video support | PLANNED | IG#0016, IG#0017 | Broader Wan variants, audio, references, and current async workflows |
+| [IG#0019](IG-0019-kling-video.md) | Kling provider | PLANNED | IG#0016, IG#0017 | Kling generation, Omni/reference workflows, and speech-aware capabilities |
+| [IG#0020](IG-0020-audio-driven-video.md) | Audio-driven video and lip sync | PLANNED | IG#0016, IG#0017, IG#0019 | Provider-neutral lip-sync/audio-driven video operations |
+| [IG#0021](IG-0021-veo-video.md) | Google Veo | PLANNED | IG#0016, IG#0017 | Veo video generation with synchronized audio |
+| [IG#0022](IG-0022-vidu-evaluation.md) | Vidu drama/ad evaluation | CANDIDATE / EVALUATION | IG#0018–0021 | Evaluate Vidu specifically for drama and advertising workflows |
 
 ## Milestone documentation policy
 
