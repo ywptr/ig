@@ -417,6 +417,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "google-auth" },
     { name = "ig-core" },
+    { name = "ig-queue" },
     { name = "openai" },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
@@ -425,9 +426,7 @@ dependencies = [
     { name = "pymysql" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
-    { name = "redis" },
     { name = "requests" },
-    { name = "rq" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
     { name = "vercel" },
@@ -443,6 +442,7 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "google-auth" },
     { name = "ig-core", directory = "packages/ig-core" },
+    { name = "ig-queue", directory = "packages/ig-queue" },
     { name = "openai", specifier = "==3.5.0" },
     { name = "pillow", specifier = "==12.3.0" },
     { name = "psycopg", extras = ["binary"] },
@@ -451,9 +451,7 @@ requires-dist = [
     { name = "pymysql" },
     { name = "python-dotenv", specifier = "==1.2.3" },
     { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "redis", specifier = ">=8.1,<9" },
     { name = "requests" },
-    { name = "rq", specifier = ">=2.12,<3" },
     { name = "sqlalchemy" },
     { name = "uvicorn", specifier = "==0.52.4" },
     { name = "vercel", specifier = "==0.11.5" },
@@ -470,15 +468,32 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "requests" },
+name = "ig-queue"
+version = "0.1.0"
+source = { directory = "packages/ig-queue" }
+dependencies = [
+    { name = "anyio" },
+    { name = "redis" },
+    { name = "rq" },
+    { name = "vercel" },
+    { name = "vercel-queue" },
 ]
 
 [package.metadata]
 requires-dist = [
+<<<<<<< .merge_file_7eqHw1
     { name = "av", specifier = ">=16.1,<17" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "pillow", specifier = ">=12.3,<13" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "requests", specifier = ">=2.32,<3" },
+=======
+    { name = "anyio", specifier = ">=4,<5" },
+    { name = "redis", specifier = ">=8.1,<9" },
+    { name = "rq", specifier = ">=2.12,<3" },
+    { name = "vercel", specifier = "==0.11.5" },
+    { name = "vercel-queue", specifier = "==0.9.1" },
+>>>>>>> .merge_file_WlxSUn
 ]
 
 [[package]]

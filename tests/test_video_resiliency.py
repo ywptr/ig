@@ -429,6 +429,6 @@ class RecoveryDeliveryTests(unittest.TestCase):
         from app.jobs.rq_queue import RQJobQueue
         backend = create_autospec(Queue, instance=True)
         with patch.dict("os.environ", {"REDIS_URL": "redis://test.invalid"}), \
-             patch("app.jobs.rq_queue.Redis.from_url"), patch("app.jobs.rq_queue.Queue", return_value=backend):
+             patch("ig_queue.backends.rq.Redis.from_url"), patch("ig_queue.backends.rq.Queue", return_value=backend):
             RQJobQueue().enqueue("job", kind="recover")
         backend.enqueue.assert_called_once_with(execute_job, "job", job_timeout=600)

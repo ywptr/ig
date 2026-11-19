@@ -21,6 +21,7 @@ uvicorn==0.52.4
 SQLAlchemy
 PyMySQL
 alembic
+./packages/ig-queue
 redis==8.1.0
 rq==2.12.0
 google-auth
@@ -28,8 +29,6 @@ requests
 pwdlib[argon2]
 email-validator
 psycopg[binary]
-vercel-queue
-vercel
 python-multipart
 cryptography
 Pillow==12.3.0

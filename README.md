@@ -1170,7 +1170,10 @@ Install backend dependencies:
 
 ```bash
 pip install ./packages/ig-core -e .
+pip install ./packages/ig-queue -e .
 ```
+
+See [internal package boundaries](docs/architecture.md) and the [ig-queue integration guide](packages/ig-queue/README.md).
 
 Install frontend dependencies:
 
