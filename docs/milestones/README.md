@@ -28,6 +28,7 @@ This directory is the canonical engineering roadmap and milestone history for IG
 | [IG#0019](IG-0019-audio-driven-video.md) | Audio-driven video and lip sync | PLANNED | IG#0016, IG#0018 | Provider-neutral lip-sync/audio-driven video operations |
 | [IG#0020](IG-0020-veo-video.md) | Google Veo | PLANNED | IG#0016 | Veo video generation with synchronized audio |
 | [IG#0021](IG-0021-vidu-evaluation.md) | Vidu drama/ad evaluation | CANDIDATE / EVALUATION | IG#0017–0020 | Evaluate Vidu specifically for drama and advertising workflows |
+| [IG#0022](IG-0022-voice-profile.md) | Reusable voice profiles and voice references | PLANNED | IG#0016 | Stable voice identity, reference audio, provider voice handles, and calibration contracts |
 
 ## Milestone documentation policy
 
