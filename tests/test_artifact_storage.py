@@ -58,7 +58,7 @@ class LocalStorageTests(unittest.TestCase):
     def test_key_collision_never_overwrites_existing_object(self):
         existing = UUID(int=1)
         fresh = UUID(int=2)
-        with patch("app.artifacts.storage.local.uuid4", side_effect=[existing, existing, fresh]):
+        with patch("ig_storage.backends.local.uuid4", side_effect=[existing, existing, fresh]):
             first = self.store.put_bytes(filename="first", data=b"first")
             second = self.store.put_bytes(filename="second", data=b"second")
         self.assertNotEqual(first, second)
@@ -104,7 +104,7 @@ class LocalStorageTests(unittest.TestCase):
         # An existing symlink with a colliding random name is never overwritten.
         key = UUID(int=1)
         (self.store.base_dir / key.hex).symlink_to(outside)
-        with patch("app.artifacts.storage.local.uuid4", side_effect=[key, UUID(int=2)]):
+        with patch("ig_storage.backends.local.uuid4", side_effect=[key, UUID(int=2)]):
             self.store.put_bytes(filename="link", data=b"new")
         self.assertEqual(outside.read_bytes(), b"private")
 
@@ -153,25 +153,26 @@ class LocalStorageTests(unittest.TestCase):
 
 class VercelStorageTests(unittest.TestCase):
     def test_opaque_keys_and_private_access_preserve_adapter_behavior(self):
-        store = VercelBlobArtifactStore()
+        with patch.dict("os.environ", {"BLOB_READ_WRITE_TOKEN": "test-blob-token"}):
+            store = VercelBlobArtifactStore()
         def uploaded(pathname, data, **options):
             self.assertTrue(options["add_random_suffix"])
             self.assertEqual(options["access"], "private")
             return SimpleNamespace(pathname=pathname + "-random")
-        with patch("app.artifacts.storage.vercel_blob.put", side_effect=uploaded) as put:
+        with patch("ig_storage.backends.vercel_blob.put", side_effect=uploaded) as put:
             first = store.put_bytes(filename="private-display-name.png", data=b"first")
             second = store.put_bytes(filename="../../private-display-name.png", data=b"second")
         self.assertNotEqual(first, second)
         for call in put.call_args_list:
             self.assertRegex(call.args[0], r"^artifacts/[a-f0-9]{32}$")
-        with patch("app.artifacts.storage.vercel_blob.head") as head, patch(
-            "app.artifacts.storage.vercel_blob.get", return_value=SimpleNamespace(content=b"original"),
+        with patch("ig_storage.backends.vercel_blob.head") as head, patch(
+            "ig_storage.backends.vercel_blob.get", return_value=SimpleNamespace(content=b"original"),
         ) as get:
             old = "vercel-blob:///artifacts/old-name.png"
             self.assertTrue(store.exists(old))
             self.assertEqual(b"".join(store.iter_bytes(old, chunk_size=2)), b"original")
-            head.assert_called_once_with("artifacts/old-name.png")
-            get.assert_called_once_with("artifacts/old-name.png", access="private", use_cache=False)
+            head.assert_called_once_with("artifacts/old-name.png", token="test-blob-token")
+            get.assert_called_once_with("artifacts/old-name.png", access="private", use_cache=False, token="test-blob-token")
 
     def test_router_reads_historical_local_objects_when_write_provider_changes(self):
         local = local_store(self)

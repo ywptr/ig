@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 COPY packages/ig-queue ./packages/ig-queue
+COPY packages/ig-storage ./packages/ig-storage
 
 COPY packages/ig-core ./packages/ig-core
 RUN pip install --no-cache-dir -r requirements.txt ./packages/ig-core

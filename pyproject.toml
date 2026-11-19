@@ -6,6 +6,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "ig-core==0.1.0",
     "ig-queue==0.1.0",
+    "ig-storage==0.1.0",
     "fastapi==0.141.1",
     "uvicorn==0.52.4",
     "openai==3.5.0",
@@ -43,6 +44,7 @@ exclude = [
 [tool.uv.sources]
 ig-core = { path = "packages/ig-core" }
 ig-queue = { path = "packages/ig-queue" }
+ig-storage = { path = "packages/ig-storage" }
 
 [tool.vercel]
 entrypoint = "app.main:app"

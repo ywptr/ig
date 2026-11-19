@@ -1169,11 +1169,10 @@ source .venv/bin/activate
 Install backend dependencies:
 
 ```bash
-pip install ./packages/ig-core -e .
-pip install ./packages/ig-queue -e .
+pip install -e ./packages/ig-queue -e ./packages/ig-storage -e ./packages/ig-core -e .
 ```
 
-See [internal package boundaries](docs/architecture.md) and the [ig-queue integration guide](packages/ig-queue/README.md).
+See [internal package boundaries](docs/architecture.md) and the [ig-queue](packages/ig-queue/README.md) and [ig-storage](packages/ig-storage/README.md) integration guides.
 
 Install frontend dependencies:
 

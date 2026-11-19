@@ -1,2 +1,3 @@
-"""Transitional imports from ig_core.artifacts.storage."""
-from ig_core.artifacts.storage import *  # noqa: F403
+from ig_storage import ByteStore as ArtifactStore
+
+__all__ = ["ArtifactStore"]

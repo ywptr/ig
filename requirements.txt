@@ -22,6 +22,7 @@ SQLAlchemy
 PyMySQL
 alembic
 ./packages/ig-queue
+./packages/ig-storage
 redis==8.1.0
 rq==2.12.0
 google-auth

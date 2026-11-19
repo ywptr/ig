@@ -9,7 +9,7 @@ from app.artifacts.storage.google_drive import GoogleDriveArtifactStore, parse_l
 def select_write_store(db, *, tenant_id, user_id, managed_store, original_uri=None):
     # Derivatives stay with their original backend/connection even after preference changes.
     if original_uri and urlparse(original_uri).scheme != "gdrive":
-        return managed_store._store_for_uri(original_uri) if hasattr(managed_store, "_store_for_uri") else managed_store
+        return managed_store.store_for_locator(original_uri) if hasattr(managed_store, "store_for_locator") else managed_store
     if original_uri:
         identity, _ = parse_locator(original_uri)
         connection = db.get(DriveConnection, identity)
