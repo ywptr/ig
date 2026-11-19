@@ -22,7 +22,7 @@ class RQCancellationIntegrationTests(unittest.TestCase):
         self.job_id='ig-test-'+str(uuid4())
         with patch.dict(os.environ,{'REDIS_URL':os.environ['IG_TEST_REDIS_URL']}):
             self.adapter=RQJobQueue()
-        self.adapter.queue=self.queue
+        self.adapter.backend.queue=self.queue
         self.deliveries=[]
         self.addCleanup(self.cleanup)
 

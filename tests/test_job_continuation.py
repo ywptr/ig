@@ -479,7 +479,7 @@ class QueueContinuationTests(unittest.TestCase):
 
         redis_queue = create_autospec(Queue, instance=True)
         with patch.dict("os.environ", {"REDIS_URL": "redis://test.invalid"}):
-            with patch("app.jobs.rq_queue.Redis.from_url"), patch("app.jobs.rq_queue.Queue", return_value=redis_queue):
+            with patch("ig_queue.backends.rq.Redis.from_url"), patch("ig_queue.backends.rq.Queue", return_value=redis_queue):
                 queue = RQJobQueue()
                 queue.enqueue("job")
                 queue.enqueue("job", kind="continue", continuation_id="checkpoint", delay_seconds=30)

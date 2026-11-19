@@ -1,69 +1,55 @@
-import anyio
 import os
 from functools import partial
-from uuid import uuid4
 
-from vercel.queue import (
-    QueueClient,
-)
-from app.jobs.queue import JobKind, validate_delivery, QueueCancellation
+from ig_queue import Delivery, VercelQueueConfig
+from ig_queue.backends.vercel import VercelBackend, create_vercel_client
+
+from app.jobs.queue import JobKind, QueueCancellation, job_delivery
 
 TOPIC = "ig-jobs"
 
-def get_queue_client() -> QueueClient:
-    kwargs = {}
 
-    if base_url := os.getenv("IG_QUEUE_BASE_URL"):
-        kwargs["base_url"] = base_url
-
-    if region := os.getenv("VERCEL_REGION"):
-        kwargs["region"] = region
-
-    if token := os.getenv("VERCEL_OIDC_TOKEN"):
-        kwargs["token"] = token
-
-    return QueueClient(**kwargs)
-
-async def _enqueue(
-    job_id: str,
-    *,
-    kind: JobKind = "initial",
-    continuation_id: str | None = None,
-    delay_seconds: int = 0,
-) -> None:
-    validate_delivery(kind, continuation_id, delay_seconds)
-    client = get_queue_client()
-    payload = {"job_id": job_id}
-    identity = job_id
-    if kind == "recover":
-        payload["kind"] = kind
-        identity = f"{job_id}:recover:{uuid4()}"
-    if kind == "continue":
-        payload.update(kind=kind, continuation_id=continuation_id)
-        # Republish is permitted after lost/failed scheduling; DB checkpoint
-        # tokens, rather than transport deduplication, gate provider polling.
-        identity = f"{job_id}:continue:{continuation_id}:{uuid4()}"
-    await client.send(
-        TOPIC, payload, idempotency_key=identity, delay=delay_seconds,
+def queue_config(*, all_deployments: bool = False) -> VercelQueueConfig:
+    return VercelQueueConfig(
+        topic=TOPIC,
+        base_url=os.getenv("IG_QUEUE_BASE_URL") or None,
+        region=os.getenv("VERCEL_REGION") or None,
+        oidc_token=os.getenv("VERCEL_OIDC_TOKEN") or None,
+        all_deployments=all_deployments,
     )
 
 
+def get_queue_client(config: VercelQueueConfig | None = None):
+    return create_vercel_client(config or queue_config())
+
+
+def _legacy_message(delivery: Delivery) -> dict[str, str]:
+    message = {"job_id": delivery.work_id}
+    if delivery.kind != "initial":
+        message["kind"] = delivery.kind
+    if delivery.continuation_token is not None:
+        message["continuation_id"] = delivery.continuation_token
+    return message
+
+
 class VercelJobQueue:
-    def cancel(self, job_id: str) -> QueueCancellation:
-        return QueueCancellation(False, 0,
-            "Vercel delivery retraction is unsupported; IG state prevents canceled work from executing. No provider call was canceled.")
+    def __init__(self):
+        config = queue_config()
+        self.backend = VercelBackend(
+            config, client_factory=partial(get_queue_client, config), encode=_legacy_message,
+        )
 
     def enqueue(
-        self,
-        job_id: str,
-        *,
-        kind: JobKind = "initial",
-        continuation_id: str | None = None,
-        delay_seconds: int = 0,
+        self, job_id: str, *, kind: JobKind = "initial",
+        continuation_id: str | None = None, delay_seconds: int = 0,
     ) -> None:
-        anyio.run(
-            partial(
-                _enqueue, job_id, kind=kind, continuation_id=continuation_id,
-                delay_seconds=delay_seconds,
-            ),
+        self.backend.schedule(
+            job_delivery(job_id, kind, continuation_id), delay_seconds=delay_seconds,
+        )
+
+    def cancel(self, job_id: str) -> QueueCancellation:
+        result = self.backend.cancel(job_id)
+        return QueueCancellation(
+            self.backend.capabilities.retract_pending, result.removed,
+            "Vercel delivery retraction is unsupported; IG state prevents canceled work from executing. No provider call was canceled.",
         )

@@ -3,6 +3,7 @@ FROM python:3.13-slim
 WORKDIR /app
 
 COPY requirements.txt .
+COPY packages/ig-queue ./packages/ig-queue
 
 RUN pip install --no-cache-dir -r requirements.txt
 

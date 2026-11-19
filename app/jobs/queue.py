@@ -1,5 +1,10 @@
-from typing import Literal, Protocol
 from dataclasses import dataclass
+from typing import Protocol
+
+from ig_queue import Delivery, DeliveryKind
+from ig_queue.contracts import whole_second_delay
+
+JobKind = DeliveryKind
 
 
 @dataclass(frozen=True)
@@ -9,28 +14,26 @@ class QueueCancellation:
     detail: str
 
 
-JobKind = Literal["initial", "continue", "recover"]
+def job_delivery(job_id: str, kind: JobKind, continuation_id: str | None) -> Delivery:
+    # Preserve IG's existing Vercel idempotency key format for every delivery kind.
+    if kind == "recover" and continuation_id is None:
+        return Delivery.recovery(job_id)
+    if kind == "continue":
+        if continuation_id is None:
+            raise ValueError("Continuation delivery requires a checkpoint token")
+        return Delivery.continuation(job_id, continuation_id)
+    return Delivery(job_id, job_id, kind, continuation_id)
 
 
 def validate_delivery(kind: JobKind, continuation_id: str | None, delay_seconds: int) -> None:
-    if kind not in {"initial", "continue", "recover"}:
-        raise ValueError("Unknown job delivery kind")
-    if kind == "continue" and not continuation_id:
-        raise ValueError("Continuation delivery requires a checkpoint token")
-    if kind in {"initial", "recover"} and continuation_id is not None:
-        raise ValueError("Initial delivery cannot carry a continuation token")
-    if delay_seconds < 0:
-        raise ValueError("Delivery delay must be non-negative")
+    Delivery("validation", "validation", kind, continuation_id)
+    whole_second_delay(delay_seconds)
 
 
 class JobQueue(Protocol):
-    def cancel(self, job_id: str) -> QueueCancellation:
-        """Best-effort pending-delivery retraction, never process termination."""
-        ...
+    def cancel(self, job_id: str) -> QueueCancellation: ...
 
     def enqueue(
         self, job_id: str, *, kind: JobKind = "initial",
         continuation_id: str | None = None, delay_seconds: int = 0,
-    ) -> None:
-        """Enqueue a job for processing."""
-        ...
+    ) -> None: ...
