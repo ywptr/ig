@@ -28,3 +28,110 @@ In direct mode, the application embeds the package, supplies trusted provider co
 In service mode, the application uses centralized IG through the IG#0011 service APIs. IG owns provider credentials, job durability and tenant-scoped artifact access. Both modes use the same capability declarations, validation and adapters. No shared deployment model is required.
 
 In IG, PostgreSQL remains authoritative for Job and Execution state. Queue messages deliver work and continuation tokens. Provider operation IDs and neutral outcomes cross the core boundary, while transition and fencing rules remain with durable persistence.
+
+
+## Implemented package boundary (IG#0012)
+
+IG#0012 implements `ig-core` on this feature branch, ready for Sandcastle V2 to consume as an internal dependency. Its reusable, application-independent scope is:
+
+- Media request contracts, technical capabilities, generation controls and model catalogs
+- Prompt translation and provider-neutral outcomes
+- OpenAI image, Google image and Alibaba video provider adapters
+- Media inspection, deterministic previews and the byte-storage protocol
+
+IG the application retains FastAPI routes, IS/browser authentication, Nexus/tenancy policy, credential persistence, provider routing, ORM/sessions, idempotency, workers, frontend, artifact authorization and retention, and infrastructure integrations. **`ig-core` provides media/provider/capability logic; IG owns durable application state, tenancy, authorization, policy and operations.** Extraction does not make the core a tenant authority, a credential vault or an artifact store.
+
+## Planned `ig-queue` extraction (IG#0013)
+
+`ig-queue` is a reusable scheduling and delivery package, **planned, not part of the IG#0012 implemented boundary**. Unlike a protocol-only library, it may depend directly on Redis, RQ and Vercel Queue. Its intended contracts and implementations cover:
+
+- Job/Execution state vocabulary and delivery envelopes
+- Scheduling and delayed continuation
+- Retry/recovery primitives and cancellation semantics
+- RQ backend and Vercel Queue backend behind one application-facing abstraction
+
+**The consuming application's database is the durable source of truth; `ig-queue` is work delivery and scheduling infrastructure.** Application-owned transitions, transaction fencing, idempotency, tenant authorization, credentials and durable records must not be silently moved into a queue backend. Queue messages may be duplicated, delayed or retried; handlers reconcile against the authoritative application DB. Redis/RQ is not assumed to exist in production: both local/dev RQ and production Vercel Queue must remain supported. The earlier dependency audit describes where queue code currently resides, not a permanent prohibition on extracting it.
+
+## Reusable media workflow architecture (authoritative design; IG#0014 planned)
+
+This section is the **authoritative cross-application workflow design**. Sandcastle's consumer-facing summary is maintained in [Sandcastle's IG media workflow integration](https://github.com/ywptr/sandcastle/blob/master/docs/ig-media-workflow-integration.md). The workflow abstraction below is **planned**, not an implemented public API or frozen Python class hierarchy.
+
+```text
+Sandcastle: story/canon/scene reasoning → creative production intent → scene-to-media plan
+      ↓ workflow specification
+ig-core: operation/capability validation → typed inputs/outputs → provider execution
+      ↓ delivery requirements
+ig-queue: scheduling → continuation → retries/recovery → RQ or Vercel Queue
+      ↕
+consuming application DB: durable orchestration state and authorization
+```
+
+Sandcastle decides **what** workflow to execute, including dependencies and creative sequencing. The media layer validates **whether and how** a provider/model can execute an operation. Queue infrastructure delivers work and resumes it. Sandcastle must not duplicate provider adapters or RQ/Vercel-specific plumbing. Provider-specific asynchronous submission/polling may be encapsulated in reusable media execution adapters; durable recovery policy and scheduling belong behind the shared queue/application boundary, not in creative code.
+
+### First concrete workflow: voice → video
+
+```text
+Scene / shot instruction
+        ↓
+voice.generate
+        ↓
+Artifact(audio)
+        ↓
+video.generate
+    ├── prompt
+    ├── Artifact(image/reference)
+    └── Artifact(audio)
+        ↓
+Artifact(video)
+```
+
+A step's output Artifact becomes a **typed input Artifact** of a dependent step; it is not merely pasted into a prompt. A conceptual `GenerationWorkflow` contains `WorkflowStep` definitions with operation, typed inputs, dependencies and output contract. Names, serialization, persistence schema and execution API remain to be designed. The workflow engine must validate input type, slot support, artifact authorization and lifecycle before execution. A voice-first plan does not imply every video provider accepts an audio input.
+
+### Typed input slots and capability negotiation
+
+Illustrative future slot contracts:
+
+| Slot | Expected type | Meaning |
+| --- | --- | --- |
+| `first_frame` | `Artifact(image)` | Initial frame / visual reference |
+| `voice_track` | `Artifact(audio)` | Generated or supplied speech/audio |
+| `character_ref` | `Artifact(image)` | Character identity reference |
+| `style_ref` | `Artifact(image)` | Visual style reference |
+
+Each provider/model declares supported operations, input slots, constraints and output types; unsupported required slots must fail validation or lead to a different compatible workflow/model, **never be silently discarded**. Illustratively, the current Alibaba video path supports an image first-frame input but **does not currently support `voice_track`**. Thus the voice → video design is not a claim of end-to-end Alibaba audio-conditioned video support. Kling is a candidate second video provider; verify its exact model capabilities and API behavior before implementing or advertising any slot.
+
+### Provider-neutral operations and voice
+
+Workflows request capabilities/operations such as `text_to_video`, `image_to_video`, `image_audio_to_video` and `text_to_speech`, rather than hard-coding Alibaba, Kling or another provider. Provider/model constraints may be explicitly supplied where necessary, but routing must only choose implementations that satisfy the requested capabilities and typed slots. The same valid workflow specification should be portable across matching implementations.
+
+Planned voice vocabulary includes `text_to_speech`, `voice_profile` and `speaker_reference`. OpenAI, ElevenLabs and future providers are **candidates**; no support for a particular voice operation, speaker cloning or reference format is asserted until verified and implemented. Voice profiles are creative Character-domain associations in Sandcastle; media execution receives only the validated technical voice inputs.
+
+### Direct-core and centralized IG modes
+
+**Direct package mode:**
+
+```text
+Sandcastle → ig-core → ig-queue → provider
+```
+
+Sandcastle owns its own workflow/domain persistence, application DB, authorization, credential provisioning and Artifact lifecycle/access. The packages supply technical primitives, not those policies.
+
+**Centralized service mode:**
+
+```text
+Sandcastle → IG service → ig-core / ig-queue internally → provider
+```
+
+IG owns managed credentials, durable Jobs/Executions, tenant-authorized Artifacts, recovery and centralized operations. Sandcastle keeps creative decisions and semantic associations. Both modes must share the **same** technical capability declarations, provider adapters, typed media/workflow primitives and validation semantics; service mode must not become a divergent workflow implementation. A workflow may require a service API extension before it is executable centrally.
+
+## Extraction roadmap and status
+
+| Milestone | Status | Scope |
+| --- | --- | --- |
+| IG#0012 | **Implemented on feature branch** | `ig-core` foundation |
+| IG#0013 | **Planned** | `ig-queue` extraction; RQ and Vercel Queue backends |
+| IG#0014 | **Planned** | Reusable typed media workflow abstraction and Artifact chaining |
+| IG#0015 | **Planned** | Provider-neutral voice operations and verified voice providers |
+| IG#0016 | **Planned** | Second video provider, Kling candidate; validate capabilities |
+
+A feature branch name or prototype does not by itself establish completion of a future milestone.
