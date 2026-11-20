@@ -318,3 +318,27 @@
 }
 .job-status.canceled, .execution-status.canceled { color: #64748b; }
 .job-status.cancel_requested, .execution-status.cancel_requested { color: #b45309; }
+
+.workflow-lab form {
+    display: grid;
+    gap: 1rem;
+}
+
+.workflow-lab form label {
+    display: grid;
+    gap: .35rem;
+}
+
+.workflow-lab textarea {
+    min-height: 6rem;
+}
+
+.workflow-lab img {
+    max-width: min(100%, 22rem);
+    max-height: 16rem;
+    object-fit: contain;
+}
+
+.workflow-lab code {
+    overflow-wrap: anywhere;
+}

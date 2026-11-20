@@ -31,6 +31,10 @@ def _own_running(db, job_id, execution_id):
 
 def execute_job(job_id: str) -> None:
     """Claim once, execute cooperatively, and fence completion against cancellation."""
+    from app.workflows.service import WORK_PREFIX, advance_workflow
+    if job_id.startswith(WORK_PREFIX):
+        advance_workflow(job_id[len(WORK_PREFIX):])
+        return
     logger.info("job.worker.start job_id=%s", job_id)
     db = SessionLocal()
     claimed = False

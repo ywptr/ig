@@ -1,3 +1,4 @@
+from app.db.models.workflow import MediaWorkflow
 from app.db.models.drive_connection import DriveConnection, DriveOAuthState
 from app.db.models.artifact_lineage import ArtifactGeneration, ArtifactInput
 from app.db.models.editor_session import EditorSession, EditorAttempt
@@ -19,6 +20,7 @@ from app.db.models.user_identity import UserIdentity
 from app.db.models.user_session import UserSession
 
 __all__ = [
+    "MediaWorkflow",
     "DriveConnection", "DriveOAuthState",
     "EditorSession", "EditorAttempt",
     "ArtifactGeneration", "ArtifactInput",

@@ -50,6 +50,10 @@
     {
       "path": "/v2/internal/video/recover",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/v2/internal/workflows/recover",
+      "schedule": "15 1 * * *"
     }
   ]
 }

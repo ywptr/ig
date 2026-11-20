@@ -470,6 +470,18 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "av", specifier = ">=16.1,<17" },
+    { name = "openai", specifier = ">=3.5,<4" },
+    { name = "pillow", specifier = ">=12.3,<13" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "requests", specifier = ">=2.32,<3" },
+]
+
+[[package]]
 name = "ig-queue"
 version = "0.1.0"
 source = { directory = "packages/ig-queue" }
@@ -483,19 +495,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-<<<<<<< .merge_file_7eqHw1
-    { name = "av", specifier = ">=16.1,<17" },
-    { name = "openai", specifier = ">=3.5,<4" },
-    { name = "pillow", specifier = ">=12.3,<13" },
-    { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "requests", specifier = ">=2.32,<3" },
-=======
     { name = "anyio", specifier = ">=4,<5" },
     { name = "redis", specifier = ">=8.1,<9" },
     { name = "rq", specifier = ">=2.12,<3" },
     { name = "vercel", specifier = "==0.11.5" },
     { name = "vercel-queue", specifier = "==0.9.1" },
->>>>>>> .merge_file_WlxSUn
 ]
 
 [[package]]

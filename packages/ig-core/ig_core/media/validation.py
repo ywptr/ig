@@ -129,7 +129,7 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
         operation = {"image": "text_to_image", "video": "text_to_video"}.get(request.media_type)
         if operation is None or operation not in technical.operations:
             raise MediaRequestValidationError("Model does not support text generation for requested media")
-    validate_reference_shape(request.references, technical.reference_inputs)
+    references = validate_reference_shape(request.references, technical.reference_inputs)
     controls = metadata.capabilities
     if request.interface_level not in metadata.supported_interface_levels:
         raise MediaRequestValidationError("Unsupported interface level for model")
@@ -143,21 +143,30 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     if request.media_type == "video":
         if (not request.references and not controls.text_to_media) or len(request.references) > controls.max_references:
             raise MediaRequestValidationError("Unsupported model generation inputs")
-        operation = "image_to_video" if request.references else "text_to_video"
-        if operation not in technical.operations:
+        has_audio = any("audio" in slot.media_types and values["role"] == "voice_track"
+                        for values, slot in references)
+        has_image = any("image" in slot.media_types and values["role"] != "voice_track"
+                        for values, slot in references)
+        if has_audio:
+            operation = "image_audio_to_video" if has_image else "audio_to_video"
+        else:
+            operation = "image_to_video" if request.references else "text_to_video"
+        if (operation not in technical.operations or (has_audio and "audio" not in technical.input_media)
+                or (has_image and "image" not in technical.input_media)):
             raise MediaRequestValidationError("Model does not support requested video operation")
         if request.interface_level not in metadata.supported_interface_levels:
             raise MediaRequestValidationError("Unsupported interface level for model")
         if not controls.count.min <= request.output.count <= controls.count.max or request.output.layout.type not in controls.layout_types:
             raise MediaRequestValidationError("Unsupported model count/layout")
-    if request.references and (
-        "image" not in technical.input_media
-        or (request.media_type != "video" and "reference_image_conditioning" not in technical.operations)
+    if request.references and request.media_type != "video" and (
+        "image" not in technical.input_media or "reference_image_conditioning" not in technical.operations
     ):
         raise MediaRequestValidationError("Model does not support reference images")
     if not technical.reference_inputs and len(request.references) > controls.max_references:
         raise MediaRequestValidationError("Too many reference images for model")
-    if len(request.references) > 1 and "multi_reference_conditioning" not in technical.operations:
+    image_reference_count = sum("image" in slot.media_types and values.get("role") != "voice_track"
+                                for values, slot in references)
+    if image_reference_count > 1 and "multi_reference_conditioning" not in technical.operations:
         raise MediaRequestValidationError("Model does not support multiple references")
     ratio = request.output.aspect_ratio
     if ratio is not None and ratio not in controls.aspect_ratios:

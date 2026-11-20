@@ -1,6 +1,18 @@
-# IG#0012 core boundary
+# IG package boundaries
 
-## Dependency audit
+## Current package APIs
+
+| Package | Public surface and IG consumers |
+| --- | --- |
+| `ig-core` | Shared media request and technical capability contracts, provider catalogs, image adapter request/results, async video submission/poll contracts, execution outcomes (`Completed`, `Pending`, and `ProviderOperation`), Artifact payloads and preview helpers. IG imports these from media routing and tasks, Job/Execution workers, and Artifact services. |
+| `ig-queue` | `Delivery`, `QueueBackend`, delivery receipts, cancellation results, capabilities, configs and backend factory. RQ supports delayed delivery and pending-delivery retraction. Vercel supports delayed delivery and publish-key deduplication. IG's Job transport wrappers and Vercel subscriber use these primitives. |
+| `ig-storage` | `ByteStore`, `ObjectStore`, `StoredObject`, `ObjectStat`, locator parsing, router, configs and local, Blob, and Drive stores. IG's Artifact storage wrappers and Drive integration use these APIs. |
+
+All three package implementations are independent of IG's FastAPI, SQLAlchemy and application modules. Core retains a structural Artifact byte-store protocol, while IG uses `ig-storage` for backend implementation. IG owns Artifact authorization, retention and lineage. The queue package transports opaque work IDs and leaves durable state transitions to consumers.
+
+IG#0014 adds ordered media workflow contracts in `ig_core.workflows` and an IG coordinator over existing Jobs. Workflow reconciliation uses the extracted delayed and recovery delivery primitives. See [Media workflows](media-workflows.md).
+
+## Historical IG#0012 extraction audit
 
 | Class | Existing paths and dependencies | Boundary |
 | --- | --- | --- |

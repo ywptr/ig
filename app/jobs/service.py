@@ -120,6 +120,13 @@ class CancellationConflict(RuntimeError):
     pass
 
 
+def cancellation_values(status, now):
+    values = {"status": "cancel_requested", "cancel_requested_at": now}
+    if status in {"queued", "waiting"}:
+        values.update(status="canceled", canceled_at=now, completed_at=now)
+    return values
+
+
 def cancel_job(db: Session, *, job_id: str, tenant_id: str, user_id: str):
     for _ in range(4):
         db.expire_all()
@@ -135,9 +142,7 @@ def cancel_job(db: Session, *, job_id: str, tenant_id: str, user_id: str):
         if status not in {"queued", "running", "waiting", "polling"}:
             raise CancellationConflict("Job cannot be canceled in its current state")
         now = utc_now()
-        values = {"status": "cancel_requested", "cancel_requested_at": now}
-        if status in {"queued", "waiting"}:
-            values.update(status="canceled", canceled_at=now, completed_at=now)
+        values = cancellation_values(status, now)
         changed = db.execute(update(Job).where(
             Job.job_id == job_id, Job.tenant_id == tenant_id, Job.user_id == user_id,
             Job.status == status,

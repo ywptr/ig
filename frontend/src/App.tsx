@@ -5,6 +5,7 @@ import { getTenantInfo } from "./api/tenantSettings";
 import { workspaceView, workspacePath, type WorkspaceView } from "./lib/settingsNavigation";
 import { AuthScreen } from "./components/AuthScreen";
 import { GenerationLab } from "./components/GenerationLab";
+import { WorkflowLab } from "./components/WorkflowLab";
 import { Jobs } from "./components/Jobs";
 import { Executions } from "./components/Executions";
 import { getCurrentUser, logout, type User } from "./api/auth";
@@ -34,6 +35,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<voi
             <div className="brand"><span className="brand-name">IG</span><span className="brand-subtitle">AI Media Control Plane</span></div>
             <nav className="app-nav" aria-label="Main navigation">
                 <button className={view === "generate" ? "active" : ""} aria-current={view === "generate" ? "page" : undefined} onClick={() => navigate("generate")}>Generate</button>
+                <button className={view === "workflows" ? "active" : ""} aria-current={view === "workflows" ? "page" : undefined} onClick={() => navigate("workflows")}>Workflow Lab</button>
                 <button className={view === "jobs" ? "active" : ""} aria-current={view === "jobs" ? "page" : undefined} onClick={() => { navigate("jobs"); feed.refresh(); }}>Jobs</button>
                 <button className={view === "executions" ? "active" : ""} aria-current={view === "executions" ? "page" : undefined} onClick={() => navigate("executions")}>Executions</button>
                 <div className="settings-nav" role="group" aria-label="Settings">
@@ -50,6 +52,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => Promise<voi
                 <GenerationLab results={feed.data.results} receipts={feed.receipts} loading={feed.loading} error={feed.error}
                     onRefresh={feed.refresh} onAccepted={feed.accepted} />
             </section>
+            {view === "workflows" && <WorkflowLab />}
             {view === "jobs" && <Jobs jobs={feed.data.jobs} error={feed.error} loading={feed.loading} onRefresh={feed.refresh} />}
             {view === "executions" && <Executions />}
             {view === "storage" && <div className="settings-page"><header className="settings-heading"><h1>My Settings</h1><p>Your personal storage and integrations.</p></header><div className="settings-card"><StorageSettings /></div></div>}

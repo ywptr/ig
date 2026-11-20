@@ -5,11 +5,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MediaKind = Literal["text", "image", "video", "audio"]
 InputRole = Literal["reference", "character", "outfit", "style", "pose", "composition",
-                    "environment", "previous_output", "first_frame"]
+                    "environment", "previous_output", "first_frame", "voice_track"]
 GenerationOperation = Literal[
     "text_to_image", "image_to_image", "reference_image_conditioning",
     "multi_reference_conditioning", "text_to_video", "image_to_video",
     "image_editing", "inpainting", "variation", "upscale",
+    "text_to_speech", "image_audio_to_video", "audio_to_video",
 ]
 
 

@@ -42,6 +42,7 @@ from app.api.media import (
     router as media_router,
 )
 
+from app.api.workflows import router as workflows_router
 from app.core.logging import configure_logging
 
 configure_logging()
@@ -75,6 +76,8 @@ app.include_router(
     media_router,
     prefix="/v2",
 )
+
+app.include_router(workflows_router, prefix="/v2")
 
 app.include_router(
     job_router,
