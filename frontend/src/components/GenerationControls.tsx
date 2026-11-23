@@ -43,7 +43,8 @@ export function GenerationControls({ media, controls, purposes, values, onChange
                 <input type="number" required min={controls.duration_seconds.min} max={controls.duration_seconds.max} step={1}
                     value={values.duration ?? ""} onChange={event => onChange({ duration: event.target.value === "" ? null : Number(event.target.value) })} />
             </label>}
-            {controls.audio && <label className="lab-check"><input type="checkbox" checked={values.audio}
+            {controls.native_audio_required && <p>Native audio included</p>}
+            {controls.audio && !controls.native_audio_required && <label className="lab-check"><input type="checkbox" checked={values.audio}
                 onChange={event => onChange({ audio: event.target.checked })} /> Generate audio</label>}
         </>}
     </div>;

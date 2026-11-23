@@ -121,6 +121,15 @@ def validate_media_request(
         )
 
 
+def video_operation(roles):
+    roles = tuple(roles)
+    if "voice_track" in roles:
+        return "image_audio_to_video" if any(role != "voice_track" for role in roles) else "audio_to_video"
+    if any(role != "first_frame" for role in roles):
+        return "reference_to_video"
+    return "image_to_video" if roles else "text_to_video"
+
+
 def validate_model_capabilities(request: MediaGenerationRequest, metadata: "ModelMetadata") -> None:
     """Validate a selected declaration before creating work; no tenant or provider I/O.
 
@@ -166,10 +175,7 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
                         for values, slot in references)
         has_image = any("image" in slot.media_types and values["role"] != "voice_track"
                         for values, slot in references)
-        if has_audio:
-            operation = "image_audio_to_video" if has_image else "audio_to_video"
-        else:
-            operation = "image_to_video" if request.references else "text_to_video"
+        operation = video_operation(values["role"] for values, _ in references)
         if (operation not in technical.operations or (has_audio and "audio" not in technical.input_media)
                 or (has_image and "image" not in technical.input_media)):
             raise MediaRequestValidationError("Model does not support requested video operation")
@@ -199,6 +205,9 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     resolution = getattr(request.output, "resolution", None)
     if resolution is not None and resolution not in controls.resolutions:
         raise MediaRequestValidationError("Unsupported model resolution")
+    if (request.media_type == "video" and controls.native_audio_required
+            and "audio" in request.output.model_fields_set and not request.output.audio):
+        raise MediaRequestValidationError("Selected video model requires native audio")
     if getattr(request.output, "audio", False) and not controls.audio:
         raise MediaRequestValidationError("Model does not support audio output")
 

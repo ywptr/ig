@@ -11,7 +11,7 @@ Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32000)]
 Operations = Literal[
     "text_to_speech", "text_to_image", "image_to_image", "text_to_video",
-    "image_to_video", "image_audio_to_video", "audio_to_video",
+    "image_to_video", "image_audio_to_video", "audio_to_video", "reference_to_video",
 ]
 SIGNATURES: dict[Operations, tuple[MediaType, frozenset[MediaType]]] = {
     "text_to_speech": ("audio", frozenset()),
@@ -19,6 +19,7 @@ SIGNATURES: dict[Operations, tuple[MediaType, frozenset[MediaType]]] = {
     "image_to_image": ("image", frozenset({"image"})),
     "text_to_video": ("video", frozenset()),
     "image_to_video": ("video", frozenset({"image"})),
+    "reference_to_video": ("video", frozenset({"image"})),
     "image_audio_to_video": ("video", frozenset({"image", "audio"})),
     "audio_to_video": ("video", frozenset({"audio"})),
 }

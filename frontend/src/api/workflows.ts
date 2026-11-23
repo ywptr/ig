@@ -6,6 +6,7 @@ export interface WorkflowModel {
     model: string;
     label: string;
     speech?: SpeechCapabilities;
+    native_audio_required?: boolean;
 }
 
 export interface WorkflowPlanStep {

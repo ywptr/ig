@@ -14,7 +14,7 @@ from ig_core.media.validation import (
     validate_media_request,
 )
 from app.jobs.service import create_job
-from app.media.video_service import resolve_video_selection, resolve_video_references
+from app.media.video_service import resolve_video_selection, resolved_video_request
 
 ### Media generation service and its supporting types
 
@@ -103,9 +103,8 @@ def submit_media_generation(
         return MediaSubmission("audio", job.job_id, job.status, job.job_id)
 
     if request.media_type == "video":
-        selection = resolve_video_selection(db, request, tenant_id=tenant_id)
-        resolve_video_references(db, request, tenant_id=tenant_id, user_id=user_id, read_bytes=False,
-                                 provider=selection.provider, model=selection.model)
+        selection = resolve_video_selection(db, request, tenant_id=tenant_id, user_id=user_id)
+        request = resolved_video_request(request, selection)
         job = create_job(
             db, capability="video.generate", tenant_id=tenant_id, user_id=user_id,
             defer_dispatch=defer_dispatch,

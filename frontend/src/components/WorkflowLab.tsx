@@ -90,6 +90,7 @@ export function WorkflowLab() {
     const outputStep = plan.at(-1);
     const speechStep = plan.find(step => step.operation === "text_to_speech");
     const speech = speechStep?.models[Number((isVoice ? voiceModelIndex : modelIndex) || "0")]?.speech;
+    const chosenOutputModel = outputStep?.models[Number(modelIndex || "0")];
     const requiresImage = outputStep?.requires_image ?? false;
 
     useEffect(() => {
@@ -190,6 +191,7 @@ export function WorkflowLab() {
             {plan.length > 0 && <ol aria-label="Planned steps">
                 {plan.map((step, index) => <li key={step.operation}>
                     {label(step.operation)} → {step.output}
+                    {step === outputStep && chosenOutputModel?.native_audio_required && " · Native audio included"}
                     {isVoice && ` · ${step.models.length ? "Available" : "Unavailable"}`}
                     {isVoice && index === 1 && " · Requires a first-frame image and the voice step’s audio"}
                 </li>)}

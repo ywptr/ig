@@ -37,6 +37,7 @@ const speech = {
     default_voice: 'opaque:one', default_format: 'mp3', max_text_characters: 500,
 };
 const speechModel = { provider: 'studio', model: 'studio-voice', label: 'Studio Voice', speech };
+const videoModel = { provider: 'cinema', model: 'native-video', label: 'Native Video', native_audio_required: true };
 const rules = explicit => ({ explicit_provider_selection: explicit, explicit_model_selection: explicit });
 const mediaCapabilities = {
     schema_version: 1, interface_levels: { easy: rules(false), medium: rules(false), hard: rules(true) },
@@ -49,10 +50,20 @@ const mediaCapabilities = {
         }],
     }] }],
 };
+mediaCapabilities.media_types.push({ id: 'video', available: true, default_provider: 'cinema', purposes: [],
+    providers: [{ id: 'cinema', display_name: 'Cinema', available: true, default_model: 'native-video', default_model_available: true,
+        models: [{ id: 'native-video', display_name: 'Native Video', available: true, usable: true,
+            selectable_in: ['hard'], supported_interface_levels: ['easy', 'medium', 'hard'], technical: null,
+            capabilities: { text_to_media: true, audio: true, native_audio_required: true, max_references: 0,
+                aspect_ratios: ['21:9'], resolutions: ['4k'], styles: [], quality_profiles: [],
+                layout_types: ['single'], duration_seconds: { min: 3, max: 30 }, count: { min: 1, max: 1 } },
+        }],
+    }],
+});
 const step = (operation, output, models, requires_image = false) => ({ operation, output, models, requires_image });
 const presets = [
     { id: 'single_generation', label: 'Single generation', available: true,
-      steps: [step('text_to_image', 'image', [model]), step('image_to_image', 'image', [model], true), step('text_to_speech', 'audio', [speechModel])] },
+      steps: [step('text_to_image', 'image', [model]), step('image_to_image', 'image', [model], true), step('text_to_speech', 'audio', [speechModel]), step('text_to_video', 'video', [videoModel])] },
     { id: 'voice_then_video', label: 'Voice → Video', available: false, experimental: true,
       reason: 'No executable tenant model for image_audio_to_video.',
       steps: [step('text_to_speech', 'audio', [speechModel]), step('image_audio_to_video', 'video', [], true)] },
@@ -74,7 +85,12 @@ window.fetch = async (url, options = {}) => {
     if (url === '/v2/tenant') return reply({ membership: { role: 'member' } });
     if (url === '/v2/media/capabilities') return reply(mediaCapabilities);
     if (url === '/v2/media/generations') {
-        window.speechRequest = JSON.parse(options.body);
+        const request = JSON.parse(options.body);
+        if (request.media_type === 'video') {
+            window.videoRequest = request;
+            return reply({ media_type: 'video', job_id: 'video-job', request_id: 'video-job', status: 'queued' });
+        }
+        window.speechRequest = request;
         return reply({ media_type: 'audio', job_id: 'speech-job', request_id: 'speech-job', status: 'queued' });
     }
     if (url === '/v2/jobs') return reply(window.speechRequest ? [completedJob] : []);
@@ -88,6 +104,11 @@ window.fetch = async (url, options = {}) => {
     if (url === '/v2/workflows') {
         const input = JSON.parse(options.body);
         window.workflowCalls.push(input);
+        if (input.operation === 'text_to_video') return reply({
+            workflow_id: 'video-run', preset: 'single_generation', status: 'completed',
+            steps: [{ ...run.steps[0], operation: 'text_to_video', status: 'completed', inputs: {},
+                selection: input.selection, outputs: [{ ...output, filename: 'result.mp4', media_type: 'video' }] }],
+        });
         if (input.operation === 'text_to_speech') return reply({
             workflow_id: 'speech-run', preset: 'single_generation', status: 'completed',
             steps: [{ ...run.steps[0], operation: 'text_to_speech', status: 'completed', inputs: {},
@@ -107,6 +128,12 @@ window.fetch = async (url, options = {}) => {
         window.workflowState.steps[0].outputs = [output];
         window.workflowState.steps[0].retryable = false;
     }
+    if (url === '/v2/workflows/video-run') return reply({
+        workflow_id: 'video-run', status: 'completed',
+        steps: [{ ...run.steps[0], operation: 'text_to_video', status: 'completed', inputs: {},
+            selection: window.workflowCalls.at(-1).selection,
+            outputs: [{ ...output, filename: 'result.mp4', media_type: 'video' }] }],
+    });
     if (url === '/v2/workflows/speech-run') return reply({
         workflow_id: 'speech-run', status: 'completed',
         steps: [{ ...run.steps[0], operation: 'text_to_speech', status: 'completed', inputs: {},
@@ -296,5 +323,29 @@ test("speech discovery and authenticated playback work in both Labs", { skip: !b
         await wait("document.querySelector('.workflow-lab audio')");
         assert.equal(await evaluate("document.body.textContent.includes('Voice opaque:one')"), true);
         assert.equal(await evaluate("document.querySelector('.workflow-lab audio').preload"), "none");
+    });
+});
+
+test("native-audio video is discovered and submitted through both Labs", { skip: !browser }, async t => {
+    await withLab(t, async ({ evaluate, wait, click, change }) => {
+        await wait("document.querySelector('.lab-segments [aria-pressed]')");
+        await click("Video");
+        await wait("document.body.textContent.includes('Native audio included')");
+        await change(".lab-form textarea", "A moving landscape.");
+        await click("Generate video");
+        await wait("window.videoRequest");
+        assert.equal(await evaluate("window.videoRequest.output.audio"), true);
+        assert.equal(await evaluate("window.videoRequest.output.resolution"), "4k");
+
+        await click("Workflow Lab");
+        await wait("document.querySelectorAll('.workflow-lab select').length >= 2");
+        await change(".workflow-lab label:nth-of-type(2) select", "text_to_video");
+        await wait("document.body.textContent.includes('text to video')");
+        await change(".workflow-lab label:nth-of-type(4) select", "0");
+        await change(".workflow-lab textarea", "A quiet street.");
+        await click("Run workflow");
+        await wait("document.body.textContent.includes('Final video')");
+        assert.equal(await evaluate("window.workflowCalls.at(-1).selection.model"), "native-video");
+        assert.equal(await evaluate("document.body.textContent.includes('cinema / native-video')"), true);
     });
 });

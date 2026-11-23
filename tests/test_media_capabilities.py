@@ -11,7 +11,6 @@ from app.media.constraints import IMAGE_ASPECT_RATIOS
 from app.media.providers.alibaba.video import AlibabaWanVideoProvider
 from app.media.providers.openai.image import OpenAIImageProvider, resolve_openai_model
 from app.media.providers.registry import IMAGE_PROVIDERS, VIDEO_PROVIDERS, create_image_provider
-from app.media.providers.video import VideoProviderConfigurationError
 from app.media.video_service import resolve_video_selection
 from app.media.schemas import MediaGenerationRequest
 from app.media.validation import validate_media_request, MediaRequestValidationError
@@ -252,15 +251,15 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
             document = self.document()
             video = next(m for m in document["media_types"] if m["id"] == "video")
             self.assertTrue(video["available"])
-            self.assertIsNone(video["default_provider"])
+            self.assertEqual(video["default_provider"], "alibaba")
             future = next(p for p in video["providers"] if p["id"] == "test-provider")
             self.assertEqual(future["default_model"], "test-alternate")
             self.assertEqual(future["models"][0]["use_cases"], ["draft"])
-            with self.sessions() as db:
-                with self.assertRaises(VideoProviderConfigurationError):
-                    resolve_video_selection(db, MediaGenerationRequest(
-                        media_type="video", intent={"description": "test"},
-                    ), tenant_id="tenant-one")
+            with self.sessions() as db, patch("app.media.video_service.load_video_provider"):
+                result = resolve_video_selection(db, MediaGenerationRequest(
+                    media_type="video", intent={"description": "test"},
+                ), tenant_id="tenant-one")
+                self.assertEqual(result.provider, "alibaba")
 
     def test_image_registry_preserves_factory_behavior(self):
         with patch.object(OpenAIImageProvider, "__init__", return_value=None) as constructor:

@@ -18,6 +18,10 @@ class Completed:
 class TerminalOperationError(RuntimeError):
     """A provider operation has permanently failed; never resubmit it."""
 
+    def __init__(self, message: str, *, code: str = "VIDEO_PROVIDER_FAILED"):
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True)
 class Pending:

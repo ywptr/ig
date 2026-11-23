@@ -24,6 +24,7 @@ class GenerationControls(BaseModel):
     resolutions: list[str] = Field(default_factory=list)
     duration_seconds: IntegerRange | None = None
     audio: bool = False
+    native_audio_required: bool = Field(default=False, exclude_if=lambda value: not value)
     count: IntegerRange
     layout_types: list[str]
     panel_counts: list[int] = Field(default_factory=list)

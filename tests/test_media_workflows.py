@@ -226,7 +226,7 @@ class WorkflowTests(fixtures.MediaJobTestCase):
     def test_unavailable_preset(self):
         with patch("app.workflows.presets.model_choices", return_value={
             op: [] for op in ("text_to_image", "text_to_video", "image_to_image", "image_to_video",
-                             "text_to_speech", "image_audio_to_video")
+                             "text_to_speech", "image_audio_to_video", "reference_to_video")
         }):
             catalog = self.client.get("/v2/workflows/presets").json()
             self.assertFalse(catalog[1]["available"])

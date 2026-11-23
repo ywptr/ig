@@ -136,3 +136,19 @@ test("speech discovery drives the request and Job result without provider assump
     assert.equal(result.prompt, "A line to speak.");
     assert.equal(result.model, "studio-beta");
 });
+
+test("a discovered native-audio video model sends its required audio and supported controls", () => {
+    const caps = capabilities();
+    const video = caps.media_types[1];
+    video.providers.push(provider("cinema", [model("native-video", {
+        ...controls, aspect_ratios: ["21:9"], resolutions: ["4k"], audio: true,
+        native_audio_required: true, duration_seconds: { min: 3, max: 30 },
+    })]));
+    const draft = form({ media: "video", mode: "hard", provider: "cinema", model: "native-video", audio: false });
+    const resolved = resolveLabForm(caps, draft);
+    assert.equal(resolved.controls.native_audio_required, true);
+    assert.deepEqual(buildMediaRequest(caps, draft).output, {
+        aspect_ratio: "21:9", audio: true, resolution: "4k", duration_seconds: 3,
+    });
+    assert.equal(buildMediaRequest(caps, form({ media: "video", audio: false })).output.audio, false);
+});

@@ -1,7 +1,7 @@
 export type MediaKind = "text" | "image" | "video" | "audio";
 export type GenerationOperation = "text_to_image" | "image_to_image" | "reference_image_conditioning"
     | "multi_reference_conditioning" | "text_to_video" | "image_to_video" | "image_editing"
-    | "inpainting" | "variation" | "upscale" | "text_to_speech" | "image_audio_to_video" | "audio_to_video";
+    | "inpainting" | "variation" | "upscale" | "text_to_speech" | "image_audio_to_video" | "audio_to_video" | "reference_to_video";
 export interface ReferenceInputSlot {
     name: string;
     media_types: MediaKind[];
@@ -41,6 +41,7 @@ export interface GenerationCapabilities {
     resolutions: string[];
     duration_seconds: Range | null;
     audio: boolean;
+    native_audio_required?: boolean;
     count: Range;
     layout_types: string[];
     quality_profiles: string[];

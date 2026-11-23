@@ -14,6 +14,14 @@ export function generationMediaType(capability: string): MediaType | null {
     return capability === "image.generate" ? "image" : capability === "video.generate" ? "video" : capability === "audio.generate" ? "audio" : null;
 }
 
+export function videoOperation(references: Attachment[]) {
+    if (references.some(ref => ref.role === "voice_track")) {
+        return references.some(ref => ref.role !== "voice_track") ? "image_audio_to_video" : "audio_to_video";
+    }
+    if (references.some(ref => ref.role !== "first_frame")) return "reference_to_video";
+    return references.length ? "image_to_video" : "text_to_video";
+}
+
 export interface LabForm {
     speech?: SpeechOptions;
     mentions: ArtifactMention[];
@@ -51,6 +59,7 @@ export function sharedControls(models: MediaModel[]): GenerationCapabilities | n
         ? { min: Math.max(...durations.map(value => value!.min)), max: Math.min(...durations.map(value => value!.max)) } : null;
     if (duration && duration.min > duration.max) return null;
     return { ...first, count, duration_seconds: duration, audio: controls.every(c => c.audio),
+        native_audio_required: controls.every(c => c.native_audio_required),
         aspect_ratios: common("aspect_ratios"), resolutions: common("resolutions"),
         quality_profiles: common("quality_profiles"), styles: common("styles"), layout_types: common("layout_types") };
 }
@@ -88,7 +97,7 @@ export function resolveLabForm(capabilities: MediaCapabilities, form: LabForm) {
         style: choice(form.style, controls?.styles ?? [], "auto"),
         resolution: choice(form.resolution, controls?.resolutions ?? []),
         duration: bounded(form.duration, controls?.duration_seconds ?? null),
-        count: bounded(form.count, controls?.count ?? null), audio: !!controls?.audio && form.audio,
+        count: bounded(form.count, controls?.count ?? null), audio: !!controls?.audio && (form.audio || !!controls.native_audio_required),
     };
     return { mediaOptions, media, providers, provider, models, controls, values, referenceSlots, speech,
         usable: !!media && !!controls && (!!selectedModel || validDefault) && (media.id !== "audio" || !!speech) };
@@ -107,6 +116,9 @@ export function buildMediaRequest(capabilities: MediaCapabilities, form: LabForm
     if (!values.prompt.trim()) throw new Error("Describe what you want to generate.");
     const errors = referenceErrors(form.references, referenceSlots);
     if (errors.length) throw new Error(errors[0]);
+    if (values.media === "video" && controls && form.references.length > controls.max_references) {
+        throw new Error(`This model accepts up to ${controls.max_references} video references.`);
+    }
     const base = { ...(form.references.length ? { references: structuredReferences(form.references) } : {}), interface_level: values.mode, intent: { description: compilePrompt(form, referenceSlots) },
         ...(values.provider ? { advanced: { provider: values.provider, ...(values.model ? { model: values.model } : {}) } } : {}) };
     if (values.media === "audio" && speech) return {

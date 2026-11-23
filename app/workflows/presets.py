@@ -11,18 +11,19 @@ from ig_core.workflows import (
 )
 from app.media.capabilities import media_capabilities
 
-SINGLE_OPERATIONS = ("text_to_image", "image_to_image", "text_to_video", "image_to_video", "text_to_speech")
+SINGLE_OPERATIONS = ("text_to_image", "image_to_image", "text_to_video", "image_to_video", "reference_to_video", "text_to_speech")
 VOICE_OPERATIONS = ("text_to_speech", "image_audio_to_video")
 ROLES: dict[Operations, tuple[InputRole, ...]] = {
     "image_to_image": ("previous_output",),
     "image_to_video": ("first_frame",),
+    "reference_to_video": ("character",),
     "image_audio_to_video": ("first_frame", "voice_track"),
 }
 
 
 class WorkflowSubmission(Contract):
     preset: Literal["single_generation", "voice_then_video"]
-    operation: Literal["text_to_image", "image_to_image", "text_to_video", "image_to_video", "text_to_speech"] | None = None
+    operation: Literal["text_to_image", "image_to_image", "text_to_video", "image_to_video", "reference_to_video", "text_to_speech"] | None = None
     prompt: Text
     dialogue: Text | None = None
     image_artifact_id: str | None = Field(default=None, min_length=1, max_length=36)
@@ -47,6 +48,8 @@ def model_choices(db, tenant_id):
                             and all(slot.min_count <= sum(role in slot.roles for role in roles)
                                     for slot in technical.reference_inputs)):
                         option = {"provider": provider.id, "model": model.id, "label": model.display_name}
+                        if SIGNATURES[operation][0] == "video":
+                            option["native_audio_required"] = model.capabilities.native_audio_required
                         if operation == "text_to_speech":
                             if model.speech is None:
                                 continue

@@ -6,7 +6,7 @@ IG workflows run bounded, ordered media plans using the existing generation Jobs
 
 `ig_core.workflows.GenerationWorkflow` is a versioned, serializable plan for independently installed consumers. A `WorkflowStep` declares its ID, operation, input map, earlier dependencies, optional provider/model constraint, and expected output media type. The core validates operation signatures, duplicate step IDs, forward or cyclic dependencies, and typed bindings. Each operation takes a text `prompt`. Additional inputs are typed Artifact IDs or references to outputs of named dependency steps. The coordinator selects the first matching output in stable Artifact creation/ID order. Presets request one output per step.
 
-The operation vocabulary includes `text_to_speech`, `text_to_image`, `image_to_image`, `text_to_video`, `image_to_video`, `image_audio_to_video`, and `audio_to_video`. A model must advertise the operation, media types, and applicable reference slots. The application must also have an execution path for the operation. IG#0015 makes speech executable for configured tenants. The current catalog has no audio-conditioned video adapter.
+The operation vocabulary includes `text_to_speech`, `text_to_image`, `image_to_image`, `text_to_video`, `image_to_video`, `reference_to_video`, `image_audio_to_video`, and `audio_to_video`. A model must advertise the operation, media types, and applicable reference slots. The application must also have an execution path for the operation. IG#0015 makes speech executable for configured tenants. The current catalog has no video adapter that consumes an external audio Artifact.
 
 IG owns the workflow ID, tenant and actor ownership, preset expansion, dispatch and credentials. The Job owns execution and provider continuation. The Artifact generation record identifies the producing Job and Execution. Standard Artifact input lineage records the roles and IDs of consumed references, including `voice_track`. Workers use the existing storage router; step bindings carry Artifact IDs.
 
@@ -57,3 +57,7 @@ IG would produce audio, bind its Artifact ID as `voice_track` with the supplied 
 ## Migration and Preview
 
 Alembic revision `1a0014000014` adds only `media_workflows` and its constraints and index. Existing application versions can run against the upgraded schema. Downgrade removes workflow records. Apply the revision to the Preview database before exercising the Lab. Verify package loading, tenant discovery, the existing queue subscriber, and protected workflow recovery against Preview configuration. Promote and migrate production only through the separate authorized release flow.
+
+## Kling video
+
+Kling 4.0 supports the single-step text, first-frame, and image-reference video paths. Workflow Lab shows that native audio is included. Kling's voice-profile references carry speaker identity rather than an externally generated audio track, so `voice_then_video` stays unavailable. [Kling video](kling-video.md)

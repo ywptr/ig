@@ -4,7 +4,7 @@ from app.db.database import SessionLocal
 from app.jobs.cancellation import check_cancellation
 from ig_core.execution.result import Completed, Pending, ProviderOperation, TerminalOperationError
 from ig_core.providers.video import (
-    ResolvedVideoRequest, VideoProviderCompleted, VideoProviderPending, VideoProviderTerminalError,
+    ResolvedVideoRequest, VideoProviderCompleted, VideoProviderPending, VideoProviderRejected, VideoProviderTerminalError,
 )
 from ig_core.media.schemas import MediaGenerationRequest
 from ig_core.media.validation import validate_media_request
@@ -54,6 +54,8 @@ def resume_video_generation(operation: ProviderOperation, *, tenant_id: str, use
     try:
         check_cancellation()
         result = adapter.poll(operation.operation_id, operation.metadata.get("provider_metadata", {}))
+    except VideoProviderRejected as exc:
+        raise TerminalOperationError(str(exc), code=exc.code) from None
     except VideoProviderTerminalError as exc:
         raise TerminalOperationError(str(exc)) from None
     if isinstance(result, VideoProviderPending):

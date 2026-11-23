@@ -10,7 +10,7 @@ GenerationOperation = Literal[
     "text_to_image", "image_to_image", "reference_image_conditioning",
     "multi_reference_conditioning", "text_to_video", "image_to_video",
     "image_editing", "inpainting", "variation", "upscale",
-    "text_to_speech", "image_audio_to_video", "audio_to_video",
+    "text_to_speech", "image_audio_to_video", "audio_to_video", "reference_to_video",
 ]
 
 

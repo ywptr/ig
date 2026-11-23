@@ -14,6 +14,16 @@ from app.jobs.cancellation import JobCancelled, acknowledge_cancellation
 
 logger = logging.getLogger(__name__)
 TERMINAL = {"completed", "failed", "canceled"}
+VIDEO_FAILURE_MESSAGES = {
+    "VIDEO_PENDING_TIMEOUT": "Video operation exceeded its overall deadline; provider cancellation was not performed",
+    "VIDEO_SUBMISSION_UNCERTAIN": "Video submission outcome is uncertain; automatic resubmission is disabled",
+    "VIDEO_CHECKPOINT_INVALID": "Video execution checkpoint is inconsistent; operator inspection required",
+    "VIDEO_PREPARATION_RETRIES_EXHAUSTED": "Video preparation repeatedly interrupted before provider submission",
+    "VIDEO_PROVIDER_ACCESS": "Video provider rejected account access",
+    "VIDEO_PROVIDER_INVALID_REQUEST": "Video provider inputs were invalid or rejected",
+    "VIDEO_PROVIDER_RATE_LIMIT": "Video provider rate or concurrency limit reached",
+    "VIDEO_PROVIDER_FAILED": "Video provider permanently rejected or terminated the operation",
+}
 
 
 def setting(name, default, minimum, maximum):
@@ -91,6 +101,8 @@ def terminal_failure(job, execution, code, now):
     if job.status == "cancel_requested":
         acknowledge_cancellation(object_session(execution), job.job_id)
         return False
+    if code not in VIDEO_FAILURE_MESSAGES:
+        code = "VIDEO_PROVIDER_FAILED"
     metadata = deepcopy(execution.metadata_json) if isinstance(execution.metadata_json, dict) else {}
     metadata["error_code"] = code
     continuation = metadata.get("continuation", {})
@@ -101,12 +113,7 @@ def terminal_failure(job, execution, code, now):
     execution.metadata_json = metadata
     execution.status = job.status = "failed"
     execution.completed_at = job.completed_at = now
-    messages = {"VIDEO_PENDING_TIMEOUT": "Video operation exceeded its overall deadline; provider cancellation was not performed",
-                "VIDEO_SUBMISSION_UNCERTAIN": "Video submission outcome is uncertain; automatic resubmission is disabled",
-                "VIDEO_CHECKPOINT_INVALID": "Video execution checkpoint is inconsistent; operator inspection required",
-                "VIDEO_PREPARATION_RETRIES_EXHAUSTED": "Video preparation repeatedly interrupted before provider submission",
-                "VIDEO_PROVIDER_FAILED": "Video provider permanently rejected or terminated the operation"}
-    execution.error_message = job.error_message = f"{code}: {messages[code]}"
+    execution.error_message = job.error_message = f"{code}: {VIDEO_FAILURE_MESSAGES[code]}"
     audit(job, execution, code, now)
     return True
 
@@ -188,4 +195,4 @@ def checkpoint_submission(sessions, result):
 
 def error_code(message):
     code = (message or "").split(":", 1)[0]
-    return code if code in {"VIDEO_PENDING_TIMEOUT", "VIDEO_SUBMISSION_UNCERTAIN", "VIDEO_CHECKPOINT_INVALID", "VIDEO_PREPARATION_RETRIES_EXHAUSTED", "VIDEO_PROVIDER_FAILED"} else None
+    return code if code in VIDEO_FAILURE_MESSAGES else None

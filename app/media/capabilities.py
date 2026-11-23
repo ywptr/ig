@@ -56,12 +56,8 @@ def media_capabilities(db: Session, *, tenant_id: str, configurations=None) -> M
                 default_provider = normal_image_selection(configurations).provider
             except ValueError:
                 default_provider = None
-        elif media_type == "audio":
-            default_provider = next((provider.id for provider in providers if provider.default_model_available), None)
         else:
-            candidates = [provider_id for provider_id in registrations if provider_id in configurations and configurations[provider_id].enabled]
-            default_provider = next((provider.id for provider in providers if len(candidates) == 1
-                                    and provider.id == candidates[0] and provider.default_model_available), None)
+            default_provider = next((provider.id for provider in providers if provider.default_model_available), None)
         media_types.append(MediaCapability(
             id=media_type, available=any(provider.available for provider in providers), default_provider=default_provider,
             providers=providers, purposes=list(get_args(ImagePurpose)) if media_type == "image" else []))

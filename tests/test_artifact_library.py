@@ -274,7 +274,9 @@ class ArtifactLibraryTests(contracts.ImageExecutionTestCase):
                     if technical is None:
                         continue
                     slots = technical["reference_inputs"]
-                    self.assertEqual(sum(slot["max_count"] for slot in slots), controls["max_references"])
+                    # Per-slot limits and the model-wide cap are independent.
+                    self.assertLessEqual(controls["max_references"], sum(slot["max_count"] for slot in slots))
+                    self.assertTrue(all(slot["max_count"] <= controls["max_references"] for slot in slots))
                     self.assertEqual({role for slot in slots for role in slot["roles"]}, set(controls["reference_roles"]))
                     self.assertEqual({mime for slot in slots for mime in slot["mime_types"]}, set(technical["reference_mime_types"]))
 

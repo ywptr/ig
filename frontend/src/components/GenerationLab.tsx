@@ -5,7 +5,7 @@ import { referenceErrors } from "../lib/references";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getMediaCapabilities, submitMedia } from "../api/media";
 import { ApiError, safeMessage } from "../api/client";
-import { buildMediaRequest, humanize, INITIAL_FORM, matchesSubmission, pendingReceipt, resolveLabForm, resolveSpeechOptions, type LabForm } from "../lib/generation";
+import { buildMediaRequest, humanize, INITIAL_FORM, matchesSubmission, pendingReceipt, resolveLabForm, resolveSpeechOptions, videoOperation, type LabForm } from "../lib/generation";
 import type { GenerationResult, GenerationSubmission, InterfaceLevel, MediaCapabilities, MediaType } from "../types/media";
 import { SpeechControls } from "./SpeechControls";
 import { GenerationControls } from "./GenerationControls";
@@ -43,7 +43,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     const resolved = capabilities ? resolveLabForm(capabilities, form) : null;
     const attachmentErrors = resolved ? [...referenceErrors(form.references, resolved.referenceSlots), ...mentionErrors(form, resolved.referenceSlots)] : [];
     const preservedErrors = editor && capabilities ? editorFormErrors(capabilities, form) : [];
-    const operation = form.media === "audio" ? "text_to_speech" : form.media === "video" ? (form.references.length ? "image_to_video" : "text_to_video") : (form.references.length ? "reference_image_conditioning" : "text_to_image");
+    const operation = form.media === "audio" ? "text_to_speech" : form.media === "video" ? videoOperation(form.references) : (form.references.length ? "reference_image_conditioning" : "text_to_image");
     if (editor?.policy.allowed_operations.length && !editor.policy.allowed_operations.includes(operation)) preservedErrors.push("This operation is excluded by the editor policy.");
     function update(patch: Partial<LabForm>) {
         setDraftTouched(true);

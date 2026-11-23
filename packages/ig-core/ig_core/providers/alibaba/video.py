@@ -7,6 +7,8 @@ import time
 from urllib.parse import urlparse, quote
 
 import requests
+
+from ig_core.providers.video_download import download_mp4
 from ig_core.media.catalog import GenerationControls, IntegerRange, ModelMetadata, ProviderMetadata
 
 
@@ -165,29 +167,5 @@ class AlibabaWanVideoProvider(VideoProviderAdapter):
             or parsed.fragment
         ):
             raise VideoProviderTerminalError("Video provider returned an unsupported output location")
-        deadline = time.monotonic() + DOWNLOAD_DEADLINE_SECONDS
-        try:
-            # No API authorization on the storage request and no redirects.
-            with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT, allow_redirects=False) as response:
-                if response.status_code != 200:
-                    raise VideoProviderError("Video output download failed")
-                content_type = response.headers.get("Content-Type", "").split(";")[0].lower()
-                if content_type not in {"video/mp4", "application/octet-stream"}:
-                    raise VideoProviderTerminalError("Video output has an unsupported content type")
-                length = response.headers.get("Content-Length")
-                if length and (not length.isdigit() or int(length) > MAX_VIDEO_BYTES):
-                    raise VideoProviderTerminalError("Video output exceeds the download limit")
-                chunks, total = [], 0
-                for chunk in response.iter_content(chunk_size=64 * 1024):
-                    if time.monotonic() > deadline:
-                        raise VideoProviderError("Video download deadline exceeded")
-                    total += len(chunk)
-                    if total > MAX_VIDEO_BYTES:
-                        raise VideoProviderTerminalError("Video output exceeds the download limit")
-                    chunks.append(chunk)
-                data = b"".join(chunks)
-        except requests.RequestException:
-            raise VideoProviderError("Video output download unavailable") from None
-        if len(data) < 12 or data[4:8] != b"ftyp":
-            raise VideoProviderTerminalError("Video output is not an MP4 file")
-        return data
+        return download_mp4(url, max_bytes=MAX_VIDEO_BYTES, deadline_seconds=DOWNLOAD_DEADLINE_SECONDS,
+                            timeout=DOWNLOAD_TIMEOUT, monotonic=time.monotonic)

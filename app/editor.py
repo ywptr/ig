@@ -16,6 +16,7 @@ from app.auth.service_access import fail
 from app.core.time import utc_now, utc_iso
 from app.db.models import EditorSession, EditorAttempt, ServiceCredential, UserIdentity, User, Tenant, Execution
 from ig_core.media.schemas import MediaGenerationRequest
+from ig_core.media.validation import video_operation
 from app.tenancy.governance import get_tenancy_governance
 
 
@@ -216,7 +217,7 @@ def editor_principal(request: Request, db):
 def enforce_policy(session, request):
     original = MediaGenerationRequest.model_validate(session.draft)
     policy = session.policy
-    operation = ("image_to_video" if request.references else "text_to_video") if request.media_type == "video" else (
+    operation = video_operation(ref.role for ref in request.references) if request.media_type == "video" else (
         "reference_image_conditioning" if request.references else "text_to_image")
     if (request.media_type not in policy["allowed_media"] or
         request.strategy != "single" or request.output.layout.type != "single" or

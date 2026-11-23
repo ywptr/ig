@@ -133,9 +133,16 @@ def execute_job(job_id: str) -> None:
                 if capability == "video.generate":
                     from app.jobs.video_lifecycle import terminal_failure
                     phase = (execution.metadata_json or {}).get("video_lifecycle", {}).get("phase")
-                    from ig_core.providers.video import VideoProviderTerminalError
-                    code = "VIDEO_PROVIDER_FAILED" if isinstance(exc, VideoProviderTerminalError) else (
-                        "VIDEO_SUBMISSION_UNCERTAIN" if phase == "submitting" else "VIDEO_CHECKPOINT_INVALID")
+                    from ig_core.providers.video import VideoProviderRejected, VideoProviderTerminalError
+                    from ig_core.media.validation import MediaRequestValidationError
+                    if isinstance(exc, VideoProviderRejected):
+                        code = exc.code
+                    elif isinstance(exc, MediaRequestValidationError):
+                        code = "VIDEO_PROVIDER_INVALID_REQUEST"
+                    elif isinstance(exc, VideoProviderTerminalError):
+                        code = "VIDEO_PROVIDER_FAILED"
+                    else:
+                        code = "VIDEO_SUBMISSION_UNCERTAIN" if phase == "submitting" else "VIDEO_CHECKPOINT_INVALID"
                     terminal_failure(job, execution, code, utc_now())
                 else:
                     fail_execution(db, execution, error_message=str(exc))

@@ -304,7 +304,7 @@ def _finalize_claim(claim: _PollClaim, result: HandlerResult | TerminalOperation
                 execution.metadata_json = {**execution.metadata_json, "continuation": prior_continuation}
                 if claim.capability == "video.generate":
                     from app.jobs.video_lifecycle import terminal_failure
-                    terminal_failure(job, execution, "VIDEO_PROVIDER_FAILED", _utc_now())
+                    terminal_failure(job, execution, result.code, _utc_now())
                     db.commit()
                     return True
                 fail_execution(db, execution, error_message=str(result))

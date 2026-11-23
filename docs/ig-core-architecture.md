@@ -147,3 +147,7 @@ IG owns managed credentials, durable Jobs/Executions, tenant-authorized Artifact
 | IG#0016 | **Planned** | Second video provider, Kling candidate; validate capabilities |
 
 A feature branch name or prototype does not by itself establish completion of a future milestone.
+
+## Video provider boundaries
+
+Alibaba Wan and Kling 4.0 own their API payloads, credentials translation, status and task identity parsing, CDN host authorization, and provider error mapping. They share media validation and bounded MP4 downloads. The app owns ordered tenant/model selection, approved Artifact inputs, durable video deadlines and continuation tokens, and fenced Artifact publication. Polling and timeout policies are shared across providers, and native audio output is independent of the typed external-audio input. [Kling video](kling-video.md)

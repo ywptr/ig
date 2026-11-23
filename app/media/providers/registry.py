@@ -9,11 +9,12 @@ from app.media.providers.openai.image import (
     OpenAIImageProvider,
 )
 from app.media.providers.alibaba.video import AlibabaWanVideoProvider
+from ig_core.providers.kling.video import KlingVideoProvider
 from ig_core.providers.video import VideoProviderAdapter, VideoProviderConfigurationError
 from app.media.providers.google.image import GoogleImageProvider
 
 
-VIDEO_PROVIDERS: dict[str, type[VideoProviderAdapter]] = {"alibaba": AlibabaWanVideoProvider}
+VIDEO_PROVIDERS: dict[str, type[VideoProviderAdapter]] = {"alibaba": AlibabaWanVideoProvider, "kling": KlingVideoProvider}
 DEFAULT_IMAGE_PROVIDER = "openai"
 IMAGE_PROVIDERS = {"openai": OpenAIImageProvider, "google": GoogleImageProvider}
 SPEECH_PROVIDERS: dict[str, type[SpeechProvider]] = {"openai": OpenAISpeechProvider}

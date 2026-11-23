@@ -12,6 +12,14 @@ class VideoProviderTerminalError(VideoProviderError):
     pass
 
 
+class VideoProviderRejected(VideoProviderTerminalError):
+    """A definite rejection with a provider-neutral error code."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
 class VideoProviderConfigurationError(ValueError):
     pass
 
