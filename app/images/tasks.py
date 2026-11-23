@@ -217,10 +217,10 @@ def generate_image(
         or {}
     )
 
-    from app.media.model_governance import validate_selected_model
+    from app.media.model_governance import registered_model
     from app.media.providers.registry import image_provider_registration
     if model_is_resolved:
-        validate_selected_model(image_provider_registration(request.provider), provider_settings, "image", request.model)
+        registered_model(image_provider_registration(request.provider), request.model)
     resolved_model = request.model if model_is_resolved else resolve_image_model(
         request.provider, config=provider_settings, model=request.model,
     )

@@ -13,12 +13,17 @@ def reference_slots(provider: str, model: str, media_type: str):
     return metadata.technical.reference_inputs if metadata.technical else ()
 
 
-def resolve_references(db, references, *, slots, tenant_id, user_id, store=None, read_bytes=False):
-    selected = validate_reference_shape(references, slots)
-    ids = [values.get("artifact_id") for values, _ in selected]
-    rows = {row.artifact_id: row for row in db.scalars(select(Artifact).where(
+def scoped_reference_artifacts(db, ids, *, tenant_id, user_id):
+    return {row.artifact_id: row for row in db.scalars(select(Artifact).where(
         Artifact.artifact_id.in_(ids), Artifact.tenant_id == tenant_id, Artifact.user_id == user_id,
     ))} if ids else {}
+
+
+def resolve_references(db, references, *, slots, tenant_id, user_id, store=None, read_bytes=False, rows=None):
+    selected = validate_reference_shape(references, slots)
+    if rows is None:
+        rows = scoped_reference_artifacts(db, [values.get("artifact_id") for values, _ in selected],
+                                          tenant_id=tenant_id, user_id=user_id)
     result = []
     for values, slot in selected:
         row = rows.get(values.get("artifact_id"))

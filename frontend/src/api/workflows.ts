@@ -1,4 +1,4 @@
-import type { SpeechCapabilities, SpeechOptions } from "../types/media";
+import type { ModelSelectionPolicy, SelectionSnapshot, SpeechCapabilities, SpeechOptions } from "../types/media";
 import { requestJSON } from "./client";
 
 export interface WorkflowModel {
@@ -44,6 +44,9 @@ export interface WorkflowRun {
         retryable?: boolean;
         dependencies: string[];
         selection?: Omit<WorkflowModel, "label" | "speech"> | null;
+        selection_policy?: ModelSelectionPolicy;
+        selection_resolution?: SelectionSnapshot;
+        selection_rejection?: SelectionSnapshot;
         speech?: SpeechOptions | null;
         job_ids: string[];
         inputs: Record<string, { kind: string; step_id?: string; artifact_id?: string }>;
@@ -69,6 +72,8 @@ export function submitWorkflow(input: {
     image_artifact_id?: string;
     selection?: Omit<WorkflowModel, "label">;
     voice_selection?: Omit<WorkflowModel, "label" | "speech">;
+    selection_policy?: ModelSelectionPolicy;
+    voice_selection_policy?: ModelSelectionPolicy;
     speech?: SpeechOptions;
 }, key: string) {
     return requestJSON<WorkflowRun>(endpoint, {

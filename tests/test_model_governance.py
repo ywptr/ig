@@ -190,13 +190,16 @@ class GovernanceTests(contracts.ImageExecutionTestCase):
             self.assertEqual(job.input_json["selection"], selection)
             self.assertEqual((execution.model, artifact.metadata_json["model"], artifact.metadata_json["selection"]["model"]), (ALTERNATE,) * 3)
 
-    def test_disabling_pinned_model_or_unknown_historical_model_fails_without_fallback(self):
+    def test_disabling_pinned_model_preserves_accepted_work_and_unknown_model_fails(self):
         job_id, selection = self.job(self.submit_image())
         self.config({"enabled_models": {"image": [LAST]}, "default_models": {"image": LAST}})
-        with self.assertRaisesRegex(ModelGovernanceError, "disabled"): execute_job(job_id)
-        self.provider.generate.assert_not_called()
+        execute_job(job_id)
+        self.assertEqual(self.provider.generate.call_args.args[0].model, selection["model"])
         with self.sessions() as db:
-            job = db.scalar(select(Job)); self.assertEqual(job.status, "failed"); self.assertEqual(job.input_json["selection"], selection)
+            job = db.scalar(select(Job))
+            self.assertEqual(job.status, "completed")
+            self.assertEqual(job.input_json["selection"], selection)
+        self.provider.generate.reset_mock()
         self.config({})
         other, _ = self.job(self.submit_image())
         with self.sessions() as db:

@@ -1,6 +1,6 @@
 import { compilePrompt, type ArtifactMention } from "./mentions";
 import { referenceErrors, sharedReferenceSlots, structuredReferences, type Attachment } from "./references";
-import type { Artifact, GenerationCapabilities, GenerationResult, GenerationSubmission, InterfaceLevel,
+import type { ModelSelectionPolicy, Artifact, GenerationCapabilities, GenerationResult, GenerationSubmission, InterfaceLevel,
     MediaCapabilities, MediaCapability, MediaGenerationRequest, MediaModel, MediaType, SpeechCapabilities, SpeechOptions } from "../types/media";
 import type { JobDetail } from "../types/Job";
 import type { JobExecution } from "../api/executions";
@@ -12,6 +12,10 @@ function record(value: unknown): Record<string, unknown> { return value && typeo
 function text(value: unknown): string | null { return typeof value === "string" && value.length > 0 ? value : null; }
 export function generationMediaType(capability: string): MediaType | null {
     return capability === "image.generate" ? "image" : capability === "video.generate" ? "video" : capability === "audio.generate" ? "audio" : null;
+}
+
+export function modelSelectionPolicy(provider?: string, model?: string): ModelSelectionPolicy {
+    return provider && model ? { mode: "LOCKED", candidates: [{ provider, model }] } : { mode: "AUTO" };
 }
 
 export function videoOperation(references: Attachment[]) {

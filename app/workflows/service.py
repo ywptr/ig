@@ -14,9 +14,11 @@ from app.db.models import Artifact, ArtifactGeneration, Execution, ImageRequest,
 from app.jobs.cancellation import acknowledge_cancellation, cancel_executions
 from app.jobs.provider import get_job_queue
 from app.jobs.service import cancellation_values
+from app.media.selection import ModelSelectionError
 from app.media.service import submit_media_generation
 from app.tenancy.provider_configs import ProviderNotConfiguredError
 from ig_core.media.schemas import MediaGenerationRequest
+from ig_core.media.selection import ModelCandidate, ModelSelectionPolicy
 from ig_core.workflows import ArtifactInput, GenerationWorkflow, StepOutput
 
 from .presets import build_workflow
@@ -91,20 +93,22 @@ class WorkflowConflict(ValueError):
     pass
 
 
-def submit_step(db, row, step, references):
+def submit_step(db, row, step, references, *, accepted_candidate=None):
     """Translate workflow bindings to the existing media submission contract."""
     selection = step.selection.model_dump() if step.selection else None
     request = MediaGenerationRequest.model_validate({
         "media_type": step.output,
-        "interface_level": "hard" if selection else "easy",
+        "interface_level": "hard" if selection or step.selection_policy else "easy",
         "intent": {"description": step.inputs["prompt"].value},
         "advanced": selection,
+        "selection_policy": step.selection_policy,
         "references": references,
         **({"operation": step.operation, "output": step.speech.model_dump() if step.speech else {}}
            if step.operation == "text_to_speech" else {}),
     })
     return submit_media_generation(request, db=db, tenant_id=row.tenant_id,
-                                   user_id=row.user_id, defer_dispatch=True).job_id
+                                   user_id=row.user_id, defer_dispatch=True,
+                                   accepted_candidate=accepted_candidate).job_id
 
 
 def resolve_inputs(db, row, step, states):
@@ -153,7 +157,10 @@ def reconcile_step(db, row, step, state, now):
     if job.status == "failed":
         state["outputs"] = collect_outputs(db, row, job_id, step.output)
         code = (job.error_message or "").split(":", 1)[0]
-        uncertain = code in {INTERRUPTED, "VIDEO_SUBMISSION_UNCERTAIN", "VIDEO_CHECKPOINT_INVALID", "VIDEO_PENDING_TIMEOUT", "SPEECH_PROVIDER_UNCERTAIN"}
+        uncertain = code in {
+            INTERRUPTED, "VIDEO_SUBMISSION_UNCERTAIN", "VIDEO_CHECKPOINT_INVALID", "VIDEO_PENDING_TIMEOUT",
+            "VIDEO_PROVIDER_CONFIGURATION_UNAVAILABLE", "SPEECH_PROVIDER_UNCERTAIN",
+        }
         fail_step(row, state, code if uncertain else "Step Job failed. Inspect the Job for details.",
                   retryable=not uncertain and not state["outputs"])
         return None
@@ -220,12 +227,36 @@ def advance_workflow(workflow_id):
             try:
                 with db.begin_nested():
                     references = resolve_inputs(db, row, step, states)
-                    job_id = submit_step(db, row, step, references)
+                    previous = state.get("selection_resolution") or {}
+                    pinned = previous.get("selected")
+                    if pinned is None and state["job_ids"]:
+                        prior = db.scalar(select(Job).where(
+                            Job.job_id == state["job_ids"][-1], Job.tenant_id == row.tenant_id,
+                            Job.user_id == row.user_id,
+                        ))
+                        recorded = prior.input_json.get("selection") if prior else None
+                        if recorded:
+                            pinned = {"provider": recorded["provider"], "model": recorded["model"]}
+                    if pinned is not None:
+                        candidate = ModelCandidate.model_validate(pinned)
+                        policy = ModelSelectionPolicy(mode="LOCKED", candidates=(candidate,))
+                        retry_step = step.model_copy(update={"selection": None, "selection_policy": policy})
+                        job_id = submit_step(db, row, retry_step, references, accepted_candidate=candidate)
+                    else:
+                        job_id = submit_step(db, row, step, references)
                     if not job_id:
                         raise RuntimeError("Workflow submission requires a Job")
+            except ModelSelectionError as exc:
+                state["selection_rejection"] = exc.result.snapshot().model_dump(mode="json")
+                fail_step(row, state, "Step model selection failed")
             except (ValueError, ProviderNotConfiguredError):
                 fail_step(row, state, "Step inputs or model are unavailable")
             else:
+                job = db.scalar(select(Job).where(Job.job_id == job_id))
+                audit = job.input_json.get("selection_audit") if job else None
+                if audit:
+                    state.setdefault("selection_resolution", audit)
+                    state.pop("selection_rejection", None)
                 state["job_ids"].append(job_id)
                 state["status"] = "queued"
                 dispatch = ("initial", job_id)

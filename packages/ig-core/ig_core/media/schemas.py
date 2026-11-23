@@ -3,6 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ig_core.media.speech import SpeechOptions
+from ig_core.media.selection import ModelSelectionPolicy
 
 ### Collection of schemas for media generation requests and responses
 
@@ -164,6 +165,8 @@ class MediaGenerationRequest(BaseModel):
     references: list[MediaReference | VideoReference] = Field(
         default_factory=list,
     )
+
+    selection_policy: ModelSelectionPolicy | None = Field(default=None, exclude_if=lambda value: value is None)
 
     advanced: MediaAdvancedOptions | None = None
 

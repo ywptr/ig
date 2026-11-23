@@ -14,7 +14,8 @@ from ig_core.media.validation import (
     validate_media_request,
 )
 from app.jobs.service import create_job
-from app.media.video_service import resolve_video_selection, resolved_video_request
+from app.media.video_service import VideoSelection, resolve_video_selection, resolved_video_request
+from app.media.selection import accept_selection, legacy_snapshot
 
 ### Media generation service and its supporting types
 
@@ -81,6 +82,7 @@ def submit_media_generation(
     tenant_id: str,
     user_id: str,
     defer_dispatch: bool = False,
+    accepted_candidate=None,
 ) -> MediaSubmission:
     if request.media_type == "audio" and request.operation is None:
         raise MediaCapabilityNotAvailableError(CAPABILITIES["audio"])
@@ -89,27 +91,43 @@ def submit_media_generation(
     if request.media_type == "audio":
         from app.media.speech import SpeechRequestError, select_speech, speech_request
 
-        try:
-            selection, payload = select_speech(db, request, speech_request(request), tenant_id=tenant_id)
-        except ValueError as exc:
-            raise SpeechRequestError(str(exc)) from None
+        if request.selection_policy is not None:
+            from app.media.model_governance import registered_model
+            from app.media.providers.registry import SPEECH_PROVIDERS
+            from ig_core.media.speech import resolve_model_speech
+
+            candidate, audit = accept_selection(db, request, tenant_id=tenant_id, user_id=user_id, accepted_candidate=accepted_candidate)
+            model = registered_model(SPEECH_PROVIDERS[candidate.provider], candidate.model)
+            selection = candidate.model_dump()
+            payload = resolve_model_speech(model, speech_request(request), request.interface_level)
+        else:
+            try:
+                selection, payload = select_speech(db, request, speech_request(request), tenant_id=tenant_id)
+            except ValueError as exc:
+                raise SpeechRequestError(str(exc)) from None
+            audit = legacy_snapshot(request, selection["provider"], selection["model"], "LEGACY_SPEECH_ROUTING")
         job = create_job(
             db, capability="audio.generate", tenant_id=tenant_id, user_id=user_id,
             defer_dispatch=defer_dispatch,
             input_data={"request_version": "1", "media_type": "audio",
                         "request": request.model_dump(), "speech": payload.model_dump(),
-                        "selection": selection},
+                        "selection": selection, "selection_audit": audit},
         )
         return MediaSubmission("audio", job.job_id, job.status, job.job_id)
 
     if request.media_type == "video":
-        selection = resolve_video_selection(db, request, tenant_id=tenant_id, user_id=user_id)
+        if request.selection_policy is not None:
+            candidate, audit = accept_selection(db, request, tenant_id=tenant_id, user_id=user_id, accepted_candidate=accepted_candidate)
+            selection = VideoSelection(candidate.provider, candidate.model)
+        else:
+            selection = resolve_video_selection(db, request, tenant_id=tenant_id, user_id=user_id)
+            audit = legacy_snapshot(request, selection.provider, selection.model, "LEGACY_VIDEO_ROUTING")
         request = resolved_video_request(request, selection)
         job = create_job(
             db, capability="video.generate", tenant_id=tenant_id, user_id=user_id,
             defer_dispatch=defer_dispatch,
             input_data={"request_version": "1", "media_type": "video",
-                        "request": request.model_dump(), "selection": asdict(selection)},
+                        "request": request.model_dump(), "selection": asdict(selection), "selection_audit": audit},
         )
         return MediaSubmission("video", job.job_id, job.status, job.job_id)
 
@@ -134,6 +152,7 @@ def submit_media_generation(
         db,
         prompt=request.intent.description,
         defer_dispatch=defer_dispatch,
+        accepted_candidate=accepted_candidate,
         tenant_id=tenant_id,
         user_id=user_id,
         media_request={
@@ -158,6 +177,8 @@ def submit_media_generation(
                 reference.model_dump()
                 for reference in request.references
             ],
+            **({"selection_policy": request.selection_policy.model_dump(mode="json")}
+               if request.selection_policy is not None else {}),
             "advanced": (
                 request.advanced.model_dump()
                 if request.advanced is not None

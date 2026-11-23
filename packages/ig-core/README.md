@@ -67,3 +67,7 @@ This is an internal package with no public compatibility promise.
 To add another speech provider, advertise a `text_to_speech` model with `SpeechCapabilities`, implement `from_config` and `synthesize`, and normalize upstream errors as `SpeechProviderError`. The caller owns selection, credentials, storage, and Job state. Workflow plans bind the resulting audio by Artifact ID. The provider does not need to know about creative voice profiles or workflow state.
 
 OpenAI's `gpt-4o-mini-tts` Speech API model and formats were verified on November 20, 2026. The model is catalogued with a January 6, 2027 sunset. [Speech API reference](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create) · [OpenAI deprecations](https://developers.openai.com/api/docs/deprecations)
+
+### Compatibility note
+
+The optional `selection_policy` field on media requests and workflow steps and the contracts in `ig_core.media.selection` are additive. Existing request bodies and workflow plans remain valid. A standalone consumer can serialize candidates, policies, results, and snapshots without importing IG. Recommend a minor release (`0.2.0`) once the changes are reviewed and committed.

@@ -4,10 +4,11 @@ from app.db.database import SessionLocal
 from app.jobs.cancellation import check_cancellation
 from ig_core.execution.result import Completed, Pending, ProviderOperation, TerminalOperationError
 from ig_core.providers.video import (
-    ResolvedVideoRequest, VideoProviderCompleted, VideoProviderPending, VideoProviderRejected, VideoProviderTerminalError,
+    ResolvedVideoRequest, VideoProviderConfigurationError, VideoProviderCompleted, VideoProviderPending, VideoProviderRejected, VideoProviderTerminalError,
 )
 from ig_core.media.schemas import MediaGenerationRequest
 from ig_core.media.validation import validate_media_request
+from app.tenancy.provider_configs import ProviderNotConfiguredError
 from app.media.video_service import load_video_provider, resolve_video_references, validate_video_capabilities
 
 
@@ -47,10 +48,14 @@ def execute_video_generation(input_data: dict, *, tenant_id: str, user_id: str |
 
 
 def resume_video_generation(operation: ProviderOperation, *, tenant_id: str, user_id: str):
-    with SessionLocal() as db:
-        adapter = load_video_provider(
-            db, tenant_id=tenant_id, provider=operation.provider, model=operation.model,
-        )
+    try:
+        with SessionLocal() as db:
+            adapter = load_video_provider(
+                db, tenant_id=tenant_id, provider=operation.provider, model=operation.model,
+            )
+    except (VideoProviderConfigurationError, ProviderNotConfiguredError):
+        raise TerminalOperationError("Accepted video provider/model is unavailable",
+                                     code="VIDEO_PROVIDER_CONFIGURATION_UNAVAILABLE") from None
     try:
         check_cancellation()
         result = adapter.poll(operation.operation_id, operation.metadata.get("provider_metadata", {}))

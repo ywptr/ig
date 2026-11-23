@@ -151,3 +151,7 @@ A feature branch name or prototype does not by itself establish completion of a 
 ## Video provider boundaries
 
 Alibaba Wan and Kling 4.0 own their API payloads, credentials translation, status and task identity parsing, CDN host authorization, and provider error mapping. They share media validation and bounded MP4 downloads. The app owns ordered tenant/model selection, approved Artifact inputs, durable video deadlines and continuation tokens, and fenced Artifact publication. Polling and timeout policies are shared across providers, and native audio output is independent of the typed external-audio input. [Kling video](kling-video.md)
+
+### Model selection contracts
+
+`ig_core.media.selection` defines the request policy, candidates, and explainable eligibility results. IG serves tenant-scoped inspection and applies those policies at media Job admission. Accepted model pins and compact audits live in Job input data. Queue and storage package APIs are unaffected. See [Media model selection](media-model-selection.md).

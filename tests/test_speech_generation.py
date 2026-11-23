@@ -86,6 +86,20 @@ class SpeechGenerationTests(fixtures.MediaJobTestCase):
         self.user_id = "user-two"
         self.assertEqual(self.client.get(url + "/content").status_code, 404)
 
+    def test_accepted_speech_keeps_model_after_admission_is_disabled(self):
+        policy = {"mode": "LOCKED", "candidates": [{"provider": "openai", "model": MODEL}]}
+        job_id = self.submit({**BODY, "selection_policy": policy})
+        with self.sessions() as db:
+            set_provider_config(db, tenant_id="tenant-one", provider="openai", enabled=True,
+                                credentials={"api_key": "test-only"}, config={"enabled_models": {"audio": []}})
+        execute_job(job_id)
+        execute_job(job_id)
+        self.provider.assert_called_once()
+        with self.sessions() as db:
+            job = db.scalar(select(Job).where(Job.job_id == job_id))
+            self.assertEqual(job.status, "completed")
+            self.assertEqual(job.input_json["selection"]["model"], MODEL)
+
     def test_drive_writer_and_existing_retention_policy(self):
         connection = str(uuid4())
         with self.sessions() as db:

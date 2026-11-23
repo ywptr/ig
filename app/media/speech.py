@@ -1,7 +1,7 @@
 """Tenant speech admission and execution through the provider-neutral contract."""
 from app.db.database import SessionLocal
 from app.jobs.cancellation import check_cancellation
-from app.media.model_governance import model_policy, validate_selected_model
+from app.media.model_governance import model_policy, registered_model, validate_selected_model
 from app.media.providers.registry import SPEECH_PROVIDERS
 from app.tenancy.provider_configs import get_provider_config, get_provider_credentials, list_provider_configs
 from ig_core.execution.result import Completed
@@ -54,7 +54,7 @@ def execute_speech_generation(input_data: dict, *, tenant_id: str, user_id: str 
         row = get_provider_config(db, tenant_id=tenant_id, provider=provider)
         if not adapter_type or not row or not row.enabled or not adapter_type.configuration_is_valid(row.config_json):
             raise ValueError("Speech provider is unavailable")
-        request = _resolve(adapter_type, row.config_json, model, request, input_data["request"]["interface_level"])
+        request = resolve_model_speech(registered_model(adapter_type, model), request, input_data["request"]["interface_level"])
         credentials = get_provider_credentials(db, tenant_id=tenant_id, provider=provider)
         adapter = adapter_type.from_config(credentials=credentials, config=row.config_json, model=model)
     check_cancellation()

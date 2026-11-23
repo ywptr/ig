@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from ig_core.media.selection import ModelSelectionPolicy
 from ig_core.media.speech import SpeechCapabilities, SpeechGenerationRequest, SpeechOptions
 from ig_core.media.technical import InputRole
 from ig_core.workflows import (
@@ -29,6 +30,8 @@ class WorkflowSubmission(Contract):
     image_artifact_id: str | None = Field(default=None, min_length=1, max_length=36)
     selection: ModelConstraint | None = None
     voice_selection: ModelConstraint | None = None
+    selection_policy: ModelSelectionPolicy | None = Field(default=None, exclude_if=lambda value: value is None)
+    voice_selection_policy: ModelSelectionPolicy | None = Field(default=None, exclude_if=lambda value: value is None)
     speech: SpeechOptions | None = Field(default=None, exclude_if=lambda value: value is None)
     correlation_id: str | None = Field(default=None, min_length=1, max_length=128)
 
@@ -97,15 +100,21 @@ def build_workflow(db, tenant_id, request: WorkflowSubmission) -> GenerationWork
             SpeechGenerationRequest(text=text, **options.model_dump()))
         return SpeechOptions.model_validate(resolved.model_dump(exclude={"operation", "text"}))
 
+    if (request.selection and request.selection_policy) or (request.voice_selection and request.voice_selection_policy):
+        raise ValueError("Use either selection or selection_policy for each step")
     if request.preset == "voice_then_video":
         if request.operation or not request.dialogue or not request.image_artifact_id:
             raise ValueError("Voice → Video requires dialogue, a shot prompt and an image Artifact")
         voice_model = select("text_to_speech", request.voice_selection)
         voice = WorkflowStep(step_id="voice", operation="text_to_speech", output="audio",
                              inputs={"prompt": TextInput(value=request.dialogue)},
-                             selection=voice_model, speech=speech_options(voice_model, request.dialogue))
+                             selection=None if request.voice_selection_policy else voice_model,
+                             selection_policy=request.voice_selection_policy,
+                             speech=request.speech if request.voice_selection_policy else speech_options(voice_model, request.dialogue))
+        video_model = select("image_audio_to_video", request.selection)
         video = WorkflowStep(step_id="video", operation="image_audio_to_video", output="video",
-                             dependencies=("voice",), selection=select("image_audio_to_video", request.selection),
+                             dependencies=("voice",), selection=None if request.selection_policy else video_model,
+                             selection_policy=request.selection_policy,
                              inputs={"prompt": TextInput(value=request.prompt),
                                      "first_frame": ArtifactInput(media_type="image", role="first_frame",
                                                                   artifact_id=request.image_artifact_id),
@@ -113,7 +122,7 @@ def build_workflow(db, tenant_id, request: WorkflowSubmission) -> GenerationWork
         return GenerationWorkflow(steps=(voice, video))
 
     operation = request.operation
-    if not operation or request.dialogue or request.voice_selection:
+    if not operation or request.dialogue or request.voice_selection or request.voice_selection_policy:
         raise ValueError("Single generation requires an operation and a prompt")
     if request.speech is not None and operation != "text_to_speech":
         raise ValueError("Speech options require text_to_speech")
@@ -124,7 +133,9 @@ def build_workflow(db, tenant_id, request: WorkflowSubmission) -> GenerationWork
     if request.image_artifact_id:
         inputs["image"] = ArtifactInput(media_type="image", role=ROLES[operation][0],
                                         artifact_id=request.image_artifact_id)
-    selection = select(operation, request.selection)
-    speech = speech_options(selection, request.prompt) if operation == "text_to_speech" else None
+    selection = None if request.selection_policy else select(operation, request.selection)
+    speech = request.speech
+    if operation == "text_to_speech" and selection:
+        speech = speech_options(selection, request.prompt)
     return GenerationWorkflow(steps=(WorkflowStep(step_id="generation", operation=operation, inputs=inputs,
-                              output=output, selection=selection, speech=speech),))
+                              output=output, selection=selection, selection_policy=request.selection_policy, speech=speech),))

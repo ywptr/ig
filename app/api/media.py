@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_db
 from app.media.model_governance import ModelGovernanceError
 from app.media.speech import SpeechRequestError
+from app.media.selection import ModelSelectionError, resolve_selection
+from ig_core.media.selection import ModelSelectionResult
 from ig_core.providers.video import VideoProviderConfigurationError
 from ig_core.providers.base import ImageProviderConfigurationError
 from ig_core.media.validation import MediaRequestValidationError
@@ -41,6 +43,21 @@ def get_media_capabilities(
     db: Session = Depends(get_db),
 ):
     return media_capabilities(db, tenant_id=context.tenant.tenant_id)
+
+
+@router.post("/selection", response_model=ModelSelectionResult)
+def inspect_selection(
+    request: MediaGenerationRequest,
+    context: TenantContext = Depends(get_authenticated_tenant_context),
+    db: Session = Depends(get_db),
+):
+    if getattr(context, "caller_type", None) == "editor":
+        raise HTTPException(403, detail="Selection discovery is unavailable in the embedded editor")
+    try:
+        return resolve_selection(db, request, tenant_id=context.tenant.tenant_id,
+                                 user_id=context.membership.user_id)
+    except MediaRequestValidationError as exc:
+        raise HTTPException(400, detail={"code": "INVALID_MEDIA_REQUEST", "message": str(exc)}) from None
 
 
 @router.post(
@@ -76,6 +93,9 @@ def generate_media(
                 user_id=context.membership.user_id,
             )
 
+    except ModelSelectionError as exc:
+        raise HTTPException(400, detail={"code": "NO_ELIGIBLE_MODEL", "message": str(exc),
+                                        "selection": exc.result.snapshot().model_dump(mode="json")}) from None
     except MediaCapabilityNotAvailableError as exc:
         raise HTTPException(501, detail={"code": "CAPABILITY_NOT_AVAILABLE", "capability": exc.capability}) from exc
     except (ModelGovernanceError, MediaRequestValidationError, ImageProviderConfigurationError,

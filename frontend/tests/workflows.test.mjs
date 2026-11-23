@@ -17,7 +17,8 @@ test("Workflow requests preserve the submission key and address a specific run",
         requests.push({ url, options });
         return Response.json({});
     });
-    const submission = { preset: "single_generation", operation: "text_to_image", prompt: "Paint a cloud" };
+    const submission = { preset: "single_generation", operation: "text_to_image", prompt: "Paint a cloud",
+        selection_policy: { mode: "PREFERRED", candidates: [{ model: "model-a" }, { model: "model-b" }], allow_fallback: false } };
     await api.submitWorkflow(submission, "attempt-one");
     await api.getWorkflow("sample");
     await api.updateWorkflow("sample", "cancel");

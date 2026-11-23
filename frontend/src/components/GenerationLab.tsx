@@ -3,16 +3,16 @@ import { mentionErrors, updateAttachments } from "../lib/mentions";
 import { ReferenceAttachments } from "./ReferenceAttachments";
 import { referenceErrors } from "../lib/references";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { getMediaCapabilities, submitMedia } from "../api/media";
+import { getMediaCapabilities, inspectMediaSelection, submitMedia } from "../api/media";
 import { ApiError, safeMessage } from "../api/client";
-import { buildMediaRequest, humanize, INITIAL_FORM, matchesSubmission, pendingReceipt, resolveLabForm, resolveSpeechOptions, videoOperation, type LabForm } from "../lib/generation";
+import { buildMediaRequest, humanize, INITIAL_FORM, matchesSubmission, modelSelectionPolicy, pendingReceipt, resolveLabForm, resolveSpeechOptions, videoOperation, type LabForm } from "../lib/generation";
 import type { GenerationResult, GenerationSubmission, InterfaceLevel, MediaCapabilities, MediaType } from "../types/media";
 import { SpeechControls } from "./SpeechControls";
 import { GenerationControls } from "./GenerationControls";
 import { MediaResultCard } from "./MediaResultCard";
 import { LegacyImageHistory } from "./LegacyImageHistory";
 import { editorFormErrors, restrictedCapabilities, type EditorPolicy } from "../lib/editor";
-import type { MediaGenerationRequest } from "../types/media";
+import type { MediaGenerationRequest, ModelSelectionResult } from "../types/media";
 
 interface Props {
     results: GenerationResult[]; receipts: GenerationSubmission[]; loading: boolean;
@@ -30,6 +30,9 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [acceptedMessage, setAcceptedMessage] = useState(false);
+    const [eligibility, setEligibility] = useState<ModelSelectionResult | null>(null);
+    const [selectionError, setSelectionError] = useState("");
+    const checkingSelection = useRef<AbortController | null>(null);
     const submittingRequest = useRef<AbortController | null>(null);
     useEffect(() => {
         const controller = new AbortController();
@@ -39,7 +42,10 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
             .finally(() => { if (!controller.signal.aborted) setCapLoading(false); });
         return () => controller.abort();
     }, [revision, editor]);
-    useEffect(() => () => submittingRequest.current?.abort(), []);
+    useEffect(() => () => {
+        submittingRequest.current?.abort();
+        checkingSelection.current?.abort();
+    }, []);
     const resolved = capabilities ? resolveLabForm(capabilities, form) : null;
     const attachmentErrors = resolved ? [...referenceErrors(form.references, resolved.referenceSlots), ...mentionErrors(form, resolved.referenceSlots)] : [];
     const preservedErrors = editor && capabilities ? editorFormErrors(capabilities, form) : [];
@@ -47,7 +53,29 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     if (editor?.policy.allowed_operations.length && !editor.policy.allowed_operations.includes(operation)) preservedErrors.push("This operation is excluded by the editor policy.");
     function update(patch: Partial<LabForm>) {
         setDraftTouched(true);
+        checkingSelection.current?.abort();
+        setEligibility(null);
+        setSelectionError("");
         setForm(previous => ({ ...(!editor && capabilities ? resolveLabForm(capabilities, previous).values : previous), ...patch }));
+    }
+    function requestForSubmission(catalog: MediaCapabilities): MediaGenerationRequest {
+        const request = buildMediaRequest(catalog, form);
+        if (editor) return request;
+        const model = request.advanced?.model ?? resolved?.provider?.default_model;
+        return { ...request, advanced: undefined, selection_policy: modelSelectionPolicy(request.advanced?.provider, model ?? undefined) };
+    }
+    async function checkSelection() {
+        if (!capabilities) return;
+        checkingSelection.current?.abort();
+        const controller = new AbortController();
+        checkingSelection.current = controller;
+        setSelectionError("");
+        try {
+            const result = await inspectMediaSelection(requestForSubmission(capabilities), controller.signal);
+            if (!controller.signal.aborted) setEligibility(result);
+        } catch (failure) {
+            if (!controller.signal.aborted) setSelectionError(safeMessage(failure instanceof Error ? failure.message : null));
+        }
     }
     async function generate(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -56,7 +84,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
         submittingRequest.current = controller;
         setSubmitting(true); setSubmitError(null); setAcceptedMessage(false);
         try {
-            const receipt = await (editor?.submit ?? submitMedia)(buildMediaRequest(capabilities, form), controller.signal);
+            const receipt = await (editor?.submit ?? submitMedia)(requestForSubmission(capabilities), controller.signal);
             if (!controller.signal.aborted) { onAccepted(receipt); setAcceptedMessage(true); }
         } catch (error) {
             if (!controller.signal.aborted) {
@@ -73,7 +101,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     const unmatched = receipts.filter(receipt => !results.some(result => matchesSubmission(result, receipt)));
     return <>
         <div className="lab-heading"><div><h1>{editor ? "Advanced Generation Editor" : "Generation Lab"}</h1><p>Generate media through your tenant’s available capabilities.</p></div>
-            <button type="button" className="secondary-button" disabled={capLoading} onClick={() => { setCapLoading(true); setCapError(null); setRevision(value => value + 1); }}>Refresh capabilities</button></div>
+            <button type="button" className="secondary-button" disabled={capLoading} onClick={() => { checkingSelection.current?.abort(); setEligibility(null); setSelectionError(""); setCapLoading(true); setCapError(null); setRevision(value => value + 1); }}>Refresh capabilities</button></div>
         {capLoading && <p role="status">Loading generation capabilities…</p>}
         {capError && <div className="error" role="alert">{capError} You can still use Jobs and Executions.</div>}
         {editor && !draftTouched && editor.draftErrors.map(message => <p key={message} role="alert" className="error">{message}</p>)}
@@ -105,7 +133,13 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                         {resolved.provider && capabilities.interface_levels[form.mode].explicit_model_selection && <label>Model
                             <select value={editor ? form.model : resolved.values.model} onChange={event => update({ model: event.target.value })}>
                                 <option value="" disabled={!resolved.provider.default_model_available}>Auto · provider default</option>
-                                {resolved.models.map(model => <option key={model.id} value={model.id}>{model.display_name}{model.lifecycle?.deprecated ? " (deprecated)" : ""}</option>)}
+                                {resolved.models.map(model => {
+                                    const assessment = eligibility?.evaluations.find(item =>
+                                        item.candidate.provider === resolved.provider?.id && item.candidate.model === model.id);
+                                    return <option key={model.id} value={model.id} disabled={assessment?.eligible === false}>
+                                        {model.display_name}{model.lifecycle?.deprecated ? " (deprecated)" : ""}{assessment && !assessment.eligible ? " · incompatible" : ""}
+                                    </option>;
+                                })}
                             </select></label>}
                     </fieldset> : <p className="lab-help">Provider / model: <strong>Auto</strong></p>}
                     {resolved.speech && <SpeechControls capabilities={resolved.speech}
@@ -120,7 +154,15 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                             allowUpload={editor?.policy.upload ?? true} onChange={references => update(updateAttachments(form, references))} />
                     </fieldset>}
                     {attachmentErrors.length > 0 && <p className="error" role="alert">{attachmentErrors[0]}</p>}
-                    <button className="generate-button" type="submit" disabled={!resolved.usable || !form.prompt.trim() || (!!resolved.speech && form.prompt.trim().length > resolved.speech.max_text_characters) || submitting || attachmentErrors.length > 0 || preservedErrors.length > 0}>
+                    {!editor && <button type="button" className="secondary-button" disabled={!form.prompt.trim() || attachmentErrors.length > 0}
+                        onClick={() => void checkSelection()}>Check model eligibility</button>}
+                    {selectionError && <p role="alert">{selectionError}</p>}
+                    {eligibility && <div aria-live="polite">
+                        <p>{eligibility.selected ? `IG selected ${eligibility.selected.provider} / ${eligibility.selected.model}` : "No eligible model for these inputs."}</p>
+                        <ul>{eligibility.evaluations.filter(item => item.eligible || item.candidate.provider === resolved.values.provider).map(item =>
+                            <li key={`${item.candidate.provider}/${item.candidate.model}`}>{item.candidate.model} · {item.eligible ? "Eligible" : item.reasons.map(reason => reason.message).join(", ")}</li>)}</ul>
+                    </div>}
+                    <button className="generate-button" type="submit" disabled={(eligibility !== null && eligibility.selected === null) || !resolved.usable || !form.prompt.trim() || (!!resolved.speech && form.prompt.trim().length > resolved.speech.max_text_characters) || submitting || attachmentErrors.length > 0 || preservedErrors.length > 0}>
                         {submitting ? "Submitting…" : `Generate ${resolved.values.media}`}</button>
                 </fieldset>
             </>}

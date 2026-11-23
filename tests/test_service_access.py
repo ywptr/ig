@@ -78,6 +78,14 @@ class ServiceAccessTests(contracts.ImageExecutionTestCase):
         response = self.client.get("/v2/media/capabilities", headers={**self.headers(), "host": "service.invalid"})
         self.assertEqual(response.status_code, 200, response.text)
 
+    def test_model_selection_uses_discovery_scope_and_creates_no_job(self):
+        body = {"media_type": "image", "intent": {"description": "Castle"}}
+        for scope, code in (("media:discover", 200), ("media:generate", 403)):
+            with self.subTest(scope=scope):
+                result = self.client.post("/v2/media/selection", json=body, headers=self.headers(scope=scope))
+                self.assertEqual(result.status_code, code, result.text)
+        self.assertEqual(self.job_count(), 0)
+
     def test_missing_credential_requires_authentication(self):
         self.assertEqual(self.client.get("/v2/media/capabilities").status_code, 401)
 

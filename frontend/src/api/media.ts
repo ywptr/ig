@@ -1,5 +1,5 @@
 import { requestJSON } from "./client";
-import type { GenerationSubmission, MediaCapabilities, MediaGenerationRequest, MediaSubmission } from "../types/media";
+import type { GenerationSubmission, MediaCapabilities, MediaGenerationRequest, MediaSubmission, ModelSelectionResult } from "../types/media";
 
 function validRange(value: unknown): boolean {
     if (!value || typeof value !== "object") return false;
@@ -44,6 +44,12 @@ export async function getMediaCapabilities(signal?: AbortSignal): Promise<MediaC
         if (valid) return value;
     } catch { /* Report invalid discovery data locally; preserve the other views. */ }
     throw new Error("IG returned an invalid capability document. Please retry.");
+}
+
+export function inspectMediaSelection(request: MediaGenerationRequest, signal?: AbortSignal) {
+    return requestJSON<ModelSelectionResult>("/v2/media/selection", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal,
+    });
 }
 
 export async function submitMedia(request: MediaGenerationRequest, signal?: AbortSignal, attemptId?: string): Promise<GenerationSubmission> {

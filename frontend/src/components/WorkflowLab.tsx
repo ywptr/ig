@@ -5,13 +5,18 @@ import { getWorkflow, getWorkflowPresets, submitWorkflow, updateWorkflow, type W
 import { useActivePolling } from "../hooks/useActivePolling";
 import { ArtifactAudio } from "./ArtifactAudio";
 import { SpeechControls } from "./SpeechControls";
-import { resolveSpeechOptions } from "../lib/generation";
-import type { Artifact, SpeechOptions } from "../types/media";
+import { modelSelectionPolicy, resolveSpeechOptions } from "../lib/generation";
+import type { Artifact, ModelSelectionPolicy, SpeechOptions } from "../types/media";
 import { ArtifactPreviewImage } from "./ArtifactPreviewImage";
 
 const active = (run: WorkflowRun) => ["queued", "running", "cancel_requested"].includes(run.status);
 const label = (operation: string) => operation.replaceAll("_", " ");
 const errorMessage = (error: unknown) => safeMessage(error instanceof Error ? error.message : null);
+
+function modelPolicy(models: WorkflowPlanStep["models"], index: string): ModelSelectionPolicy {
+    const model = index ? models[Number(index)] : undefined;
+    return modelSelectionPolicy(model?.provider, model?.model);
+}
 
 function WorkflowDetails({ initial }: { initial: WorkflowRun }) {
     const load = useCallback((signal: AbortSignal) => getWorkflow(initial.workflow_id, signal), [initial.workflow_id]);
@@ -42,17 +47,25 @@ function WorkflowDetails({ initial }: { initial: WorkflowRun }) {
             <button type="button" disabled={busy} onClick={() => void act("retry")}>Retry failed step</button>}
         {(actionError || error) && <p role="alert">{actionError || error}</p>}
         <ol>
-            {run.steps.map((step, index) => <li key={step.step_id}>
-                <h3>{label(step.operation)}</h3>
-                <p>{label(step.status)}{step.job_ids.length ? ` · Attempt ${step.job_ids.length}` : ""}</p>
-                {step.selection && <p>{step.selection.provider} / {step.selection.model}</p>}
-                {step.speech?.voice && <p>Voice {step.speech.voice}</p>}
-                {step.error && <p>{step.error}</p>}
-                {Object.entries(step.inputs).filter(([, input]) => input.kind !== "text").map(([name, input]) => {
-                    const source = run.steps.find(other => other.step_id === input.step_id);
-                    const id = input.artifact_id ?? source?.outputs[0]?.artifact_id;
-                    return <p key={name}>{label(name)} {id ? <a href={artifactContentUrl(id)}>{id}</a> : `from ${input.step_id}`}</p>;
-                })}
+            {run.steps.map((step, index) => {
+                const resolution = step.selection_rejection ?? step.selection_resolution;
+                const selected = step.selection_resolution?.selected ?? step.selection;
+                return <li key={step.step_id}>
+                    <h3>{label(step.operation)}</h3>
+                    <p>{label(step.status)}{step.job_ids.length ? ` · Attempt ${step.job_ids.length}` : ""}</p>
+                    {(step.selection_policy || resolution) && <p>Selection mode {step.selection_policy?.mode ?? resolution?.policy.mode}</p>}
+                    {selected && <p>{selected.provider} / {selected.model}</p>}
+                    {resolution && <p>{label(resolution.reason).toLowerCase()}{resolution.fallback_used && " · fallback used"}</p>}
+                    {resolution?.rejected?.map(item => <p key={`${item.candidate.provider ?? ""}/${item.candidate.model}`}>
+                        {item.candidate.model} · {item.reasons.map(reason => reason.message).join(", ")}
+                    </p>)}
+                    {step.speech?.voice && <p>Voice {step.speech.voice}</p>}
+                    {step.error && <p>{step.error}</p>}
+                    {Object.entries(step.inputs).filter(([, input]) => input.kind !== "text").map(([name, input]) => {
+                        const source = run.steps.find(other => other.step_id === input.step_id);
+                        const id = input.artifact_id ?? source?.outputs[0]?.artifact_id;
+                        return <p key={name}>{label(name)} {id ? <a href={artifactContentUrl(id)}>{id}</a> : `from ${input.step_id}`}</p>;
+                    })}
                 {step.outputs.map(output => <div key={output.artifact_id}>
                     <p>{index === run.steps.length - 1 ? "Final" : "Intermediate"} {output.media_type} · {output.filename || output.artifact_id}{output.mime_type && ` · ${output.mime_type}`}</p>
                     {output.media_type === "audio" ? <ArtifactAudio artifactId={output.artifact_id} /> : <ArtifactPreviewImage artifactId={output.artifact_id}
@@ -60,7 +73,8 @@ function WorkflowDetails({ initial }: { initial: WorkflowRun }) {
                     <p><a href={artifactContentUrl(output.artifact_id)} target="_blank" rel="noreferrer">Open {output.media_type} original</a>
                         {" · "}<code>{output.artifact_id}</code></p>
                 </div>)}
-            </li>)}
+            </li>;
+            })}
         </ol>
     </section>;
 }
@@ -128,12 +142,6 @@ export function WorkflowLab() {
         window.history.replaceState(window.history.state, "", url);
     }
 
-    function modelAt(models: WorkflowPlanStep["models"], index: string) {
-        if (!index) return undefined;
-        const selected = models[Number(index)];
-        return selected ? { provider: selected.provider, model: selected.model } : undefined;
-    }
-
     async function submit() {
         setBusy(true);
         setError("");
@@ -143,8 +151,8 @@ export function WorkflowLab() {
             prompt,
             dialogue: isVoice ? dialogue : undefined,
             image_artifact_id: requiresImage ? imageId.trim() : undefined,
-            selection: modelAt(outputStep?.models ?? [], modelIndex),
-            voice_selection: isVoice ? modelAt(plan[0]?.models ?? [], voiceModelIndex) : undefined,
+            selection_policy: modelPolicy(outputStep?.models ?? [], modelIndex),
+            voice_selection_policy: isVoice ? modelPolicy(plan[0]?.models ?? [], voiceModelIndex) : undefined,
             speech: speech ? resolveSpeechOptions(speech, speechOptions) : undefined,
         };
         const serialized = JSON.stringify(input);

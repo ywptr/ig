@@ -107,7 +107,9 @@ window.fetch = async (url, options = {}) => {
         if (input.operation === 'text_to_video') return reply({
             workflow_id: 'video-run', preset: 'single_generation', status: 'completed',
             steps: [{ ...run.steps[0], operation: 'text_to_video', status: 'completed', inputs: {},
-                selection: input.selection, outputs: [{ ...output, filename: 'result.mp4', media_type: 'video' }] }],
+                selection_policy: input.selection_policy,
+                selection_resolution: { policy: input.selection_policy, selected: input.selection_policy?.candidates?.[0],
+                    reason: "LOCKED_MODEL", fallback_used: false }, outputs: [{ ...output, filename: 'result.mp4', media_type: 'video' }] }],
         });
         if (input.operation === 'text_to_speech') return reply({
             workflow_id: 'speech-run', preset: 'single_generation', status: 'completed',
@@ -131,7 +133,10 @@ window.fetch = async (url, options = {}) => {
     if (url === '/v2/workflows/video-run') return reply({
         workflow_id: 'video-run', status: 'completed',
         steps: [{ ...run.steps[0], operation: 'text_to_video', status: 'completed', inputs: {},
-            selection: window.workflowCalls.at(-1).selection,
+            selection_policy: window.workflowCalls.at(-1).selection_policy,
+            selection_resolution: { policy: window.workflowCalls.at(-1).selection_policy,
+                selected: window.workflowCalls.at(-1).selection_policy?.candidates?.[0],
+                reason: "LOCKED_MODEL", fallback_used: false },
             outputs: [{ ...output, filename: 'result.mp4', media_type: 'video' }] }],
     });
     if (url === '/v2/workflows/speech-run') return reply({
@@ -335,6 +340,7 @@ test("native-audio video is discovered and submitted through both Labs", { skip:
         await click("Generate video");
         await wait("window.videoRequest");
         assert.equal(await evaluate("window.videoRequest.output.audio"), true);
+        assert.equal(await evaluate("window.videoRequest.selection_policy.mode"), "AUTO");
         assert.equal(await evaluate("window.videoRequest.output.resolution"), "4k");
 
         await click("Workflow Lab");
@@ -345,7 +351,8 @@ test("native-audio video is discovered and submitted through both Labs", { skip:
         await change(".workflow-lab textarea", "A quiet street.");
         await click("Run workflow");
         await wait("document.body.textContent.includes('Final video')");
-        assert.equal(await evaluate("window.workflowCalls.at(-1).selection.model"), "native-video");
+        assert.equal(await evaluate("window.workflowCalls.at(-1).selection_policy.candidates[0].model"), "native-video");
         assert.equal(await evaluate("document.body.textContent.includes('cinema / native-video')"), true);
+        assert.equal(await evaluate("document.body.textContent.includes('Selection mode LOCKED') && document.body.textContent.includes('locked model')"), true);
     });
 });

@@ -219,7 +219,7 @@ def enforce_policy(session, request):
     policy = session.policy
     operation = video_operation(ref.role for ref in request.references) if request.media_type == "video" else (
         "reference_image_conditioning" if request.references else "text_to_image")
-    if (request.media_type not in policy["allowed_media"] or
+    if (request.selection_policy is not None or request.media_type not in policy["allowed_media"] or
         request.strategy != "single" or request.output.layout.type != "single" or
         (policy["allowed_operations"] and operation not in policy["allowed_operations"]) or
         (not policy["model_switching"] and request.advanced != original.advanced) or

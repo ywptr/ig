@@ -15,6 +15,7 @@ from app.jobs.cancellation import JobCancelled, acknowledge_cancellation
 logger = logging.getLogger(__name__)
 TERMINAL = {"completed", "failed", "canceled"}
 VIDEO_FAILURE_MESSAGES = {
+    "VIDEO_PROVIDER_CONFIGURATION_UNAVAILABLE": "Accepted video provider or model is unavailable; upstream work may continue",
     "VIDEO_PENDING_TIMEOUT": "Video operation exceeded its overall deadline; provider cancellation was not performed",
     "VIDEO_SUBMISSION_UNCERTAIN": "Video submission outcome is uncertain; automatic resubmission is disabled",
     "VIDEO_CHECKPOINT_INVALID": "Video execution checkpoint is inconsistent; operator inspection required",

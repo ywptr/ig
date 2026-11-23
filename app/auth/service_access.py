@@ -18,6 +18,7 @@ from app.auth.service_contract import AUDIENCE, TOKEN_TYPE, MAX_TOKEN_SECONDS, S
 # Default deny: actor admin membership never grants a service administrative access.
 ROUTE_SCOPES = {
     ("POST", "app.api.editor.create_editor_session"): ("editor:launch", "/v2/editor/sessions"),
+    ("POST", "app.api.media.inspect_selection"): ("media:discover", "/v2/media/selection"),
     ("GET", "app.api.media.get_media_capabilities"): ("media:discover", "/v2/media/capabilities"),
     ("POST", "app.api.media.generate_media"): ("media:generate", "/v2/media/generations"),
     ("GET", "app.api.jobs.list_jobs"): ("jobs:read", "/v2/jobs"),

@@ -13,7 +13,9 @@ from ig_core.media.constraints import (
 #### Validation logic for media generation requests
 
 class MediaRequestValidationError(ValueError):
-    pass
+    def __init__(self, message: str, *, code: str = "TECHNICAL_INCOMPATIBILITY"):
+        super().__init__(message)
+        self.code = code
 
 
 ALLOWED_ASPECT_RATIOS = {
@@ -150,9 +152,9 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     if technical is None:
         raise MediaRequestValidationError("Model capabilities are unknown")
     if request.media_type not in technical.output_media:
-        raise MediaRequestValidationError("Model does not support requested output media")
+        raise MediaRequestValidationError("Model does not support requested output media", code="OUTPUT_MEDIA_UNSUPPORTED")
     if "text" not in technical.input_media:
-        raise MediaRequestValidationError("Model does not accept text input")
+        raise MediaRequestValidationError("Model does not accept text input", code="INPUT_MEDIA_UNSUPPORTED")
     if not request.references:
         operation = {"image": "text_to_image", "video": "text_to_video"}.get(request.media_type)
         if operation is None or operation not in technical.operations:
@@ -160,7 +162,7 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     references = validate_reference_shape(request.references, technical.reference_inputs)
     controls = metadata.capabilities
     if request.interface_level not in metadata.supported_interface_levels:
-        raise MediaRequestValidationError("Unsupported interface level for model")
+        raise MediaRequestValidationError("Unsupported interface level for model", code="INTERFACE_LEVEL_UNSUPPORTED")
     if (not controls.count.min <= request.output.count <= controls.count.max
         or request.output.layout.type not in controls.layout_types
         or (request.media_type == "image" and (request.output.quality not in controls.quality_profiles
@@ -169,8 +171,10 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     if request.output.layout.type == "panel_grid" and request.output.layout.panel_count not in controls.panel_counts:
         raise MediaRequestValidationError("Unsupported model panel count")
     if request.media_type == "video":
-        if (not request.references and not controls.text_to_media) or len(request.references) > controls.max_references:
-            raise MediaRequestValidationError("Unsupported model generation inputs")
+        if not request.references and not controls.text_to_media:
+            raise MediaRequestValidationError("Unsupported model generation inputs", code="OPERATION_UNSUPPORTED")
+        if len(request.references) > controls.max_references:
+            raise MediaRequestValidationError("Unsupported model generation inputs", code="REFERENCE_COUNT_UNSUPPORTED")
         has_audio = any("audio" in slot.media_types and values["role"] == "voice_track"
                         for values, slot in references)
         has_image = any("image" in slot.media_types and values["role"] != "voice_track"
@@ -180,36 +184,37 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
                 or (has_image and "image" not in technical.input_media)):
             raise MediaRequestValidationError("Model does not support requested video operation")
         if request.interface_level not in metadata.supported_interface_levels:
-            raise MediaRequestValidationError("Unsupported interface level for model")
+            raise MediaRequestValidationError("Unsupported interface level for model", code="INTERFACE_LEVEL_UNSUPPORTED")
         if not controls.count.min <= request.output.count <= controls.count.max or request.output.layout.type not in controls.layout_types:
             raise MediaRequestValidationError("Unsupported model count/layout")
     if request.references and request.media_type != "video" and (
         "image" not in technical.input_media or "reference_image_conditioning" not in technical.operations
     ):
-        raise MediaRequestValidationError("Model does not support reference images")
+        raise MediaRequestValidationError("Model does not support reference images", code="INPUT_MEDIA_UNSUPPORTED")
     if not technical.reference_inputs and len(request.references) > controls.max_references:
-        raise MediaRequestValidationError("Too many reference images for model")
+        raise MediaRequestValidationError("Too many reference images for model", code="REFERENCE_COUNT_UNSUPPORTED")
     image_reference_count = sum("image" in slot.media_types and values.get("role") != "voice_track"
                                 for values, slot in references)
     if image_reference_count > 1 and "multi_reference_conditioning" not in technical.operations:
-        raise MediaRequestValidationError("Model does not support multiple references")
+        raise MediaRequestValidationError("Model does not support multiple references", code="REFERENCE_COUNT_UNSUPPORTED")
     ratio = request.output.aspect_ratio
     if ratio is not None and ratio not in controls.aspect_ratios:
-        raise MediaRequestValidationError(f"Unsupported video aspect ratio: {ratio}" if request.media_type == "video" else "Unsupported model aspect ratio")
+        message = f"Unsupported video aspect ratio: {ratio}" if request.media_type == "video" else "Unsupported model aspect ratio"
+        raise MediaRequestValidationError(message, code="ASPECT_RATIO_UNSUPPORTED")
     if technical.max_prompt_characters and len(request.intent.description) > technical.max_prompt_characters:
-        raise MediaRequestValidationError("Prompt exceeds model limit")
+        raise MediaRequestValidationError("Prompt exceeds model limit", code="PROMPT_LIMIT_EXCEEDED")
     duration = getattr(request.output, "duration_seconds", None)
     if duration is not None and (controls.duration_seconds is None or not
         controls.duration_seconds.min <= duration <= controls.duration_seconds.max):
-        raise MediaRequestValidationError("Unsupported model duration")
+        raise MediaRequestValidationError("Unsupported model duration", code="DURATION_UNSUPPORTED")
     resolution = getattr(request.output, "resolution", None)
     if resolution is not None and resolution not in controls.resolutions:
-        raise MediaRequestValidationError("Unsupported model resolution")
+        raise MediaRequestValidationError("Unsupported model resolution", code="RESOLUTION_UNSUPPORTED")
     if (request.media_type == "video" and controls.native_audio_required
             and "audio" in request.output.model_fields_set and not request.output.audio):
-        raise MediaRequestValidationError("Selected video model requires native audio")
+        raise MediaRequestValidationError("Selected video model requires native audio", code="NATIVE_AUDIO_REQUIRED")
     if getattr(request.output, "audio", False) and not controls.audio:
-        raise MediaRequestValidationError("Model does not support audio output")
+        raise MediaRequestValidationError("Model does not support audio output", code="NATIVE_AUDIO_UNSUPPORTED")
 
 
 def validate_resolved_video(request, metadata):
@@ -234,13 +239,13 @@ def validate_reference_shape(references, slots):
         values = ref if isinstance(ref, dict) else ref.model_dump()
         slot = next((slot for slot in slots if values.get("role", "previous_output") in slot.roles), None)
         if slot is None:
-            raise MediaRequestValidationError("Unsupported reference role")
+            raise MediaRequestValidationError("Unsupported reference role", code="REFERENCE_SLOT_UNSUPPORTED")
         strength = values.get("strength")
         if strength is not None and strength not in slot.strengths:
-            raise MediaRequestValidationError("Unsupported reference strength")
+            raise MediaRequestValidationError("Unsupported reference strength", code="REFERENCE_STRENGTH_UNSUPPORTED")
         counts[slot.name] += 1
         selected.append((values, slot))
     for slot in slots:
         if not slot.min_count <= counts[slot.name] <= slot.max_count:
-            raise MediaRequestValidationError("Unsupported reference count for input slot")
+            raise MediaRequestValidationError("Unsupported reference count for input slot", code="REFERENCE_COUNT_UNSUPPORTED")
     return selected

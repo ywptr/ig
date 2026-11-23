@@ -152,3 +152,13 @@ test("a discovered native-audio video model sends its required audio and support
     });
     assert.equal(buildMediaRequest(caps, form({ media: "video", audio: false })).output.audio, false);
 });
+
+
+test("Lab selection defaults to AUTO and a complete model choice is exact", async () => {
+    const { modelSelectionPolicy } = await import(sourceURL("lib/generation"));
+    assert.deepEqual(modelSelectionPolicy(), { mode: "AUTO" });
+    assert.deepEqual(modelSelectionPolicy("studio"), { mode: "AUTO" });
+    assert.deepEqual(modelSelectionPolicy("studio", "model-a"), {
+        mode: "LOCKED", candidates: [{ provider: "studio", model: "model-a" }],
+    });
+});

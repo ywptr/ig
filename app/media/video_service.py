@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.artifacts.storage.provider import artifact_store
-from app.media.model_governance import ModelGovernanceError, resolve_model, validate_selected_model
+from app.media.model_governance import ModelGovernanceError, registered_model, resolve_model
 from ig_core.media.validation import MediaRequestValidationError
 from app.media.providers.registry import VIDEO_PROVIDERS, create_video_provider, video_provider_registration
 from ig_core.providers.video import ResolvedVideoReference, VideoProviderConfigurationError
@@ -22,7 +22,10 @@ def load_video_provider(db: Session, *, tenant_id: str, provider: str, model: st
     config = get_provider_config(db, tenant_id=tenant_id, provider=provider)
     if not config or not config.enabled:
         raise VideoProviderConfigurationError("Video provider is not enabled for this tenant")
-    validate_selected_model(video_provider_registration(provider), config.config_json or {}, "video", model)
+    try:
+        registered_model(video_provider_registration(provider), model)
+    except ModelGovernanceError as exc:
+        raise VideoProviderConfigurationError(str(exc)) from None
     credentials = get_provider_credentials(db, tenant_id=tenant_id, provider=provider)
     return create_video_provider(provider, credentials=credentials, config=config.config_json or {}, model=model)
 

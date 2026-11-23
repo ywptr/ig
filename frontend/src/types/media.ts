@@ -115,7 +115,28 @@ export interface VideoOutput {
     duration_seconds?: number;
     audio: boolean;
 }
+export interface ModelCandidate { provider?: string | null; model: string }
+export type ModelSelectionPolicy =
+    | { mode: "AUTO" }
+    | { mode: "LOCKED"; candidates: [{ provider: string; model: string }] }
+    | { mode: "PREFERRED"; candidates: ModelCandidate[]; allow_fallback: boolean };
+export interface ModelEligibility {
+    candidate: ModelCandidate;
+    eligible: boolean;
+    reasons: { code: string; message: string }[];
+}
+export interface SelectionSnapshot {
+    policy: ModelSelectionPolicy;
+    selected: ModelCandidate | null;
+    reason: string;
+    fallback_used: boolean;
+    rejected?: ModelEligibility[];
+}
+export interface ModelSelectionResult extends SelectionSnapshot {
+    evaluations: ModelEligibility[];
+}
 export type MediaGenerationRequest = {
+    selection_policy?: ModelSelectionPolicy;
     interface_level: InterfaceLevel;
     intent: { description: string };
     advanced?: { provider: string; model?: string };

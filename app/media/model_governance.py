@@ -40,7 +40,7 @@ def enabled_model_ids(adapter, config, media):
 
 
 def validate_selected_model(adapter, config, media, model):
-    """For pinned work, validate eligibility without resolving current defaults."""
+    """Validate an exact model against current admission policy."""
     metadata = registered_model(adapter, model)
     if not model_is_current(metadata):
         raise ModelGovernanceError("Selected model is sunset and no longer supported")

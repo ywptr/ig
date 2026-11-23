@@ -61,3 +61,7 @@ Alembic revision `1a0014000014` adds only `media_workflows` and its constraints 
 ## Kling video
 
 Kling 4.0 supports the single-step text, first-frame, and image-reference video paths. Workflow Lab shows that native audio is included. Kling's voice-profile references carry speaker identity rather than an externally generated audio track, so `voice_then_video` stays unavailable. [Kling video](kling-video.md)
+
+### Step model selection
+
+A step can supply `selection_policy` with AUTO, ordered PREFERRED candidates, or an exact LOCKED candidate. Preset submissions accept `selection_policy` for the generation or video step and `voice_selection_policy` for the voice step. The engine evaluates the normalized request when step inputs resolve. A completed step retains its Artifacts. A retry uses the previous Job's accepted provider/model when available. Workflow detail exposes the selection decision and any later rejection. See [Media model selection](media-model-selection.md).

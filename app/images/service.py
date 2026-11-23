@@ -3,7 +3,8 @@ import uuid
 from sqlalchemy.orm import Session
 from app.db.models import ImageRequest
 from app.jobs.service import create_job
-from app.media.routing import resolve_image_selection
+from app.media.routing import MediaSelection, resolve_image_selection
+from app.media.selection import accept_selection, legacy_snapshot
 from ig_core.media.schemas import MediaGenerationRequest
 from ig_core.media.validation import validate_media_request
 
@@ -15,6 +16,7 @@ def submit_image_generation(
     user_id: str,
     media_request: dict | None = None,
     defer_dispatch: bool = False,
+    accepted_candidate=None,
 ) -> ImageRequest:
     if media_request is None:
         job_input = {
@@ -32,12 +34,20 @@ def submit_image_generation(
         key: value for key, value in job_input.items() if key in MediaGenerationRequest.model_fields
     })
     validate_media_request(request)
-    selection = resolve_image_selection(db, request, tenant_id=tenant_id)
-    from app.artifacts.references import reference_slots, resolve_references
-    resolve_references(db, request.references, slots=reference_slots(selection.provider, selection.model, "image"),
-                       tenant_id=tenant_id, user_id=user_id)
+    if request.selection_policy is not None:
+        candidate, audit = accept_selection(db, request, tenant_id=tenant_id, user_id=user_id, accepted_candidate=accepted_candidate)
+        selection = MediaSelection(provider=candidate.provider, model=candidate.model,
+                                   purpose=request.output.purpose, reason=audit["reason"])
+    else:
+        selection = resolve_image_selection(db, request, tenant_id=tenant_id)
+        from app.artifacts.references import reference_slots, resolve_references
+        resolve_references(db, request.references, slots=reference_slots(selection.provider, selection.model, "image"),
+                           tenant_id=tenant_id, user_id=user_id)
+        audit = legacy_snapshot(request, selection.provider, selection.model, selection.reason)
     request_id = str(uuid.uuid4())
     job_input = {**job_input, "request_id": request_id, "selection": selection.model_dump()}
+    if media_request is not None:
+        job_input["selection_audit"] = audit
 
     image_record = ImageRequest(
         request_id=request_id, tenant_id=tenant_id, user_id=user_id,
