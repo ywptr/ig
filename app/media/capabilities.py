@@ -3,7 +3,7 @@ from typing import get_args
 from sqlalchemy.orm import Session
 from app.media.capability_schemas import InterfaceSelection, MediaCapabilities, MediaCapability, ModelCapability, ProviderCapability
 from ig_core.media.constraints import EXPLICIT_SELECTION_LEVELS
-from app.media.providers.registry import IMAGE_PROVIDERS, VIDEO_PROVIDERS
+from app.media.providers.registry import MEDIA_PROVIDERS
 from ig_core.media.schemas import InterfaceLevel, ImagePurpose
 from app.media.routing import normal_image_selection
 from app.media.model_governance import model_policy, model_is_current, enabled_model_ids, ModelGovernanceError
@@ -14,7 +14,7 @@ def media_capabilities(db: Session, *, tenant_id: str, configurations=None) -> M
     if configurations is None:
         configurations = {row.provider: row for row in list_provider_configs(db, tenant_id=tenant_id)}
     media_types = []
-    for media_type, registrations in (("image", IMAGE_PROVIDERS), ("video", VIDEO_PROVIDERS)):
+    for media_type, registrations in MEDIA_PROVIDERS.items():
         providers = []
         for provider_id, adapter in registrations.items():
             row = configurations.get(provider_id)
@@ -44,7 +44,7 @@ def media_capabilities(db: Session, *, tenant_id: str, configurations=None) -> M
                     supported_interface_levels=list(model.supported_interface_levels),
                     selectable_in=[level for level in EXPLICIT_SELECTION_LEVELS if level in model.supported_interface_levels]
                         if available and model.technical else [],
-                    capabilities=model.capabilities.model_copy(deep=True), use_cases=list(model.use_cases)))
+                    speech=model.speech, capabilities=model.capabilities.model_copy(deep=True), use_cases=list(model.use_cases)))
             default_model = policy.default if policy else None
             providers.append(ProviderCapability(
                 id=provider_id, display_name=metadata.display_name, configured=configured, enabled=enabled,
@@ -56,6 +56,8 @@ def media_capabilities(db: Session, *, tenant_id: str, configurations=None) -> M
                 default_provider = normal_image_selection(configurations).provider
             except ValueError:
                 default_provider = None
+        elif media_type == "audio":
+            default_provider = next((provider.id for provider in providers if provider.default_model_available), None)
         else:
             candidates = [provider_id for provider_id in registrations if provider_id in configurations and configurations[provider_id].enabled]
             default_provider = next((provider.id for provider in providers if len(candidates) == 1

@@ -10,6 +10,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import warnings
+import wave
 
 from ig_core.artifacts.preview_policy import MAX_PIXELS, MAX_DIMENSION, MAX_VIDEO_BYTES
 
@@ -25,6 +26,11 @@ def inspect_media(data: bytes, media_type: str) -> dict:
                     width, height = image.size
                     if 0 < width <= MAX_DIMENSION and 0 < height <= MAX_DIMENSION and width * height <= MAX_PIXELS:
                         values.update(width=width, height=height)
+        elif media_type == "audio" and data.startswith(b"RIFF") and data[8:12] == b"WAVE":
+            with wave.open(BytesIO(data)) as audio:
+                rate, frames = audio.getframerate(), audio.getnframes()
+                if rate > 0 and frames > 0 and frames * audio.getsampwidth() * audio.getnchannels() <= len(data):
+                    values.update(duration_seconds=frames / rate, sample_rate=rate, codec="pcm", container="wav")
         elif media_type == "video" and len(data) <= MAX_VIDEO_BYTES:
             with TemporaryDirectory(prefix="ig-probe-") as directory:
                 source = Path(directory) / "source.bin"

@@ -17,9 +17,10 @@ infrastructure:
 Prerequisites are Docker Engine, Docker Compose 2.24.4+ (for `!override`/`!reset`),
 host PostgreSQL, host Redis, and the persistent external Docker network
 `platform-dev`. On this VM Docker 29.9.3 and Compose v5.7.0 are installed.
-The historical base Compose and production Dockerfiles remain unchanged. The
-development-only backend `Dockerfile.dev` installs `pyproject.toml` dependencies,
-including PyJWT for OIDC and the pinned Vercel packages.
+The development backend uses BuildKit to install `pyproject.toml` dependencies
+and register editable installs at the paths mounted by Compose. BuildKit’s
+temporary source mounts keep the Python sources out of the development image
+layers. Release Docker builds continue to install regular packages.
 
 ## Local configuration
 
@@ -162,17 +163,43 @@ Frontend source is mounted at `/app`; a named volume at `/app/node_modules` keep
 container-installed dependencies visible. Vite uses native filesystem watching and
 HMR over port 5181, without polling. TSX/TS/CSS edits do not require rebuilds.
 
-Python source is mounted at `/app/app`. Uvicorn uses `--reload --reload-dir /app/app`;
-Python edits restart the API process, without rebuilding/recreating its container.
-RQ workers do not automatically reload already imported application modules.
-After worker-related Python edits, use:
+The API and worker both import the application from `/app/app` and use
+editable installs of these read-only source mounts:
+
+| Package | Mount | Expected module path in both services |
+| --- | --- | --- |
+| `ig-core` | `/app/packages/ig-core` | `/app/packages/ig-core/ig_core/__init__.py` |
+| `ig-queue` | `/app/packages/ig-queue` | `/app/packages/ig-queue/ig_queue/__init__.py` |
+| `ig-storage` | `/app/packages/ig-storage` | `/app/packages/ig-storage/ig_storage/__init__.py` |
+
+Rebuild once when switching an existing stack to these editable installs. Start
+the development image with the Compose override so its editable paths are mounted.
+Verify the actual paths without relying on `PYTHONPATH`:
+
+```sh
+for service in ig ig-worker; do
+  docker compose -f compose.yaml -f compose.dev.yaml exec -T "$service" \
+    python -I -c 'import ig_core, ig_queue, ig_storage; print(ig_core.__file__, ig_queue.__file__, ig_storage.__file__, sep="\n")'
+done
+```
+
+**No rebuild required.** Ordinary Python changes under `app/` or any of the
+three package directories are visible through the mounts. Uvicorn watches
+`/app/app` and `/app/packages` and restarts its API process after Python edits.
+Vite handles frontend source changes. Restart the RQ worker to reload code it has
+already imported.
 
 ```sh
 docker compose -f compose.yaml -f compose.dev.yaml restart ig-worker
 ```
 
-Backend dependency/Dockerfile changes require `up --build -d`. After frontend
-package/lockfile changes, refresh the named dependency volume as well as the image:
+**Rebuild or reinstall required.** Changes to `pyproject.toml`, requirements,
+`uv.lock`, Dockerfiles, system/native dependencies, package build configuration,
+or the dependency graph require rebuilding the affected image or reinstalling
+the affected environment. For the backend services use
+`docker compose -f compose.yaml -f compose.dev.yaml up --build -d ig ig-worker`.
+After frontend package or lockfile changes, refresh the named dependency volume
+as well as the image:
 
 ```sh
 docker compose -f compose.yaml -f compose.dev.yaml stop ig-web
@@ -180,6 +207,22 @@ docker compose -f compose.yaml -f compose.dev.yaml build ig-web
 docker compose -f compose.yaml -f compose.dev.yaml run --rm --no-deps ig-web npm ci
 docker compose -f compose.yaml -f compose.dev.yaml up -d ig-web
 ```
+
+## Release wheel gate
+
+Run the wheel gate before marking a branch ready to merge. Use a project-compatible
+Python with pip and access to the package index or a complete local wheelhouse.
+
+```sh
+python scripts/validate-package-wheels.py
+```
+
+The gate builds each wheel, checks that its Python modules are present, audits
+imports in the wheel, installs it in a separate temporary virtual environment,
+runs `pip check`, and imports it from that environment. The standalone test
+suite runs against the installed wheel with the repository source paths excluded.
+For offline runs, set `PIP_NO_INDEX=1` and `PIP_FIND_LINKS` to the wheelhouse
+path. Set `TMPDIR` to a filesystem with room for build and install scratch space.
 
 ## Proxy and smoke checks
 
@@ -201,7 +244,10 @@ The worker should listen on `ig`. Check browser DevTools for the Vite WebSocket,
 API responses, and proxy errors. Temporarily edit a visible frontend string and
 verify HMR, then revert. Temporarily add a Python comment under `app/`, verify the
 Uvicorn reload log and health response, then revert. Container IDs must stay the
-same across these tests. No billable provider calls are needed.
+same across these tests. To verify editable packages, temporarily add a module-level
+marker to a Python file in each package and check it from a fresh `python -I`
+process in both services. Check the API reload log and health after each edit.
+Revert the markers afterward. No billable provider calls are needed.
 
 ## Validation on 2026-11-07
 

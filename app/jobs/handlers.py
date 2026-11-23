@@ -1,3 +1,4 @@
+from app.media.speech import execute_speech_generation
 from app.images.tasks import execute_image_generation
 from app.media.video_tasks import execute_video_generation, resume_video_generation
 from typing import Protocol
@@ -24,6 +25,7 @@ HANDLERS = {
     "system.noop": noop,
     "image.generate": execute_image_generation,
     "video.generate": execute_video_generation,
+    "audio.generate": execute_speech_generation,
 }
 
 # Public dispatch is opt-in. Generation handlers are internal orchestration

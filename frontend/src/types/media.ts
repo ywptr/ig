@@ -1,7 +1,7 @@
 export type MediaKind = "text" | "image" | "video" | "audio";
 export type GenerationOperation = "text_to_image" | "image_to_image" | "reference_image_conditioning"
     | "multi_reference_conditioning" | "text_to_video" | "image_to_video" | "image_editing"
-    | "inpainting" | "variation" | "upscale";
+    | "inpainting" | "variation" | "upscale" | "text_to_speech" | "image_audio_to_video" | "audio_to_video";
 export interface ReferenceInputSlot {
     name: string;
     media_types: MediaKind[];
@@ -29,7 +29,7 @@ export interface TechnicalCapabilities {
     output_mime_types: string[];
     max_prompt_characters: number | null;
 }
-export type MediaType = "image" | "video";
+export type MediaType = "image" | "video" | "audio";
 export type InterfaceLevel = "easy" | "medium" | "hard";
 export type JobStatus = "queued" | "running" | "waiting" | "polling" | "cancel_requested" | "canceled" | "completed" | "failed";
 export interface Range { min: number; max: number }
@@ -46,7 +46,23 @@ export interface GenerationCapabilities {
     quality_profiles: string[];
     styles: string[];
 }
+export interface SpeechOptions {
+    voice?: string;
+    output_format?: string;
+    speaking_rate?: number;
+    instructions?: string;
+}
+export interface SpeechCapabilities {
+    voices: { id: string; label: string }[];
+    default_voice: string;
+    formats: { id: string; mime_type: string }[];
+    default_format: string;
+    max_text_characters: number;
+    speaking_rate_range: [number, number] | null;
+    max_instructions_characters: number | null;
+}
 export interface MediaModel {
+    speech?: SpeechCapabilities;
     known?: boolean;
     enabled?: boolean;
     lifecycle?: { deprecated: boolean; sunset_at: string | null; replacement_model: string | null };
@@ -103,7 +119,8 @@ export type MediaGenerationRequest = {
     intent: { description: string };
     advanced?: { provider: string; model?: string };
     references?: { artifact_id: string; role: string; strength?: "loose" | "normal" | "strong" }[];
-} & ({ media_type: "image"; output: ImageOutput } | { media_type: "video"; output: VideoOutput });
+} & ({ media_type: "image"; output: ImageOutput } | { media_type: "video"; output: VideoOutput }
+    | { media_type: "audio"; operation: "text_to_speech"; output: SpeechOptions });
 export interface MediaSubmission {
     media_type: MediaType;
     request_id: string;

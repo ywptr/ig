@@ -1,15 +1,17 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim
 
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
 
-# Use the current application dependency manifest, including OIDC and queue pins.
 COPY pyproject.toml ./
-COPY packages/ig-core ./packages/ig-core
-COPY packages/ig-queue ./packages/ig-queue
-COPY packages/ig-storage ./packages/ig-storage
-COPY app ./app
-RUN pip install --no-cache-dir ./packages/ig-queue ./packages/ig-storage ./packages/ig-core .
+# BuildKit makes source available at its runtime mount paths during PEP 660
+# installation. These temporary mounts do not publish source into image layers.
+RUN --mount=type=bind,source=app,target=/app/app,ro \
+    --mount=type=bind,source=packages,target=/app/packages,rw \
+    pip install --no-cache-dir \
+        -e ./packages/ig-core -e ./packages/ig-queue -e ./packages/ig-storage -e .
 
 RUN mkdir -p /app/output
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app", "--reload-dir", "/app/packages"]

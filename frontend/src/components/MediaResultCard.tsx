@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { ArtifactAudio } from "./ArtifactAudio";
 import { ArtifactPreviewImage } from "./ArtifactPreviewImage";
 import { ArtifactLink } from "./ArtifactAsset";
 import { artifactContentUrl } from "../api/artifacts";
@@ -13,7 +14,9 @@ export const MediaResultCard = memo(function MediaResultCard({ result }: { resul
     return <article className="media-result">
         <div className="result-heading"><strong>{humanize(result.media_type)}</strong>
             <span className={`job-status ${result.status}`}>{humanize(result.status)}</span></div>
-        {url && result.artifact ? <ArtifactPreviewImage key={result.artifact.artifact_id}
+        {url && result.artifact ? result.media_type === "audio"
+            ? <ArtifactAudio artifactId={result.artifact.artifact_id} />
+            : <ArtifactPreviewImage key={result.artifact.artifact_id}
             artifactId={result.artifact.artifact_id} previewUrl={result.artifact.preview?.url}
             originalUrl={url} className="media-preview" alt={`${result.media_type} preview: ${result.prompt}`} />
             : <div className="media-placeholder">{result.status === "completed"

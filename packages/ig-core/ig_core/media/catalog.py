@@ -6,6 +6,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from ig_core.media.schemas import InterfaceLevel
+from ig_core.media.speech import SpeechCapabilities
 from ig_core.media.technical import TechnicalCapabilities
 
 
@@ -47,6 +48,7 @@ class ModelMetadata:
     supported_interface_levels: tuple[InterfaceLevel, ...] = get_args(InterfaceLevel)
     technical: TechnicalCapabilities | None = None
     lifecycle: ModelLifecycle = field(default_factory=ModelLifecycle)
+    speech: SpeechCapabilities | None = None
 
 
 @dataclass(frozen=True)

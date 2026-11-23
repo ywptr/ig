@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 import logging
 from sqlalchemy import select, update
 
@@ -6,7 +7,11 @@ from app.core.time import utc_now
 from app.db.database import SessionLocal
 from app.db.models import Job, Execution
 from app.jobs.handlers import get_handler
-from ig_core.execution.result import Pending
+from ig_core.execution.result import Completed, Pending
+from ig_core.artifacts.media_metadata import inspect_media
+from app.artifacts.service import artifact_store, persist_media_result, stage_media_result
+from app.artifacts.storage.selection import select_write_store
+from app.artifacts.orphans import discard_unpublished
 from app.jobs.cancellation import (
     JobCancelled, cancellation_scope, check_cancellation, acknowledge_cancellation,
 )
@@ -39,6 +44,8 @@ def execute_job(job_id: str) -> None:
     db = SessionLocal()
     claimed = False
     result = None
+    staged = None
+    published = False
     try:
         claim = db.execute(update(Job).where(
             Job.job_id == job_id, Job.status == "queued",
@@ -55,17 +62,24 @@ def execute_job(job_id: str) -> None:
             user_id=job.user_id, metadata={"capability": job.capability})
         capability, tenant_id, user_id = job.capability, job.tenant_id, job.user_id
         input_data, execution_id = deepcopy(job.input_json), execution.execution_id
+        if capability in {"video.generate", "audio.generate"}:
+            selection = input_data.get("selection") or {}
+            execution.provider, execution.model = selection.get("provider"), selection.get("model")
         if capability == "video.generate":
             from app.jobs.video_lifecycle import initial_metadata, audit
             execution.metadata_json = {**execution.metadata_json, "video_lifecycle": initial_metadata(utc_now())}
-            selection = input_data.get("selection") or {}
-            execution.provider, execution.model = selection.get("provider"), selection.get("model")
             audit(job, execution, "prepared")
         db.commit()
         claimed = True
         with cancellation_scope(job_id, SessionLocal), execution_scope(job_id, execution_id):
             check_cancellation()
             result = get_handler(capability)(input_data, tenant_id=tenant_id, user_id=user_id)
+            if isinstance(result, Completed) and result.artifact is not None:
+                check_cancellation()
+                properties = inspect_media(result.artifact.data, result.artifact.media_type)
+                writer = select_write_store(db, tenant_id=tenant_id, user_id=user_id, managed_store=artifact_store)
+                db.rollback()
+                staged = stage_media_result(result.artifact, writer=writer)
         if capability == "video.generate" and isinstance(result, Pending):
             # The video handler already commits the first checkpoint immediately
             # after submission, closing the extra worker-return crash window.
@@ -80,6 +94,15 @@ def execute_job(job_id: str) -> None:
             return
         job = db.scalar(select(Job).where(Job.job_id == job_id).execution_options(populate_existing=True))
         execution = db.get(Execution, execution_id, populate_existing=True)
+        if staged is not None:
+            artifact = persist_media_result(
+                db, payload=result.artifact, storage_uri=staged[0], filename=staged[1],
+                tenant_id=tenant_id, user_id=user_id, provider=result.provider, model=result.model,
+                job_id=job_id, execution_id=execution_id,
+                inputs=(input_data.get("request") or input_data).get("references") or [],
+                media_properties=properties,
+            )
+            result = replace(result, metadata={**result.metadata, "artifact_id": artifact.artifact_id})
         apply_execution_result(execution, result)
         if isinstance(result, Pending):
             wait_execution(db, execution)
@@ -90,6 +113,7 @@ def execute_job(job_id: str) -> None:
             job.status = "completed"
             job.completed_at = utc_now()
         db.commit()
+        published = staged is not None
     except JobCancelled:
         db.rollback()
         acknowledge_cancellation(db, job_id)
@@ -122,5 +146,7 @@ def execute_job(job_id: str) -> None:
         raise
     finally:
         db.close()
+        if staged is not None and not published:
+            discard_unpublished(staged[0], artifact_store, sessions=SessionLocal)
     if isinstance(result, Pending):
         schedule_continuation(job_id)

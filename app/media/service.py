@@ -82,7 +82,25 @@ def submit_media_generation(
     user_id: str,
     defer_dispatch: bool = False,
 ) -> MediaSubmission:
+    if request.media_type == "audio" and request.operation is None:
+        raise MediaCapabilityNotAvailableError(CAPABILITIES["audio"])
     validate_media_request(request)
+
+    if request.media_type == "audio":
+        from app.media.speech import SpeechRequestError, select_speech, speech_request
+
+        try:
+            selection, payload = select_speech(db, request, speech_request(request), tenant_id=tenant_id)
+        except ValueError as exc:
+            raise SpeechRequestError(str(exc)) from None
+        job = create_job(
+            db, capability="audio.generate", tenant_id=tenant_id, user_id=user_id,
+            defer_dispatch=defer_dispatch,
+            input_data={"request_version": "1", "media_type": "audio",
+                        "request": request.model_dump(), "speech": payload.model_dump(),
+                        "selection": selection},
+        )
+        return MediaSubmission("audio", job.job_id, job.status, job.job_id)
 
     if request.media_type == "video":
         selection = resolve_video_selection(db, request, tenant_id=tenant_id)

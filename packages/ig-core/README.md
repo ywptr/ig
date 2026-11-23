@@ -59,3 +59,11 @@ Sandcastle V2 may embed core for capabilities, validation and provider execution
 while keeping its own story, scene and domain reasoning, or call the IG service
 for managed execution. See the [architecture and dependency audit](../../docs/ig-core-architecture.md).
 This is an internal package with no public compatibility promise.
+
+## Speech generation
+
+`ig_core.media.speech.SpeechGenerationRequest` is a serializable speech request. Select a provider/model from its catalog, then supply an opaque voice ID and supported output format. `SpeechProvider` is the synchronous adapter protocol. The bundled `OpenAISpeechProvider` returns a bounded audio `ArtifactPayload` that a consumer can store under its own Artifact identity.
+
+To add another speech provider, advertise a `text_to_speech` model with `SpeechCapabilities`, implement `from_config` and `synthesize`, and normalize upstream errors as `SpeechProviderError`. The caller owns selection, credentials, storage, and Job state. Workflow plans bind the resulting audio by Artifact ID. The provider does not need to know about creative voice profiles or workflow state.
+
+OpenAI's `gpt-4o-mini-tts` Speech API model and formats were verified on November 20, 2026. The model is catalogued with a January 6, 2027 sunset. [Speech API reference](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create) · [OpenAI deprecations](https://developers.openai.com/api/docs/deprecations)

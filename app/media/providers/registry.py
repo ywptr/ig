@@ -1,3 +1,5 @@
+from ig_core.media.speech import SpeechProvider
+from ig_core.providers.openai.speech import OpenAISpeechProvider
 from ig_core.providers.runtime import ProviderRuntimeConfig, create_image_adapter, create_video_adapter
 from ig_core.providers.base import (
     ImageProviderAdapter,
@@ -14,6 +16,8 @@ from app.media.providers.google.image import GoogleImageProvider
 VIDEO_PROVIDERS: dict[str, type[VideoProviderAdapter]] = {"alibaba": AlibabaWanVideoProvider}
 DEFAULT_IMAGE_PROVIDER = "openai"
 IMAGE_PROVIDERS = {"openai": OpenAIImageProvider, "google": GoogleImageProvider}
+SPEECH_PROVIDERS: dict[str, type[SpeechProvider]] = {"openai": OpenAISpeechProvider}
+MEDIA_PROVIDERS = {"image": IMAGE_PROVIDERS, "video": VIDEO_PROVIDERS, "audio": SPEECH_PROVIDERS}
 
 
 def image_provider_registration(provider: str) -> type[ImageProviderAdapter]:

@@ -103,3 +103,36 @@ test("unmatched accepted receipts stop polling after a bounded recovery window",
     assert.equal(pendingReceipt(receipt, [], Date.parse(receipt.submitted_at) + 61_000), false);
     assert.equal(pendingReceipt(receipt, [{ media_type: "image", request_id: "request-1" }], Date.parse(receipt.submitted_at)), false);
 });
+
+test("speech discovery drives the request and Job result without provider assumptions", async () => {
+    const { INITIAL_FORM, buildMediaRequest, resolveLabForm, resultFromJob } = await import(sourceURL("lib/generation.ts"));
+    const speech = {
+        voices: [{ id: "opaque:one", label: "Studio One" }, { id: "opaque:two", label: "Studio Two" }],
+        formats: [{ id: "mp3", mime_type: "audio/mpeg" }, { id: "wav", mime_type: "audio/wav" }],
+        default_voice: "opaque:one", default_format: "mp3", max_text_characters: 500,
+    };
+    const capabilities = {
+        interface_levels: { hard: { explicit_provider_selection: true, explicit_model_selection: true } },
+        media_types: [{ id: "audio", available: true, default_provider: "voice-studio", purposes: [], providers: [{
+            id: "voice-studio", available: true, default_model: "studio-beta", default_model_available: true,
+            models: [{
+                id: "studio-beta", available: true, usable: true, selectable_in: ["hard"],
+                supported_interface_levels: ["hard"], speech, capabilities: {
+                    text_to_media: true, aspect_ratios: [], resolutions: [], styles: [], quality_profiles: [],
+                    layout_types: ["single"], duration_seconds: null, count: { min: 1, max: 1 },
+                },
+            }],
+        }] }],
+    };
+    const form = { ...INITIAL_FORM, mode: "hard", media: "audio", provider: "voice-studio", model: "studio-beta",
+        prompt: "A line to speak.", speech: { voice: "opaque:two", output_format: "wav" } };
+    assert.equal(resolveLabForm(capabilities, form).speech, speech);
+    const request = buildMediaRequest(capabilities, form);
+    assert.deepEqual(request, { media_type: "audio", operation: "text_to_speech", interface_level: "hard",
+        advanced: { provider: "voice-studio", model: "studio-beta" }, intent: { description: "A line to speak." },
+        output: { voice: "opaque:two", output_format: "wav" } });
+    const result = resultFromJob({ capability: "audio.generate", input: { request, selection: request.advanced }, status: "completed" });
+    assert.equal(result.media_type, "audio");
+    assert.equal(result.prompt, "A line to speak.");
+    assert.equal(result.model, "studio-beta");
+});

@@ -24,6 +24,11 @@ from ig_storage import LocalConfig, LocalStore
 SINGLE = {"preset": "single_generation", "operation": "text_to_image", "prompt": "Paint a cloud"}
 VOICE = {"preset": "voice_then_video", "prompt": "A wide shot", "dialogue": "Hello", "image_artifact_id": "frame"}
 CHOICE = {"provider": "testing", "model": "test", "label": "Test only"}
+VOICE_CHOICE = {**CHOICE, "speech": {
+    "voices": [{"id": "test-voice", "label": "Test voice"}], "default_voice": "test-voice",
+    "formats": [{"id": "wav", "mime_type": "audio/wav"}], "default_format": "wav",
+    "max_text_characters": 4096,
+}}
 
 
 class WorkflowTests(fixtures.MediaJobTestCase):
@@ -34,7 +39,7 @@ class WorkflowTests(fixtures.MediaJobTestCase):
         self.enterContext(patch("app.workflows.service.SessionLocal", self.sessions))
         self.enterContext(patch("app.jobs.worker.SessionLocal", self.sessions))
         self.enterContext(patch("app.workflows.presets.model_choices", return_value={
-            op: [CHOICE] for op in ("text_to_image", "text_to_speech", "image_audio_to_video")
+            "text_to_image": [CHOICE], "text_to_speech": [VOICE_CHOICE], "image_audio_to_video": [CHOICE],
         }))
         self.enterContext(patch("app.workflows.service.submit_step", side_effect=self.create_test_job))
         self.enterContext(patch.dict(HANDLERS, {"test.workflow": self.fake_adapter}))

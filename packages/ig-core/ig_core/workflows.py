@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from ig_core.media.schemas import MediaType
+from ig_core.media.speech import SpeechOptions
 from ig_core.media.technical import GenerationOperation, InputRole, TechnicalCapabilities
 
 Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
@@ -68,9 +69,12 @@ class WorkflowStep(Contract):
     dependencies: tuple[Identifier, ...] = ()
     selection: ModelConstraint | None = None
     output: MediaType
+    speech: SpeechOptions | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def validate_signature(self):
+        if self.speech is not None and self.operation != "text_to_speech":
+            raise ValueError("Speech options require text_to_speech")
         output, media = SIGNATURES[self.operation]
         references = [item for item in self.inputs.values() if isinstance(item, ArtifactBinding)]
         if (not isinstance(self.inputs.get("prompt"), TextInput)

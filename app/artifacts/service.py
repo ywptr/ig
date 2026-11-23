@@ -34,7 +34,9 @@ def persist_media_result(
         db, tenant_id=tenant_id, user_id=user_id, media_type=payload.media_type,
         mime_type=payload.mime_type, storage_uri=storage_uri, filename=filename,
         size_bytes=len(payload.data),
-        metadata={**payload.metadata, "provider": provider, "model": model},
+        metadata={**payload.metadata, "provider": provider, "model": model,
+                  **{key: value for key, value in (media_properties or {}).items()
+                     if key in {"sample_rate", "codec", "container"}}},
         provenance=ArtifactProvenance.GENERATED, media_properties=media_properties,
     )
     record_generation(db, artifact, inputs=inputs, job_id=job_id, execution_id=execution_id)

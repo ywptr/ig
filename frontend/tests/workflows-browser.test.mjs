@@ -31,31 +31,68 @@ import App from '/src/App.tsx';
 const image = { artifact_id: 'frame', filename: 'frame.png', media_type: 'image' };
 const output = { artifact_id: 'result', filename: 'result.png', media_type: 'image' };
 const model = { provider: 'test', model: 'canvas', label: 'Canvas' };
+const speech = {
+    voices: [{ id: 'opaque:one', label: 'Studio One' }, { id: 'opaque:two', label: 'Studio Two' }],
+    formats: [{ id: 'mp3', mime_type: 'audio/mpeg' }, { id: 'wav', mime_type: 'audio/wav' }],
+    default_voice: 'opaque:one', default_format: 'mp3', max_text_characters: 500,
+};
+const speechModel = { provider: 'studio', model: 'studio-voice', label: 'Studio Voice', speech };
+const rules = explicit => ({ explicit_provider_selection: explicit, explicit_model_selection: explicit });
+const mediaCapabilities = {
+    schema_version: 1, interface_levels: { easy: rules(false), medium: rules(false), hard: rules(true) },
+    media_types: [{ id: 'audio', available: true, default_provider: 'studio', purposes: [], providers: [{
+        id: 'studio', display_name: 'Studio', available: true, default_model: 'studio-voice', default_model_available: true,
+        models: [{ id: 'studio-voice', display_name: 'Studio Voice', available: true, usable: true,
+            selectable_in: ['hard'], supported_interface_levels: ['easy', 'medium', 'hard'], technical: null, speech,
+            capabilities: { text_to_media: true, audio: false, aspect_ratios: [], resolutions: [], styles: [],
+                quality_profiles: [], layout_types: ['single'], duration_seconds: null, count: { min: 1, max: 1 } },
+        }],
+    }] }],
+};
 const step = (operation, output, models, requires_image = false) => ({ operation, output, models, requires_image });
 const presets = [
     { id: 'single_generation', label: 'Single generation', available: true,
-      steps: [step('text_to_image', 'image', [model]), step('image_to_image', 'image', [model], true)] },
+      steps: [step('text_to_image', 'image', [model]), step('image_to_image', 'image', [model], true), step('text_to_speech', 'audio', [speechModel])] },
     { id: 'voice_then_video', label: 'Voice → Video', available: false, experimental: true,
-      reason: 'No executable tenant model for text_to_speech.',
-      steps: [step('text_to_speech', 'audio', []), step('image_audio_to_video', 'video', [], true)] },
+      reason: 'No executable tenant model for image_audio_to_video.',
+      steps: [step('text_to_speech', 'audio', [speechModel]), step('image_audio_to_video', 'video', [], true)] },
 ];
 const run = { workflow_id: 'run', preset: 'single_generation', status: 'running', steps: [{
     step_id: 'generation', operation: 'image_to_image', status: 'queued', job_ids: ['job'],
     dependencies: [], inputs: { image: { kind: 'artifact', artifact_id: 'frame' } }, outputs: [],
 }] };
+const voiceOutput = { artifact_id: 'voice-track', filename: 'voice.wav', media_type: 'audio', mime_type: 'audio/wav' };
+const completedJob = { job_id: 'speech-job', status: 'completed', capability: 'audio.generate',
+    created_at: '2026-11-20T00:00:00Z', completed_at: '2026-11-20T00:00:01Z' };
 window.workflowCalls = [];
+window.speechRequest = null;
 window.workflowState = run;
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, options = {}) => {
     const reply = body => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
     if (url === '/v2/auth/me') return reply({ user_id: 'actor', email: 'actor@example.test' });
     if (url === '/v2/tenant') return reply({ membership: { role: 'member' } });
-    if (url === '/v2/media/capabilities') return reply({ schema_version: 1, media_types: [], interface_levels: {} });
+    if (url === '/v2/media/capabilities') return reply(mediaCapabilities);
+    if (url === '/v2/media/generations') {
+        window.speechRequest = JSON.parse(options.body);
+        return reply({ media_type: 'audio', job_id: 'speech-job', request_id: 'speech-job', status: 'queued' });
+    }
+    if (url === '/v2/jobs') return reply(window.speechRequest ? [completedJob] : []);
+    if (url === '/v2/jobs/speech-job') return reply({ ...completedJob, input: { request: window.speechRequest } });
+    if (url === '/v2/jobs/speech-job/executions') return reply([{ status: 'completed', attempt: 1,
+        metadata: { artifact_id: 'voice-track' }, provider: 'studio', model: 'studio-voice' }]);
+    if (url === '/v2/artifacts/voice-track') return reply(voiceOutput);
     if (url === '/v2/workflows/presets') return reply(presets);
     if (url.startsWith('/v2/artifacts/page?')) return reply({ items: [image], has_more: false });
     if (url.startsWith('/v2/artifacts/result/')) return realFetch(url, options);
     if (url === '/v2/workflows') {
-        window.workflowCalls.push(JSON.parse(options.body));
+        const input = JSON.parse(options.body);
+        window.workflowCalls.push(input);
+        if (input.operation === 'text_to_speech') return reply({
+            workflow_id: 'speech-run', preset: 'single_generation', status: 'completed',
+            steps: [{ ...run.steps[0], operation: 'text_to_speech', status: 'completed', inputs: {},
+                selection: { provider: 'studio', model: 'studio-voice' }, speech: input.speech, outputs: [voiceOutput] }],
+        });
         window.workflowState = structuredClone(run);
         return reply(window.workflowState);
     }
@@ -70,6 +107,11 @@ window.fetch = async (url, options = {}) => {
         window.workflowState.steps[0].outputs = [output];
         window.workflowState.steps[0].retryable = false;
     }
+    if (url === '/v2/workflows/speech-run') return reply({
+        workflow_id: 'speech-run', status: 'completed',
+        steps: [{ ...run.steps[0], operation: 'text_to_speech', status: 'completed', inputs: {},
+            selection: { provider: 'studio', model: 'studio-voice' }, speech: window.workflowCalls.at(-1).speech, outputs: [voiceOutput] }],
+    });
     if (url.startsWith('/v2/workflows/run')) return reply(window.workflowState);
     if (url === '/v2/workflows/voice-run') return reply({
         workflow_id: 'voice-run', preset: 'voice_then_video', status: 'completed',
@@ -87,6 +129,19 @@ createRoot(document.getElementById('root')).render(<App />);
 `;
 async function withLab(t, run) {
     const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=", "base64");
+    const wav = Buffer.alloc(44 + 1600);
+    wav.write("RIFF", 0);
+    wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write("WAVEfmt ", 8);
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(8000, 24);
+    wav.writeUInt32LE(16000, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write("data", 36);
+    wav.writeUInt32LE(1600, 40);
     const fixtureModule = "/workflow-test.tsx";
     const server = await createServer({
         root: new URL("..", import.meta.url).pathname,
@@ -105,6 +160,9 @@ async function withLab(t, run) {
                     } else if (pathname === "/v2/artifacts/result/preview") {
                         response.setHeader("Content-Type", "image/png");
                         response.end(pixel);
+                    } else if (pathname === "/v2/artifacts/voice-track/content") {
+                        response.setHeader("Content-Type", "audio/wav");
+                        response.end(wav);
                     } else {
                         next();
                     }
@@ -208,5 +266,35 @@ test("Workflow Lab gates capabilities, submits references, polls, retries and ca
         await wait("document.body.textContent.includes('Intermediate audio')");
         assert.equal(await evaluate("document.body.textContent.includes('Final video')"), true);
         assert.equal(await evaluate("document.querySelector('img[src*=voice-track]')"), null);
+    });
+});
+
+
+test("speech discovery and authenticated playback work in both Labs", { skip: !browser }, async t => {
+    await withLab(t, async ({ evaluate, wait, click, change }) => {
+        await wait("document.querySelector('.lab-form select')");
+        await click("Hard");
+        await change(".provider-controls select", "studio");
+        await change(".provider-controls label:nth-of-type(2) select", "studio-voice");
+        await change(".lab-controls:not(.provider-controls) label:first-child select", "opaque:two");
+        await change(".lab-controls:not(.provider-controls) label:nth-child(2) select", "wav");
+        await change(".lab-form textarea", "Hello from the lab.");
+        await click("Generate audio");
+        await wait("document.querySelector('.media-result audio')");
+        assert.equal(await evaluate("window.speechRequest.output.voice"), "opaque:two");
+        assert.equal(await evaluate("window.speechRequest.advanced.model"), "studio-voice");
+        assert.equal(await evaluate("document.querySelector('.media-result audio').getAttribute('src')"),
+            "/v2/artifacts/voice-track/content");
+        await evaluate("document.querySelector('.media-result audio').play()");
+        assert.ok(await evaluate("document.querySelector('.media-result audio').duration > 0"));
+
+        await click("Workflow Lab");
+        await wait("document.querySelectorAll('.workflow-lab select').length >= 2");
+        await change(".workflow-lab label:nth-of-type(2) select", "text_to_speech");
+        await change(".workflow-lab textarea", "Hello from a workflow.");
+        await click("Run workflow");
+        await wait("document.querySelector('.workflow-lab audio')");
+        assert.equal(await evaluate("document.body.textContent.includes('Voice opaque:one')"), true);
+        assert.equal(await evaluate("document.querySelector('.workflow-lab audio').preload"), "none");
     });
 });

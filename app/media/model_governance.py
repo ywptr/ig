@@ -85,8 +85,8 @@ def resolve_model(adapter, config, media, explicit=None):
 
 
 def provider_adapters(provider):
-    from app.media.providers.registry import IMAGE_PROVIDERS, VIDEO_PROVIDERS
-    return {media: registry[provider] for media, registry in (("image", IMAGE_PROVIDERS), ("video", VIDEO_PROVIDERS)) if provider in registry}
+    from app.media.providers.registry import MEDIA_PROVIDERS
+    return {media: registry[provider] for media, registry in MEDIA_PROVIDERS.items() if provider in registry}
 
 
 def validate_provider_model_config(provider, config):

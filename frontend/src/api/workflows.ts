@@ -1,9 +1,11 @@
+import type { SpeechCapabilities, SpeechOptions } from "../types/media";
 import { requestJSON } from "./client";
 
 export interface WorkflowModel {
     provider: string;
     model: string;
     label: string;
+    speech?: SpeechCapabilities;
 }
 
 export interface WorkflowPlanStep {
@@ -40,7 +42,8 @@ export interface WorkflowRun {
         error?: string | null;
         retryable?: boolean;
         dependencies: string[];
-        selection?: Omit<WorkflowModel, "label"> | null;
+        selection?: Omit<WorkflowModel, "label" | "speech"> | null;
+        speech?: SpeechOptions | null;
         job_ids: string[];
         inputs: Record<string, { kind: string; step_id?: string; artifact_id?: string }>;
         outputs: WorkflowOutput[];
@@ -64,7 +67,8 @@ export function submitWorkflow(input: {
     dialogue?: string;
     image_artifact_id?: string;
     selection?: Omit<WorkflowModel, "label">;
-    voice_selection?: Omit<WorkflowModel, "label">;
+    voice_selection?: Omit<WorkflowModel, "label" | "speech">;
+    speech?: SpeechOptions;
 }, key: string) {
     return requestJSON<WorkflowRun>(endpoint, {
         method: "POST",

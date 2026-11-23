@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ig_core.media.speech import SpeechOptions
+
 ### Collection of schemas for media generation requests and responses
 
 MediaType = Literal[
@@ -147,6 +149,7 @@ class VideoReference(BaseModel):
 
 class MediaGenerationRequest(BaseModel):
     media_type: MediaType
+    operation: Literal["text_to_speech"] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     interface_level: InterfaceLevel = "easy"
 
@@ -154,7 +157,7 @@ class MediaGenerationRequest(BaseModel):
 
     intent: MediaIntent
 
-    output: MediaOutputPreferences | VideoOutputPreferences = Field(
+    output: MediaOutputPreferences | VideoOutputPreferences | SpeechOptions = Field(
         default_factory=MediaOutputPreferences,
     )
 
@@ -170,7 +173,11 @@ class MediaGenerationRequest(BaseModel):
         if not isinstance(value, dict):
             return value
         value = dict(value)
-        if value.get("media_type") == "video":
+        if value.get("media_type") == "audio":
+            if set(value) - set(cls.model_fields):
+                raise ValueError("Unsupported audio request fields")
+            value["output"] = SpeechOptions.model_validate(value.get("output", {}))
+        elif value.get("media_type") == "video":
             if set(value) - set(cls.model_fields):
                 raise ValueError("Unsupported video request fields")
             if isinstance(value.get("intent"), dict) and set(value["intent"]) - {"description"}:

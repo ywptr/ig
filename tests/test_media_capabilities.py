@@ -62,7 +62,7 @@ class CapabilityDiscoveryTests(MediaJobTestCase):
             membership = db.get(TenantMembership, ("tenant-one", "user-one"))
             self.assertEqual(membership.role, "member")
         document = self.document()
-        self.assertEqual([m["id"] for m in document["media_types"]], ["image", "video"])
+        self.assertEqual([m["id"] for m in document["media_types"]], ["image", "video", "audio"])
         for media in document["media_types"]:
             self.assertFalse(media["available"])
             self.assertIsNone(media["default_provider"])

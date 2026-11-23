@@ -3,7 +3,10 @@ import { artifactContentUrl, listArtifactPage } from "../api/artifacts";
 import { safeMessage } from "../api/client";
 import { getWorkflow, getWorkflowPresets, submitWorkflow, updateWorkflow, type WorkflowPlanStep, type WorkflowPreset, type WorkflowRun } from "../api/workflows";
 import { useActivePolling } from "../hooks/useActivePolling";
-import type { Artifact } from "../types/media";
+import { ArtifactAudio } from "./ArtifactAudio";
+import { SpeechControls } from "./SpeechControls";
+import { resolveSpeechOptions } from "../lib/generation";
+import type { Artifact, SpeechOptions } from "../types/media";
 import { ArtifactPreviewImage } from "./ArtifactPreviewImage";
 
 const active = (run: WorkflowRun) => ["queued", "running", "cancel_requested"].includes(run.status);
@@ -43,6 +46,7 @@ function WorkflowDetails({ initial }: { initial: WorkflowRun }) {
                 <h3>{label(step.operation)}</h3>
                 <p>{label(step.status)}{step.job_ids.length ? ` · Attempt ${step.job_ids.length}` : ""}</p>
                 {step.selection && <p>{step.selection.provider} / {step.selection.model}</p>}
+                {step.speech?.voice && <p>Voice {step.speech.voice}</p>}
                 {step.error && <p>{step.error}</p>}
                 {Object.entries(step.inputs).filter(([, input]) => input.kind !== "text").map(([name, input]) => {
                     const source = run.steps.find(other => other.step_id === input.step_id);
@@ -51,7 +55,7 @@ function WorkflowDetails({ initial }: { initial: WorkflowRun }) {
                 })}
                 {step.outputs.map(output => <div key={output.artifact_id}>
                     <p>{index === run.steps.length - 1 ? "Final" : "Intermediate"} {output.media_type} · {output.filename || output.artifact_id}{output.mime_type && ` · ${output.mime_type}`}</p>
-                    {output.media_type !== "audio" && <ArtifactPreviewImage artifactId={output.artifact_id}
+                    {output.media_type === "audio" ? <ArtifactAudio artifactId={output.artifact_id} /> : <ArtifactPreviewImage artifactId={output.artifact_id}
                         originalUrl={artifactContentUrl(output.artifact_id)} alt={`${output.media_type} result preview`} />}
                     <p><a href={artifactContentUrl(output.artifact_id)} target="_blank" rel="noreferrer">Open {output.media_type} original</a>
                         {" · "}<code>{output.artifact_id}</code></p>
@@ -68,6 +72,7 @@ export function WorkflowLab() {
     const [modelIndex, setModelIndex] = useState("");
     const [voiceModelIndex, setVoiceModelIndex] = useState("");
     const [prompt, setPrompt] = useState("");
+    const [speechOptions, setSpeechOptions] = useState<SpeechOptions>({});
     const [dialogue, setDialogue] = useState("");
     const [imageId, setImageId] = useState("");
     const [images, setImages] = useState<Artifact[]>([]);
@@ -83,6 +88,8 @@ export function WorkflowLab() {
     const isVoice = presetId === "voice_then_video";
     const plan = preset?.steps.filter(step => isVoice || step.operation === operation) ?? [];
     const outputStep = plan.at(-1);
+    const speechStep = plan.find(step => step.operation === "text_to_speech");
+    const speech = speechStep?.models[Number((isVoice ? voiceModelIndex : modelIndex) || "0")]?.speech;
     const requiresImage = outputStep?.requires_image ?? false;
 
     useEffect(() => {
@@ -137,6 +144,7 @@ export function WorkflowLab() {
             image_artifact_id: requiresImage ? imageId.trim() : undefined,
             selection: modelAt(outputStep?.models ?? [], modelIndex),
             voice_selection: isVoice ? modelAt(plan[0]?.models ?? [], voiceModelIndex) : undefined,
+            speech: speech ? resolveSpeechOptions(speech, speechOptions) : undefined,
         };
         const serialized = JSON.stringify(input);
         if (serialized !== submission.current?.serialized) {
@@ -182,12 +190,13 @@ export function WorkflowLab() {
             {plan.length > 0 && <ol aria-label="Planned steps">
                 {plan.map((step, index) => <li key={step.operation}>
                     {label(step.operation)} → {step.output}
-                    {isVoice && index === 1 && " · Uses audio from the voice step"}
+                    {isVoice && ` · ${step.models.length ? "Available" : "Unavailable"}`}
+                    {isVoice && index === 1 && " · Requires a first-frame image and the voice step’s audio"}
                 </li>)}
             </ol>}
-            <label>{isVoice ? "Shot prompt" : "Prompt"}<textarea required maxLength={32000} value={prompt}
+            <label>{isVoice ? "Shot prompt" : "Prompt"}<textarea required maxLength={!isVoice && speech ? speech.max_text_characters : 32000} value={prompt}
                 onChange={event => setPrompt(event.target.value)} /></label>
-            {isVoice && <label>Dialogue<textarea required maxLength={32000} value={dialogue}
+            {isVoice && <label>Dialogue<textarea required maxLength={speech?.max_text_characters ?? 32000} value={dialogue}
                 onChange={event => setDialogue(event.target.value)} /></label>}
             {requiresImage && <label>Image Artifact ID
                 <input required maxLength={36} list="workflow-image-artifacts" value={imageId} onChange={event => setImageId(event.target.value)} />
@@ -205,6 +214,8 @@ export function WorkflowLab() {
                     </select>
                 </label>;
             })}
+            {speech && <SpeechControls capabilities={speech} values={resolveSpeechOptions(speech, speechOptions)}
+                onChange={setSpeechOptions} />}
             {preset && (!preset.available || !outputStep?.models.length) && <p role="status">
                 {preset.experimental && "Experimental. "}{preset.reason ?? "No compatible tenant model is enabled for this operation."}
             </p>}

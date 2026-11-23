@@ -1,5 +1,10 @@
 # Explicit local-development override. Requires Docker Compose >= 2.24.4.
 # docker compose -f compose.yaml -f compose.dev.yaml up --build -d
+x-package-mounts:
+  core: &ig-core ./packages/ig-core:/app/packages/ig-core:ro
+  queue: &ig-queue ./packages/ig-queue:/app/packages/ig-queue:ro
+  storage: &ig-storage ./packages/ig-storage:/app/packages/ig-storage:ro
+
 services:
   # Retain historical infrastructure without starting duplicates in development.
   ig-db:
@@ -22,16 +27,9 @@ services:
       - "192.168.0.99:8011:8000"
     volumes:
       - ./scripts:/app/scripts:ro
-    command:
-      - uvicorn
-      - app.main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
-      - --reload
-      - --reload-dir
-      - /app/app
+      - *ig-core
+      - *ig-queue
+      - *ig-storage
     environment:
       DATABASE_URL: ${IG_DEV_DATABASE_URL:?Set the local IG development database URL in ignored .env}
       JOB_QUEUE_PROVIDER: rq
@@ -49,9 +47,11 @@ services:
       - "host.docker.internal:${IG_DEV_HOST_GATEWAY:-host-gateway}"
     # RQ CLI uses RQ_REDIS_URL; application jobs use the same REDIS_URL.
     command: ["rq", "worker", "--with-scheduler", "ig"]
+    volumes:
+      - *ig-core
+      - *ig-queue
+      - *ig-storage
     environment:
-      # Prefer bind-mounted source over the image-installed application package.
-      PYTHONPATH: /app
       DATABASE_URL: ${IG_DEV_DATABASE_URL:?Set the local IG development database URL in ignored .env}
       TENANT_SECRET_ENCRYPTION_KEY: ${TENANT_SECRET_ENCRYPTION_KEY:?Set the local encryption key in ignored .env}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

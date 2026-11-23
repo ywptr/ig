@@ -1,7 +1,7 @@
 import { compilePrompt, type ArtifactMention } from "./mentions";
 import { referenceErrors, sharedReferenceSlots, structuredReferences, type Attachment } from "./references";
 import type { Artifact, GenerationCapabilities, GenerationResult, GenerationSubmission, InterfaceLevel,
-    MediaCapabilities, MediaCapability, MediaGenerationRequest, MediaModel, MediaType } from "../types/media";
+    MediaCapabilities, MediaCapability, MediaGenerationRequest, MediaModel, MediaType, SpeechCapabilities, SpeechOptions } from "../types/media";
 import type { JobDetail } from "../types/Job";
 import type { JobExecution } from "../api/executions";
 
@@ -11,10 +11,11 @@ export function humanize(value: string) { return value.replaceAll("_", " ").repl
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string | null { return typeof value === "string" && value.length > 0 ? value : null; }
 export function generationMediaType(capability: string): MediaType | null {
-    return capability === "image.generate" ? "image" : capability === "video.generate" ? "video" : null;
+    return capability === "image.generate" ? "image" : capability === "video.generate" ? "video" : capability === "audio.generate" ? "audio" : null;
 }
 
 export interface LabForm {
+    speech?: SpeechOptions;
     mentions: ArtifactMention[];
     references: Attachment[];
     mode: InterfaceLevel; media: MediaType; prompt: string; purpose: string;
@@ -33,7 +34,7 @@ export function eligibleModels(media: MediaCapability, mode: InterfaceLevel): Me
             && model.capabilities.text_to_media && model.capabilities.layout_types.includes("single"));
 }
 export function availableMedia(capabilities: MediaCapabilities, mode: InterfaceLevel) {
-    return capabilities.media_types.filter(media => (media.id === "image" || media.id === "video")
+    return capabilities.media_types.filter(media => (media.id === "image" || media.id === "video" || media.id === "audio")
         && media.available && eligibleModels(media, mode).length > 0);
 }
 
@@ -76,6 +77,9 @@ export function resolveLabForm(capabilities: MediaCapabilities, form: LabForm) {
     const referenceModels = selectedModel ? [selectedModel] : provider ? models.filter(model => model.id === provider.default_model) : media ? eligibleModels(media, form.mode) : [];
     const referenceSlots = sharedReferenceSlots(referenceModels.map(model => model.technical?.reference_inputs ?? []));
     const validDefault = !provider || !!(provider.default_model_available && models.some(model => model.id === provider.default_model));
+    const speechProvider = provider ?? media?.providers.find(item => item.id === media.default_provider);
+    const speech = media?.id === "audio" ? (selectedModel ?? speechProvider?.models.find(
+        model => model.id === speechProvider.default_model && model.available))?.speech : undefined;
     const values = { ...form, media: (media?.id ?? form.media) as MediaType,
         provider: provider?.id ?? "", model: selectedModel?.id ?? "",
         purpose: choice(form.purpose, media?.purposes ?? [], "general"),
@@ -86,18 +90,28 @@ export function resolveLabForm(capabilities: MediaCapabilities, form: LabForm) {
         duration: bounded(form.duration, controls?.duration_seconds ?? null),
         count: bounded(form.count, controls?.count ?? null), audio: !!controls?.audio && form.audio,
     };
-    return { mediaOptions, media, providers, provider, models, controls, values, referenceSlots,
-        usable: !!media && !!controls && (!!selectedModel || validDefault) };
+    return { mediaOptions, media, providers, provider, models, controls, values, referenceSlots, speech,
+        usable: !!media && !!controls && (!!selectedModel || validDefault) && (media.id !== "audio" || !!speech) };
+}
+
+export function resolveSpeechOptions(capabilities: SpeechCapabilities, options?: SpeechOptions): SpeechOptions {
+    return {
+        voice: capabilities.voices.some(voice => voice.id === options?.voice) ? options?.voice : capabilities.default_voice,
+        output_format: capabilities.formats.some(format => format.id === options?.output_format) ? options?.output_format : capabilities.default_format,
+    };
 }
 
 export function buildMediaRequest(capabilities: MediaCapabilities, form: LabForm): MediaGenerationRequest {
-    const { values, usable, controls, referenceSlots } = resolveLabForm(capabilities, form);
+    const { values, usable, controls, referenceSlots, speech } = resolveLabForm(capabilities, form);
     if (!usable) throw new Error("Choose an available media type and a supported model or default.");
     if (!values.prompt.trim()) throw new Error("Describe what you want to generate.");
     const errors = referenceErrors(form.references, referenceSlots);
     if (errors.length) throw new Error(errors[0]);
     const base = { ...(form.references.length ? { references: structuredReferences(form.references) } : {}), interface_level: values.mode, intent: { description: compilePrompt(form, referenceSlots) },
         ...(values.provider ? { advanced: { provider: values.provider, ...(values.model ? { model: values.model } : {}) } } : {}) };
+    if (values.media === "audio" && speech) return {
+        ...base, media_type: "audio", operation: "text_to_speech", output: resolveSpeechOptions(speech, values.speech),
+    };
     const aspect = values.aspect ? { aspect_ratio: values.aspect } : {};
     if (values.media === "image") return { ...base, media_type: "image", output: {
         ...aspect, ...(values.purpose ? { purpose: values.purpose } : {}),
@@ -119,7 +133,7 @@ export function executionArtifactId(execution?: JobExecution): string | null {
 export function resultFromJob(job: JobDetail, execution?: JobExecution, artifact: Artifact | null = null): GenerationResult {
     const media = generationMediaType(job.capability);
     if (!media) throw new Error("This Job is not a supported media generation.");
-    const request = media === "video" ? record(job.input.request) : job.input;
+    const request = media === "image" ? job.input : record(job.input.request);
     const selection = record(job.input.selection);
     const output = record(request.output);
     const metadata = artifact?.metadata ?? {};

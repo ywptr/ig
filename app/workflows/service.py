@@ -93,8 +93,6 @@ class WorkflowConflict(ValueError):
 
 def submit_step(db, row, step, references):
     """Translate workflow bindings to the existing media submission contract."""
-    if step.operation == "text_to_speech":
-        raise ValueError("Speech workflow execution is unavailable")
     selection = step.selection.model_dump() if step.selection else None
     request = MediaGenerationRequest.model_validate({
         "media_type": step.output,
@@ -102,6 +100,8 @@ def submit_step(db, row, step, references):
         "intent": {"description": step.inputs["prompt"].value},
         "advanced": selection,
         "references": references,
+        **({"operation": step.operation, "output": step.speech.model_dump() if step.speech else {}}
+           if step.operation == "text_to_speech" else {}),
     })
     return submit_media_generation(request, db=db, tenant_id=row.tenant_id,
                                    user_id=row.user_id, defer_dispatch=True).job_id
@@ -153,7 +153,7 @@ def reconcile_step(db, row, step, state, now):
     if job.status == "failed":
         state["outputs"] = collect_outputs(db, row, job_id, step.output)
         code = (job.error_message or "").split(":", 1)[0]
-        uncertain = code in {INTERRUPTED, "VIDEO_SUBMISSION_UNCERTAIN", "VIDEO_CHECKPOINT_INVALID", "VIDEO_PENDING_TIMEOUT"}
+        uncertain = code in {INTERRUPTED, "VIDEO_SUBMISSION_UNCERTAIN", "VIDEO_CHECKPOINT_INVALID", "VIDEO_PENDING_TIMEOUT", "SPEECH_PROVIDER_UNCERTAIN"}
         fail_step(row, state, code if uncertain else "Step Job failed. Inspect the Job for details.",
                   retryable=not uncertain and not state["outputs"])
         return None

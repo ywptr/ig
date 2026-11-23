@@ -245,7 +245,8 @@ class MediaRoutingTests(ImageExecutionTestCase):
         self.configure()
         response = self.client.get("/v2/media/capabilities")
         self.assertEqual(response.status_code, 200)
-        image, video = response.json()["media_types"]
+        by_media = {entry["id"]: entry for entry in response.json()["media_types"]}
+        image, video = by_media["image"], by_media["video"]
         self.assertEqual(image["purposes"], ["general", "thumbnail"])
         self.assertEqual(image["default_provider"], "openai")
         self.assertEqual(video["purposes"], [])

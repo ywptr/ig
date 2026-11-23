@@ -11,6 +11,7 @@ from ig_core.media.catalog import (
     ProviderMetadata as ProviderMetadata,
 )
 from ig_core.media.schemas import InterfaceLevel
+from ig_core.media.speech import SpeechCapabilities
 from ig_core.media.technical import TechnicalCapabilities
 
 
@@ -29,6 +30,7 @@ class ModelCapability(BaseModel):
     available: bool
     usable: bool
     technical: TechnicalCapabilities | None = None
+    speech: SpeechCapabilities | None = Field(default=None, exclude_if=lambda value: value is None)
     supported_interface_levels: list[InterfaceLevel] = Field(default_factory=lambda: list(get_args(InterfaceLevel)))
     selectable_in: list[InterfaceLevel]
     capabilities: GenerationControls

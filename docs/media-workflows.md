@@ -6,7 +6,7 @@ IG workflows run bounded, ordered media plans using the existing generation Jobs
 
 `ig_core.workflows.GenerationWorkflow` is a versioned, serializable plan for independently installed consumers. A `WorkflowStep` declares its ID, operation, input map, earlier dependencies, optional provider/model constraint, and expected output media type. The core validates operation signatures, duplicate step IDs, forward or cyclic dependencies, and typed bindings. Each operation takes a text `prompt`. Additional inputs are typed Artifact IDs or references to outputs of named dependency steps. The coordinator selects the first matching output in stable Artifact creation/ID order. Presets request one output per step.
 
-The operation vocabulary includes `text_to_speech`, `text_to_image`, `image_to_image`, `text_to_video`, `image_to_video`, `image_audio_to_video`, and `audio_to_video`. A model must advertise the operation, media types, and applicable reference slots. The application must also have an execution path for the operation. The current discovery catalog has no executable speech or audio-conditioned video capability.
+The operation vocabulary includes `text_to_speech`, `text_to_image`, `image_to_image`, `text_to_video`, `image_to_video`, `image_audio_to_video`, and `audio_to_video`. A model must advertise the operation, media types, and applicable reference slots. The application must also have an execution path for the operation. IG#0015 makes speech executable for configured tenants. The current catalog has no audio-conditioned video adapter.
 
 IG owns the workflow ID, tenant and actor ownership, preset expansion, dispatch and credentials. The Job owns execution and provider continuation. The Artifact generation record identifies the producing Job and Execution. Standard Artifact input lineage records the roles and IDs of consumed references, including `voice_track`. Workers use the existing storage router; step bindings carry Artifact IDs.
 
@@ -36,7 +36,7 @@ The routes require an interactive tenant membership and use tenant and actor own
 
 Workflow Lab at `/workflows` shows the planned steps, enables compatible provider/model selections, and accepts image references from the Artifact library or by ID. Automatic selection pins the first compatible configured model in catalog order. On a run, the Lab polls active status and stops on a terminal state. It shows intermediate and final Artifact metadata, requests the existing image/video preview, and opens original media on demand. Copy the run URL or inspect by workflow ID to revisit a run.
 
-`single_generation` supports image and video operations for compatible tenant models. `voice_then_video` is experimental and currently unavailable to API and Lab users. Automated tests use fixture-only execution and model discovery to verify the chain and lineage. Generation Lab continues through the existing generation routes.
+`single_generation` supports speech, image, and video operations for compatible tenant models. Speech options are model-scoped and the result has authenticated playback in the Lab. `voice_then_video` shows voice availability and remains unavailable to run while audio-conditioned video is missing. Automated tests use fixture-only execution for the combined chain and lineage. Generation Lab continues through the existing generation routes. [Voice generation](voice-generation.md)
 
 ## Sandcastle example
 

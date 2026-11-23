@@ -297,6 +297,8 @@ def read_artifact_content(
             or "application/octet-stream"
         ),
         headers={
+            **({"Cache-Control": "private, no-store", "Vary": "Cookie, Authorization",
+                "X-Content-Type-Options": "nosniff"} if artifact.media_type == "audio" else {}),
             "Content-Disposition": (
                 f'inline; filename="'
                 f'{artifact.filename or artifact.artifact_id}'

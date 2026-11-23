@@ -24,6 +24,15 @@ ALLOWED_ASPECT_RATIOS = {
 def validate_media_request(
     request: MediaGenerationRequest,
 ) -> None:
+    if request.media_type == "audio":
+        if (request.operation != "text_to_speech" or request.strategy != "single" or request.references
+                or not request.intent.description.strip() or (request.advanced and request.advanced.parameters)):
+            raise MediaRequestValidationError("Audio requires text_to_speech, nonblank text and no references or provider parameters")
+        if request.advanced is not None and request.interface_level not in EXPLICIT_SELECTION_LEVELS:
+            raise MediaRequestValidationError("Advanced provider/model settings are only available in hard mode")
+        return
+    if request.operation is not None:
+        raise MediaRequestValidationError("Speech operation requires audio media")
     layout = request.output.layout
     aspect_ratio = request.output.aspect_ratio
     allowed_ratios = ALLOWED_ASPECT_RATIOS.get(request.media_type)
@@ -119,6 +128,16 @@ def validate_model_capabilities(request: MediaGenerationRequest, metadata: "Mode
     must be handled explicitly by callers, never inferred from another model.
     """
     technical = metadata.technical
+    if request.media_type == "audio":
+        from ig_core.media.speech import SpeechGenerationRequest, resolve_model_speech
+
+        validate_media_request(request)
+        try:
+            resolve_model_speech(metadata, SpeechGenerationRequest(
+                text=request.intent.description, **request.output.model_dump()), request.interface_level)
+        except ValueError as exc:
+            raise MediaRequestValidationError(str(exc)) from None
+        return
     if technical is None:
         raise MediaRequestValidationError("Model capabilities are unknown")
     if request.media_type not in technical.output_media:

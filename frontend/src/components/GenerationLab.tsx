@@ -5,8 +5,9 @@ import { referenceErrors } from "../lib/references";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getMediaCapabilities, submitMedia } from "../api/media";
 import { ApiError, safeMessage } from "../api/client";
-import { buildMediaRequest, humanize, INITIAL_FORM, matchesSubmission, pendingReceipt, resolveLabForm, type LabForm } from "../lib/generation";
+import { buildMediaRequest, humanize, INITIAL_FORM, matchesSubmission, pendingReceipt, resolveLabForm, resolveSpeechOptions, type LabForm } from "../lib/generation";
 import type { GenerationResult, GenerationSubmission, InterfaceLevel, MediaCapabilities, MediaType } from "../types/media";
+import { SpeechControls } from "./SpeechControls";
 import { GenerationControls } from "./GenerationControls";
 import { MediaResultCard } from "./MediaResultCard";
 import { LegacyImageHistory } from "./LegacyImageHistory";
@@ -42,7 +43,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
     const resolved = capabilities ? resolveLabForm(capabilities, form) : null;
     const attachmentErrors = resolved ? [...referenceErrors(form.references, resolved.referenceSlots), ...mentionErrors(form, resolved.referenceSlots)] : [];
     const preservedErrors = editor && capabilities ? editorFormErrors(capabilities, form) : [];
-    const operation = form.media === "video" ? (form.references.length ? "image_to_video" : "text_to_video") : (form.references.length ? "reference_image_conditioning" : "text_to_image");
+    const operation = form.media === "audio" ? "text_to_speech" : form.media === "video" ? (form.references.length ? "image_to_video" : "text_to_video") : (form.references.length ? "reference_image_conditioning" : "text_to_image");
     if (editor?.policy.allowed_operations.length && !editor.policy.allowed_operations.includes(operation)) preservedErrors.push("This operation is excluded by the editor policy.");
     function update(patch: Partial<LabForm>) {
         setDraftTouched(true);
@@ -83,16 +84,20 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                 {(Object.keys(capabilities.interface_levels).filter(mode => ["easy", "medium", "hard"].includes(mode)) as InterfaceLevel[]).map(mode => <button type="button" key={mode}
                     aria-pressed={form.mode === mode} onClick={() => update({ mode, provider: "", model: "" })}>{humanize(mode)}</button>)}
             </div></fieldset>
-            {resolved.mediaOptions.length === 0 ? <p className="empty">No image or video text-generation capabilities are available in this mode for your tenant.</p> : <>
+            {resolved.mediaOptions.length === 0 ? <p className="empty">No media generation capabilities are available in this mode for your tenant.</p> : <>
                 <fieldset disabled={submitting} className="lab-fieldset"><legend>Media</legend><div className="lab-segments">
-                    {capabilities.media_types.filter(media => media.id === "image" || media.id === "video").map(media => <button type="button" key={media.id}
+                    {capabilities.media_types.filter(media => media.id === "image" || media.id === "video" || (media.id === "audio" && resolved.mediaOptions.includes(media))).map(media => <button type="button" key={media.id}
                         disabled={!resolved.mediaOptions.includes(media)} aria-pressed={resolved.values.media === media.id}
-                        onClick={() => update({ media: media.id as MediaType, provider: "", model: "", aspect: "", resolution: "", duration: null, audio: false, count: null })}>
+                        onClick={() => update({ media: media.id as MediaType, provider: "", model: "", aspect: "", resolution: "", duration: null, audio: false, count: null,
+                            ...(media.id === "audio" ? { references: [], mentions: [] } : {}) })}>
                         {humanize(media.id)}{!resolved.mediaOptions.includes(media) ? " · unavailable" : ""}</button>)}
                 </div></fieldset>
                 <fieldset disabled={submitting} className="lab-fieldset">
                     <legend className="sr-only">Generation request</legend>
-                    <ArtifactPromptEditor draft={form} slots={editor?.policy.reference_editing === false ? [] : resolved.referenceSlots} onChange={update} />
+                    {resolved.values.media === "audio" ? <label>Speech text<textarea value={form.prompt}
+                        maxLength={resolved.speech?.max_text_characters}
+                        onChange={event => update({ prompt: event.target.value })} /></label>
+                        : <ArtifactPromptEditor draft={form} slots={editor?.policy.reference_editing === false ? [] : resolved.referenceSlots} onChange={update} />}
                     {capabilities.interface_levels[form.mode].explicit_provider_selection ? <fieldset disabled={editor?.policy.model_switching === false} className="lab-controls provider-controls">
                         <label>Provider<select value={editor ? form.provider : resolved.values.provider} onChange={event => update({ provider: event.target.value, model: "" })}>
                             <option value="">Auto</option>{resolved.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.display_name}</option>)}
@@ -103,17 +108,19 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
                                 {resolved.models.map(model => <option key={model.id} value={model.id}>{model.display_name}{model.lifecycle?.deprecated ? " (deprecated)" : ""}</option>)}
                             </select></label>}
                     </fieldset> : <p className="lab-help">Provider / model: <strong>Auto</strong></p>}
-                    {resolved.controls && resolved.media && <GenerationControls media={resolved.values.media} controls={resolved.controls}
+                    {resolved.speech && <SpeechControls capabilities={resolved.speech}
+                        values={resolveSpeechOptions(resolved.speech, form.speech)} onChange={speech => update({ speech })} />}
+                    {resolved.values.media !== "audio" && resolved.controls && resolved.media && <GenerationControls media={resolved.values.media} controls={resolved.controls}
                         purposes={resolved.media.purposes} values={editor ? form : resolved.values} onChange={update} />}
                     {!resolved.usable && <p className="error">No usable shared controls or provider default. Choose an available model in Hard mode.</p>}
                     <p className="lab-help">{resolved.values.provider ? "Using the selected provider’s generic controls." : "Auto shows controls shared by available models. IG chooses the provider and model."}
                         {form.mode === "easy" && resolved.values.media === "image" ? " Medium and Hard add quality and style controls." : ""}</p>
-                    <fieldset disabled={editor?.policy.reference_editing === false} className="lab-fieldset">
+                    {resolved.values.media !== "audio" && <fieldset disabled={editor?.policy.reference_editing === false} className="lab-fieldset">
                         <ReferenceAttachments key={JSON.stringify(resolved.referenceSlots)} references={form.references} slots={resolved.referenceSlots}
                             allowUpload={editor?.policy.upload ?? true} onChange={references => update(updateAttachments(form, references))} />
-                    </fieldset>
+                    </fieldset>}
                     {attachmentErrors.length > 0 && <p className="error" role="alert">{attachmentErrors[0]}</p>}
-                    <button className="generate-button" type="submit" disabled={!resolved.usable || !form.prompt.trim() || submitting || attachmentErrors.length > 0 || preservedErrors.length > 0}>
+                    <button className="generate-button" type="submit" disabled={!resolved.usable || !form.prompt.trim() || (!!resolved.speech && form.prompt.trim().length > resolved.speech.max_text_characters) || submitting || attachmentErrors.length > 0 || preservedErrors.length > 0}>
                         {submitting ? "Submitting…" : `Generate ${resolved.values.media}`}</button>
                 </fieldset>
             </>}
@@ -123,7 +130,7 @@ export function GenerationLab({ results, receipts, loading, error, onRefresh, on
         <section className="lab-results" aria-label="Recent generations"><div className="section-heading"><h2>Recent generations</h2>
             <button type="button" className="secondary-button" onClick={onRefresh} disabled={loading}>{loading ? "Refreshing…" : "Refresh results"}</button></div>
             {error && <p className="error" role="alert">{error}</p>}
-            {!loading && !results.length && !unmatched.length && <p className="empty">No recent image or video generation Jobs.</p>}
+            {!loading && !results.length && !unmatched.length && <p className="empty">No recent generation Jobs.</p>}
             <div className="media-results">
                 {unmatched.map(receipt => <article className="media-result" key={receipt.job_id ?? receipt.request_id}>
                     <div className="result-heading"><strong>{humanize(receipt.media_type)}</strong><span className="job-status queued">Accepted</span></div>
